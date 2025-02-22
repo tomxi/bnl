@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
-from fwx.fwx import S, H
-from fwx.formatting import multi2hier, hier2multi, mireval2multi
+from bnl.core import S, H
+from bnl.formatting import multi2hier, hier2multi, mireval2multi
 import jams
 
 def test_flat_segmentation_initialization():
