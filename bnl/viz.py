@@ -40,23 +40,6 @@ def scatter_scores(
     return ax
 
 
-def anno_meet_mats(track, mode="expand"):
-    """
-    mode can be one of {'normal', 'expand'}
-    """
-    fig, axs = plt.subplots(
-        1, track.num_annos(), figsize=(5 * track.num_annos() + 1, 4)
-    )
-    if isinstance(axs, matplotlib.axes.Axes):
-        axs = [axs]
-
-    for anno_id in range(track.num_annos()):
-        anno_jam = track.ref(mode=mode, anno_id=anno_id)
-        # quadmesh = librosa.display.specshow(ssdm.anno_to_meet(anno_jam, track.ts()), x_axis='time', y_axis='time', hop_length=4096, sr=22050, ax=axs[anno_id])
-        # plt.colorbar(quadmesh)
-    return fig, axs
-
-
 def assign_label_styles(labels, **kwargs):
     labels = labels.copy()
     unique_labels = []

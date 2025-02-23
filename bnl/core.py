@@ -1,10 +1,10 @@
 import numpy as np
-from scipy import stats, linalg
+from scipy import stats
 import librosa, mir_eval
-from sklearn.cluster import KMeans
 
+from .utils import _eigen_gap_scluster, _resample_matrix
 from .viz import multi_seg
-from .utils import quantize, laplacian
+from .utils import quantize
 from .formatting import mireval2multi, multi2mireval
 
 
@@ -314,43 +314,3 @@ def levels2H(levels, sr=10, Bhat_bw=1):
 
 def multi2H(anno, sr=10, Bhat_bw=1):
     return H(*multi2mireval(anno), sr=sr, Bhat_bw=Bhat_bw)
-
-
-def _eigen_gap_scluster(M, k=None, min_k=1):
-    # scluster with k groups. default is eigen gap.
-    L = laplacian(M, normalization="random_walk")
-    # Assuming L_rw is your random walk normalized Laplacian matrix
-    evals, evecs = linalg.eig(L)
-    evals = evals.real
-    evecs = evecs.real
-    idx = np.argsort(evals)
-    evals = evals[idx]
-    evecs = evecs[:, idx]
-    egaps = np.diff(evals)
-    T = len(evals)
-
-    # Determine number of clusters using eigen gap heuristic if k is not provided
-    if k is None:
-        if min_k >= T or max(evals) < 0.1:
-            k = T  # Allow singleton group when all eigenvalues are tiny
-        else:
-            k = np.argmax(egaps[min_k - 1 :]) + min_k
-
-    membership = evecs[:, :k]
-    KM = KMeans(n_clusters=k, n_init=50, max_iter=500)
-    return KM.fit_predict(membership), k
-
-
-def _resample_matrix(matrix, old_bounds, new_bounds):
-    """Resample the given matrix based on new boundaries."""
-    indices = np.searchsorted(old_bounds, new_bounds)
-    new_size = len(new_bounds) - 1
-    new_matrix = np.zeros((new_size, new_size))
-
-    for i in range(new_size):
-        for j in range(new_size):
-            top, bottom = indices[i], indices[i + 1]
-            left, right = indices[j], indices[j + 1]
-            new_matrix[i, j] = np.sum(matrix[top:bottom, left:right])
-
-    return new_matrix
