@@ -15,12 +15,14 @@ class S:
         """Initialize the flat segmentation."""
         self.itvls = itvls
         if labels is None:
-            labels = itvls
+            labels = [str(itv) for itv in itvls]
         self.labels = labels
         self.anno = mireval2multi([itvls], [labels])
 
         # Build Lstar and T
-        self.Lstar = {round(b, time_decimal): l for (b, e), l in zip(itvls, labels)}
+        self.Lstar = {
+            round(b, time_decimal): str(l) for (b, e), l in zip(itvls, labels)
+        }
         self.beta = np.array(sorted(set(self.Lstar.keys()).union([itvls[-1][-1]])))
         self.T0, self.T = self.beta[0], self.beta[-1]
 
@@ -66,19 +68,21 @@ class S:
         return self.Lstar[self.beta[idx]]
 
     def B(self, x):
-        """Return whether x is a boundary."""
-        return int(x in self.beta)
+        """Return whether x is a boundary with integers 1/0"""
+        return int(x in self.beta or (x == self.T0) or (x == self.T))
 
     def Bhat(self, ts=None):
         """Return the boundary salience curve at given time steps."""
         if ts is None:
             ts = self.ticks
+        ts = np.array(ts)
         return self._Bhat(ts)
 
     def A(self, bs=None):
         """Return the label agreement indicator for given boundaries."""
         if bs is None:
             bs = self.beta
+        bs = np.array(sorted(set(bs).union([self.T, self.T0])))
         ts = (bs[1:] + bs[:-1]) / 2  # Sample label from mid-points of each frame
         sampled_anno = self.anno.to_samples(ts)
         sample_labels = [obs[0]["label"] for obs in sampled_anno]
@@ -142,31 +146,25 @@ class H:
 
     def Ahats(self, bs=None):
         """Return the normalized label agreement matrices for all levels."""
-        if bs is None:
-            bs = self.beta
         return np.asarray([lvl.Ahat(bs) for lvl in self.levels])
 
     def Bhats(self, ts=None):
         """Return the smoothed boundary strengths for all levels."""
-        if ts is None:
-            ts = self.ticks
         return np.asarray([lvl.Bhat(ts) for lvl in self.levels])
 
     def Ahat(self, bs=None, weights=None):
         """Return the weighted normalized label agreement matrix."""
         if weights is None:
-            weights = np.ones(self.d) / self.d
-        if bs is None:
-            bs = self.beta
+            weights = np.ones(self.d)
+        weights /= np.sum(weights)
         weighted = np.array(weights).reshape(-1, 1, 1) * self.Ahats(bs)
         return np.sum(weighted, axis=0)
 
     def Bhat(self, ts=None, weights=None):
         """Return the weighted smoothed boundary strength."""
-        if ts is None:
-            ts = self.ticks
         if weights is None:
-            weights = np.ones(self.d) / self.d
+            weights = np.ones(self.d)
+        weights /= np.sum(weights)
         weighted = np.array(weights).reshape(-1, 1) * self.Bhats(ts)
         return np.sum(weighted, axis=0)
 
@@ -176,6 +174,7 @@ class H:
         """
         if bs is None:
             bs = self.beta
+        bs = np.array(sorted(set(bs).union([self.T, self.T0])))
         return sum(level.A(bs=bs) for level in self.levels)
 
     def B(self):
@@ -191,6 +190,7 @@ class H:
         """
         if bs is None:
             bs = self.beta
+        bs = np.array(sorted(set(bs).union([self.T, self.T0])))
         Ahats = self.Ahats(bs=bs)
         indexed_Ahats = np.array(
             [(level + 1) * (Ahats[level] > 0).astype(int) for level in range(self.d)]
@@ -265,26 +265,10 @@ class H:
         # Ensure the first and last frames are included in the boundaries list
         boundaries = np.unique(np.concatenate(([0, len(novelty) - 1], boundaries)))
 
-        # Determine depth based on unique boundary salience
-        depth = min(depth, len(np.unique(novelty[boundaries])))
+        # Convert boundaries to hierarchical intervals
+        intervals = _cluster_boundaries(boundaries, novelty, self.ticks, depth)
 
-        # Quantize boundary salience via KMeans
-        boundary_salience = quantize(
-            novelty[boundaries], quantize_method="kmeans", quant_bins=depth
-        )
-        rated_boundaries = {
-            round(self.ticks[b], 3): s for b, s in zip(boundaries, boundary_salience)
-        }
-
-        # Create hierarchical intervals based on salience thresholds
-        intervals = []
-        for l in range(depth):
-            salience_thresh = depth - l
-            boundaries_at_level = [
-                b for b in rated_boundaries if rated_boundaries[b] >= salience_thresh
-            ]
-            intervals.append(mir_eval.util.boundaries_to_intervals(boundaries_at_level))
-        return H(intervals, intervals, sr=self.sr, Bhat_bw=self.Bhat_bw)
+        return H(intervals, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
     def decode_L(self, itvls, min_k=2):
         """decode labels from the coarsest to most fine, using increasing k from eigen-gap."""
@@ -304,6 +288,40 @@ class H:
         new_H = self.decode_B(depth=depth, **kwargs)
         # Decode labels
         return self.decode_L(new_H.itvls, min_k=min_k)
+
+
+def _cluster_boundaries(boundaries, novelty, ticks, depth):
+    """Convert boundaries with novelty values into hierarchical intervals of specified depth.
+
+    Args:
+        boundaries (np.ndarray): Array of boundary indices
+        novelty (np.ndarray): Novelty curve values
+        ticks (np.ndarray): Time points corresponding to novelty curve
+        depth (int): Maximum number of hierarchical levels
+
+    Returns:
+        list: List of interval arrays, one per hierarchical level
+    """
+    # Determine depth based on unique boundary salience
+    depth = min(depth, len(np.unique(novelty[boundaries])))
+
+    # Quantize boundary salience via KMeans
+    boundary_salience = quantize(
+        novelty[boundaries], quantize_method="kmeans", quant_bins=depth
+    )
+    rated_boundaries = {
+        round(ticks[b], 3): s for b, s in zip(boundaries, boundary_salience)
+    }
+
+    # Create hierarchical intervals based on salience thresholds
+    intervals = []
+    for l in range(depth):
+        salience_thresh = depth - l
+        boundaries_at_level = [
+            b for b in rated_boundaries if rated_boundaries[b] >= salience_thresh
+        ]
+        intervals.append(mir_eval.util.boundaries_to_intervals(boundaries_at_level))
+    return intervals
 
 
 def levels2H(levels, sr=10, Bhat_bw=1):
