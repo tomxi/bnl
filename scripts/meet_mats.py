@@ -4,6 +4,7 @@
 import bnl, tests
 import mir_eval, os, librosa
 import matplotlib.pyplot as plt
+import numpy as np
 
 
 def make_hierarchies():
@@ -58,25 +59,32 @@ def next_step(idx=0):
     ## Now I have the two meet mats from _meet, follow alone with the mir_eval and get to the count inversion stage.
     ## Let's see which pixels are hitting and which pixels are missing.
     hier1, hier2 = make_hierarchies().values()
-    meet_mat1 = make_meet_mats(hier1, frame_size=0.5)[idx]
-    meet_mat2 = make_meet_mats(hier2, frame_size=0.5)[idx]
+    meet_mat_ref = make_meet_mats(hier1, frame_size=0.5)[idx]
+    meet_mat_est = make_meet_mats(hier2, frame_size=0.5)[idx]
 
     # Now we have the meet matrices, for each query position q, we want to see violations in relevance score rankings
-
-    for q in range(meet_mat1.shape[0]):
+    q_ranking_recall = np.zeros(meet_mat_ref.shape[0])
+    for q in range(meet_mat_ref.shape[0]):
         # get the q'th row
-        q_relevance_ref = meet_mat1.getrow(q).toarray().ravel()
-        q_relevance_est = meet_mat2.getrow(q).toarray().ravel()
-        # get ranking violations
+        q_relevance_ref = np.delete(meet_mat_ref.getrow(q).toarray().ravel(), q)
+        q_relevance_est = np.delete(meet_mat_est.getrow(q).toarray().ravel(), q)
+        # count ranking violations
         inversions, normalizer = mir_eval.hierarchy._compare_frame_rankings(
             q_relevance_ref, q_relevance_est, transitive=True
         )
-        print(f"Ranking inversions for query position {q}: {inversions} {normalizer}")
+        q_ranking_recall[q] = 1.0 - inversions / normalizer
+        # print(f"query idx {q}: {inversions} {normalizer}")
 
-    # Let's look at the last frame (q = 9) and the q_relevance scores:
-    print(q_relevance_ref, q_relevance_est)
+    # print(q_relevance_ref, q_relevance_est)
+    print(f"Recall scores: {q_ranking_recall}")
+    plt.plot(q_ranking_recall)
+    plt.show()
+
+    # So I would like to see, when switching between their strictly monotonic or original setup, where the recall measures are changing the most.
+    # Let's get a curve over q for the recall scores.
 
 
 if __name__ == "__main__":
     # save_test_meet_mats(out_dir="scripts/figs", frame_size=0.5)
+    next_step(0)
     next_step(1)
