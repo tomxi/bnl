@@ -16,54 +16,35 @@ def make_hierarchies():
     return dict(h1=hier1, h2=hier2)
 
 
-def make_meet_mats(hier, frame_size=0.1):
-    # Call mir_eval.hierarchy._meet to get the meet matrices for a hierarchy
-    # gets both monotonous and non-monotonic meet matrices. Original first, strict later.
-    return [
-        mir_eval.hierarchy._meet(hier.itvls, hier.labels, frame_size, strict_mono=flag)
-        for flag in (False, True)
-    ]
-
-
-def plot_meet_mats(hier, frame_size=0.1):
-    # make sure the hier has the same sr as the frame size for mir_eval _meet
+def make_meet_mat(hier, frame_size=0.1, strict_mono=False):
+    """Create meet matrices for a hierarchy with given frame size."""
     hier.update_sr(1 / frame_size)
-    meet_mats = make_meet_mats(hier, frame_size=frame_size)
-    # Plot the meet matrices in a row and share the color bar
-    fig, axs = plt.subplots(1, len(meet_mats), figsize=(8, 3))
-    for ax, mat in zip(axs, meet_mats):
-        im = librosa.display.specshow(
-            mat.toarray(),
-            x_axis="time",
-            y_axis="time",
-            hop_length=1,
-            sr=1 / frame_size,
-            ax=ax,
-        )
-    fig.tight_layout()
-    cbar = fig.colorbar(im, ax=axs)
-    cbar.set_ticks(range(int(mat.max()) + 1))
-    return fig, axs
+    return mir_eval.hierarchy._meet(
+        hier.itvls, hier.labels, frame_size, strict_mono=strict_mono
+    )
 
 
-def save_test_meet_mats(out_dir="scripts/figs", frame_size=0.1):
-    os.makedirs(out_dir, exist_ok=True)
-    hiers = make_hierarchies()
-    for name in hiers:
-        fig, _ = plot_meet_mats(hiers[name], frame_size=frame_size)
-        fig.savefig(os.path.join(out_dir, f"meet_mats_{name}.pdf"))
-        plt.close(fig)
+def frame_gauc(meet_mat_ref, meet_mat_est):
+    """
+    Compute ranking recall and normalizer for each query position.
 
+    Parameters:
+    -----------
+    meet_mat_ref : scipy.sparse matrix
+        Reference meet matrix
+    meet_mat_est : scipy.sparse matrix
+        Estimated meet matrix
 
-def next_step(idx=0):
-    ## Now I have the two meet mats from _meet, follow alone with the mir_eval and get to the count inversion stage.
-    ## Let's see which pixels are hitting and which pixels are missing.
-    hier1, hier2 = make_hierarchies().values()
-    meet_mat_ref = make_meet_mats(hier1, frame_size=0.5)[idx]
-    meet_mat_est = make_meet_mats(hier2, frame_size=0.5)[idx]
-
-    # Now we have the meet matrices, for each query position q, we want to see violations in relevance score rankings
+    Returns:
+    --------
+    q_ranking_recall : numpy.ndarray
+        Ranking recall for each query position
+    q_ranking_normalizer : numpy.ndarray
+        Normalizer for each query position
+    """
     q_ranking_recall = np.zeros(meet_mat_ref.shape[0])
+    q_ranking_normalizer = np.zeros(meet_mat_ref.shape[0])
+
     for q in range(meet_mat_ref.shape[0]):
         # get the q'th row
         q_relevance_ref = np.delete(meet_mat_ref.getrow(q).toarray().ravel(), q)
@@ -72,19 +53,119 @@ def next_step(idx=0):
         inversions, normalizer = mir_eval.hierarchy._compare_frame_rankings(
             q_relevance_ref, q_relevance_est, transitive=True
         )
-        q_ranking_recall[q] = 1.0 - inversions / normalizer
-        # print(f"query idx {q}: {inversions} {normalizer}")
+        q_ranking_recall[q] = (1.0 - inversions / normalizer) if normalizer else 0
+        q_ranking_normalizer[q] = normalizer
 
-    # print(q_relevance_ref, q_relevance_est)
-    print(f"Recall scores: {q_ranking_recall}")
-    plt.plot(q_ranking_recall)
-    plt.show()
+    agg_recall = np.mean(q_ranking_recall[np.where(q_ranking_normalizer != 0)])
 
-    # So I would like to see, when switching between their strictly monotonic or original setup, where the recall measures are changing the most.
-    # Let's get a curve over q for the recall scores.
+    return agg_recall, q_ranking_recall, q_ranking_normalizer
+
+
+def lmeasure_comparison(ref, est, frame_size=0.1):
+    """Compare per-frame lmeasure of two hierarchies by computing ranking recall and precision
+    for both non-monotonic and monotonic meet matrices.
+    """
+    results = {}
+    for mode in ("orig", "mono"):
+        strict_mono = True if mode == "mono" else False
+        mat_ref = make_meet_mat(ref, frame_size=frame_size, strict_mono=strict_mono)
+        mat_est = make_meet_mat(est, frame_size=frame_size, strict_mono=strict_mono)
+        recall, rank_recall, norm_recall = frame_gauc(mat_ref, mat_est)
+        precision, rank_precision, norm_precision = frame_gauc(mat_est, mat_ref)
+        results[mode] = {
+            "ref_meet": mat_ref,
+            "est_meet": mat_est,
+            "l": (precision, recall),
+            "q": (rank_precision, rank_recall),
+            "norm": (norm_precision, norm_recall),
+        }
+    return results
+
+
+def plot_comparison(ref, est, frame_size=0.5):
+    """Compare per-frame lmeasure of two hierarchies (with or without strict monotonicity) and plot the results."""
+    full_result = lmeasure_comparison(ref, est, frame_size=frame_size)
+    fig, axs = plt.subplots(
+        3,
+        4,
+        figsize=(14, 6.5),
+        sharex="all",
+        sharey="row",
+        gridspec_kw={"height_ratios": [4, 1, 1]},
+    )
+
+    # Iterate over both modes: original (non-strict) and strict monotonicity
+    for strict_mono, offset in zip((False, True), (0, 2)):
+        mode = "mono" if strict_mono else "orig"
+        # Extract scores and compute time axis
+        result = full_result[mode]
+        lp, lr = result["l"]
+        qp, qr = result["q"]
+        norm_p, norm_r = result["norm"]
+        ts = np.arange(len(qp)) * frame_size
+
+        # Top row: Plot the reference and estimated meet matrices
+        keys = ["ref_meet", "est_meet"]
+        titles = [
+            f"{mode} reference meet matrix",
+            f"{mode} estimated meet matrix",
+        ]
+        for i, (key, title) in enumerate(zip(keys, titles)):
+            ax = axs[0, offset + i]
+            librosa.display.specshow(
+                result[key].toarray(),
+                ax=ax,
+                x_axis="time",
+                y_axis="time",
+                hop_length=1,
+                sr=1 / frame_size,
+                cmap="gray_r",
+            )
+            ax.set_title(title)
+            ax.set_xlabel("")
+            # For non-mono, only clear the ylabel of the second plot
+            # For mono, clear ylabels for both plots
+            if offset or i:
+                ax.set_ylabel("")
+
+        # Second row: Plot norm curves
+        axs[1, offset].plot(ts, norm_r)
+        axs[1, offset].set_title("total significant pairs in reference")
+        axs[1, offset + 1].plot(ts, norm_p)
+        axs[1, offset + 1].set_title("total specificity in estimation")
+
+        # Third row: Plot per-frame scores and add horizontal lines
+        axs[2, offset].plot(ts, qr)
+        axs[2, offset].set_title("per frame recall")
+        axs[2, offset].set_xlabel("Time")
+        axs[2, offset + 1].plot(ts, qp)
+        axs[2, offset + 1].set_title("per frame precision")
+        axs[2, offset + 1].set_xlabel("Time")
+
+        axs[2, offset].hlines(
+            lr,
+            ts[0],
+            ts[-1],
+            linestyles="dashed",
+            color="r",
+            label=f"{lr:.2f}",
+        )
+        axs[2, offset].legend()
+        axs[2, offset + 1].hlines(
+            lp,
+            ts[0],
+            ts[-1],
+            linestyles="dashed",
+            color="r",
+            label=f"{lp:.2f}",
+        )
+        axs[2, offset + 1].legend()
+
+    fig.tight_layout()
+    return fig, axs
 
 
 if __name__ == "__main__":
-    # save_test_meet_mats(out_dir="scripts/figs", frame_size=0.5)
-    next_step(0)
-    next_step(1)
+    hier_ref, hier_est = list(make_hierarchies().values())
+    fig, axs = plot_comparison(hier_ref, hier_est, frame_size=0.1)
+    fig.savefig("scripts/figs/meet_mats_compare_both.pdf")
