@@ -2,7 +2,7 @@ import mir_eval
 import numpy as np
 from collections import defaultdict
 
-from scipy import linalg
+from scipy import linalg, stats
 from sklearn.cluster import KMeans
 
 
@@ -14,21 +14,31 @@ def suppress_mir_eval_warnings():
 
 
 def quantize(data, quantize_method="percentile", quant_bins=8):
+    # method can me 'percentile' 'kmeans'. Everything else will be no quantize
     data_shape = data.shape
     if quantize_method == "percentile":
-        # Implement percentile quantization
-        quantiles = np.percentile(data, np.linspace(0, 100, quant_bins + 1))
-        quant_data_flat = np.digitize(data, quantiles) - 1
+        bins = [
+            np.percentile(data[data > 0], bin * (100.0 / (quant_bins - 1)))
+            for bin in range(quant_bins)
+        ]
+        # print(bins)
+        quant_data_flat = np.digitize(data.flatten(), bins=bins, right=False)
     elif quantize_method == "kmeans":
-        # Implement k-means quantization
-        from sklearn.cluster import KMeans
+        kmeans_clusterer = KMeans(n_clusters=quant_bins, n_init=50, max_iter=500)
+        quantized_non_zeros = kmeans_clusterer.fit_predict(data[data > 0][:, None])
+        # make sure the kmeans group are sorted with asending centroid and relabel
 
-        kmeans = KMeans(n_clusters=quant_bins)
-        quant_data_flat = kmeans.fit_predict(data.reshape(-1, 1))
+        nco = stats.rankdata(kmeans_clusterer.cluster_centers_.flatten())
+        # print(kmeans_clusterer.cluster_centers_, nco)
+        quantized_non_zeros = np.array([nco[g] for g in quantized_non_zeros], dtype=int)
+
+        quant_data = np.zeros(data.shape)
+        quant_data[data > 0] = quantized_non_zeros
+        quant_data_flat = quant_data.flatten()
     elif quantize_method is None:
         quant_data_flat = data.flatten()
     else:
-        raise ValueError("Invalid quantization method specified.")
+        raise ValueError("bad quantize method")
 
     return quant_data_flat.reshape(data_shape)
 
@@ -36,16 +46,17 @@ def quantize(data, quantize_method="percentile", quant_bins=8):
 def laplacian(rec_mat, normalization="random_walk"):
     degree_matrix = np.diag(np.sum(rec_mat, axis=1))
     unnormalized_laplacian = degree_matrix - rec_mat
+    # Compute the Random Walk normalized Laplacian matrix
     if normalization == "random_walk":
-        d_inv = np.diag(1.0 / np.sqrt(np.sum(rec_mat, axis=1)))
-        return d_inv @ unnormalized_laplacian @ d_inv
+        degree_inv = np.linalg.inv(degree_matrix)
+        return degree_inv @ unnormalized_laplacian
     elif normalization == "symmetrical":
-        d_inv = np.diag(1.0 / np.sum(rec_mat, axis=1))
-        return d_inv @ unnormalized_laplacian
+        sqrt_degree_inv = np.linalg.inv(np.sqrt(degree_matrix))
+        return sqrt_degree_inv @ unnormalized_laplacian @ sqrt_degree_inv
     elif normalization is None:
         return unnormalized_laplacian
     else:
-        raise ValueError("Invalid normalization type specified.")
+        raise NotImplementedError(f"bad laplacian normalization mode: {normalization}")
 
 
 # from bmcfee/lsd_viz
@@ -93,8 +104,9 @@ def reindex(hierarchy):
     return new_hier
 
 
-def _eigen_gap_scluster(M, k=None, min_k=1):
-    # scluster with k groups. default is eigen gap.
+def eigen_gap_scluster(M, k=None, min_k=1):
+    # Spectral clustering (scluster) with k groups. If k is None, determine the number of clusters
+    # by identifying a significant jump (eigen gap) in the sorted eigenvalues of the Laplacian matrix.
     L = laplacian(M, normalization="random_walk")
     # Assuming L_rw is your random walk normalized Laplacian matrix
     evals, evecs = linalg.eig(L)
@@ -118,8 +130,99 @@ def _eigen_gap_scluster(M, k=None, min_k=1):
     return KM.fit_predict(membership), k
 
 
-def _resample_matrix(matrix, old_bounds, new_bounds):
-    """Resample the given matrix based on new boundaries."""
+import numpy as np
+
+
+def slice_matrix(matrix, old_bounds, new_bounds):
+    """
+    Slice the input matrix so that its grid is defined on the union of old_bounds and new_bounds.
+    Each original cell is partitioned according to its fractional overlap with the new grid,
+    assuming a uniform distribution within the cell.
+
+    Parameters
+    ----------
+    matrix : numpy.ndarray
+        Original 2D array with shape (n, n) defined over old_bounds intervals.
+    old_bounds : array-like
+        Original bin boundaries (length n+1).
+    new_bounds : array-like
+        New boundaries to insert.
+
+    Returns
+    -------
+    sliced_matrix : numpy.ndarray
+        New 2D array with shape (m, m), where m = len(sliced_boundaries)-1, with values
+        distributed by fractional area.
+    sliced_bounds : numpy.ndarray
+        The sorted union of old_bounds and new_bounds.
+    """
+    # Union of boundaries
+    sliced_bounds = np.unique(np.concatenate([old_bounds, new_bounds]))
+    m = len(sliced_bounds) - 1
+    sliced_matrix = np.zeros((m, m))
+
+    n = len(old_bounds) - 1
+    # Loop over original cells
+    for i in range(n):
+        r0, r1 = old_bounds[i], old_bounds[i + 1]
+        # Find indices in sliced_bounds that lie within [r0, r1]
+        start_r = np.searchsorted(sliced_bounds, r0, side="left")
+        end_r = np.searchsorted(sliced_bounds, r1, side="right") - 1
+        for j in range(n):
+            c0, c1 = old_bounds[j], old_bounds[j + 1]
+            start_c = np.searchsorted(sliced_bounds, c0, side="left")
+            end_c = np.searchsorted(sliced_bounds, c1, side="right") - 1
+
+            cell_val = matrix[i, j]
+            cell_height = r1 - r0
+            cell_width = c1 - c0
+            # Distribute the original cell's value into sub-cells by area fraction
+            for r in range(start_r, end_r):
+                dr = sliced_bounds[r + 1] - sliced_bounds[r]
+                frac_r = dr / cell_height
+                for c in range(start_c, end_c):
+                    dc = sliced_bounds[c + 1] - sliced_bounds[c]
+                    frac_c = dc / cell_width
+                    sliced_matrix[r, c] += cell_val * frac_r * frac_c
+    return sliced_matrix, sliced_bounds
+
+
+def resample_matrix(matrix, old_bounds, new_bounds):
+    """
+    Resample a matrix based on new boundary definitions.
+
+    This function takes an input matrix with boundaries defined by old_bounds,
+    and resamples it to a new matrix based on new_bounds. The values in the
+    new matrix are calculated by summing the corresponding regions from the
+    original matrix.
+
+    Parameters
+    ----------
+    matrix : numpy.ndarray
+        The input matrix to be resampled. Should be a 2D numpy array.
+    old_bounds : array-like
+        The boundaries/edges that define the original matrix's bins or cells.
+        Length should be number of rows/columns + 1.
+    new_bounds : array-like
+        The desired boundaries for the resampled matrix.
+
+    Returns
+    -------
+    numpy.ndarray
+        A new matrix with dimensions (len(new_bounds)-1, len(new_bounds)-1),
+        containing the summed values from the original matrix based on the
+        mapping between old and new boundaries.
+
+    Notes
+    -----
+    The function assumes that new_bounds values are within the range of old_bounds.
+    Each cell (i,j) in the new matrix contains the sum of all cells from the original
+    matrix that fall within the corresponding region defined by new_bounds[i:i+2]
+    and new_bounds[j:j+2].
+    """
+    if set(new_bounds) - set(old_bounds):
+        matrix, old_bounds = slice_matrix(matrix, old_bounds, new_bounds)
+
     indices = np.searchsorted(old_bounds, new_bounds)
     new_size = len(new_bounds) - 1
     new_matrix = np.zeros((new_size, new_size))
@@ -131,3 +234,47 @@ def _resample_matrix(matrix, old_bounds, new_bounds):
             new_matrix[i, j] = np.sum(matrix[top:bottom, left:right])
 
     return new_matrix
+
+
+def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame"):
+    """
+    Compute ranking recall and normalizer for each query position.
+
+    Parameters:
+    -----------
+    meet_mat_ref : scipy.sparse matrix
+        Reference meet matrix
+    meet_mat_est : scipy.sparse matrix
+        Estimated meet matrix
+    agg_mode : str
+        Aggregation mode. 'frame' for frame-wise aggregation, 'triplet' for triplet-wise aggregation.
+
+    Returns:
+    --------
+    q_ranking_recall : numpy.ndarray
+        Ranking recall for each query position
+    q_ranking_normalizer : numpy.ndarray
+        Normalizer for each query position
+    """
+    q_ranking_recall = np.zeros(meet_mat_ref.shape[0])
+    q_ranking_normalizer = np.zeros(meet_mat_ref.shape[0])
+
+    for q in range(meet_mat_ref.shape[0]):
+        # get the q'th row
+        q_relevance_ref = np.delete(meet_mat_ref.getrow(q).toarray().ravel(), q)
+        q_relevance_est = np.delete(meet_mat_est.getrow(q).toarray().ravel(), q)
+        # count ranking violations
+        inversions, normalizer = mir_eval.hierarchy._compare_frame_rankings(
+            q_relevance_ref, q_relevance_est, transitive=True
+        )
+        q_ranking_recall[q] = (1.0 - inversions / normalizer) if normalizer else 0
+        q_ranking_normalizer[q] = normalizer
+
+    if agg_mode == "triplet":
+        agg_recall = np.sum(q_ranking_recall) / np.sum(q_ranking_normalizer)
+    elif agg_mode == "frame":
+        agg_recall = np.mean(q_ranking_recall[np.where(q_ranking_normalizer != 0)])
+    else:
+        raise ValueError("Invalid aggregation mode specified.")
+
+    return agg_recall, q_ranking_recall, q_ranking_normalizer

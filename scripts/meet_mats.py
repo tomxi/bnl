@@ -1,8 +1,10 @@
 # I want to plot some meet mats for hier annotations returned by mir_eval
 # I want to see where the hits and the misses are between two meet matrix.
 
+
 import bnl, tests
-import mir_eval, os, librosa
+from bnl.utils import gauc
+import mir_eval, librosa
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -24,54 +26,17 @@ def make_meet_mat(hier, frame_size=0.1, strict_mono=False):
     )
 
 
-def frame_gauc(meet_mat_ref, meet_mat_est):
-    """
-    Compute ranking recall and normalizer for each query position.
-
-    Parameters:
-    -----------
-    meet_mat_ref : scipy.sparse matrix
-        Reference meet matrix
-    meet_mat_est : scipy.sparse matrix
-        Estimated meet matrix
-
-    Returns:
-    --------
-    q_ranking_recall : numpy.ndarray
-        Ranking recall for each query position
-    q_ranking_normalizer : numpy.ndarray
-        Normalizer for each query position
-    """
-    q_ranking_recall = np.zeros(meet_mat_ref.shape[0])
-    q_ranking_normalizer = np.zeros(meet_mat_ref.shape[0])
-
-    for q in range(meet_mat_ref.shape[0]):
-        # get the q'th row
-        q_relevance_ref = np.delete(meet_mat_ref.getrow(q).toarray().ravel(), q)
-        q_relevance_est = np.delete(meet_mat_est.getrow(q).toarray().ravel(), q)
-        # count ranking violations
-        inversions, normalizer = mir_eval.hierarchy._compare_frame_rankings(
-            q_relevance_ref, q_relevance_est, transitive=True
-        )
-        q_ranking_recall[q] = (1.0 - inversions / normalizer) if normalizer else 0
-        q_ranking_normalizer[q] = normalizer
-
-    agg_recall = np.mean(q_ranking_recall[np.where(q_ranking_normalizer != 0)])
-
-    return agg_recall, q_ranking_recall, q_ranking_normalizer
-
-
 def lmeasure_comparison(ref, est, frame_size=0.1):
     """Compare per-frame lmeasure of two hierarchies by computing ranking recall and precision
     for both non-monotonic and monotonic meet matrices.
     """
-    results = {}
-    for mode in ("orig", "mono"):
+    results = dict(orig={}, mono={})
+    for mode in results.keys():
         strict_mono = True if mode == "mono" else False
         mat_ref = make_meet_mat(ref, frame_size=frame_size, strict_mono=strict_mono)
         mat_est = make_meet_mat(est, frame_size=frame_size, strict_mono=strict_mono)
-        recall, rank_recall, norm_recall = frame_gauc(mat_ref, mat_est)
-        precision, rank_precision, norm_precision = frame_gauc(mat_est, mat_ref)
+        recall, rank_recall, norm_recall = gauc(mat_ref, mat_est)
+        precision, rank_precision, norm_precision = gauc(mat_est, mat_ref)
         results[mode] = {
             "ref_meet": mat_ref,
             "est_meet": mat_est,
