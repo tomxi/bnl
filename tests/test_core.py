@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
-from bnl.core import S, H, multi2H, levels2H
-from bnl.formatting import mireval2multi, multi2mireval
+from bnl.core import S, multi2H
+from bnl.formatting import mireval2multi
 import tests
 
 

@@ -228,11 +228,7 @@ def multi_seg(
         axs[-1].set_xlabel("Time")
 
     if legend_ncol:
-        bbox_y = (
-            legend_bbox_y
-            if legend_bbox_y is not None
-            else -0.02 * (len(legend_handles) // legend_ncol - 2)
-        )
+        bbox_y = legend_bbox_y if legend_bbox_y is not None else 0.0
         fig.legend(
             handles=legend_handles,
             loc="lower center",
@@ -241,7 +237,11 @@ def multi_seg(
         )
     if y_label:
         fig.text(0.94, 0.55, "Segmentation Levels", va="center", rotation="vertical")
-    bottom_margin = np.abs(bbox_y) + 0.15 if bottom_margin is None else bottom_margin
+    bottom_margin = (
+        (len(legend_handles) // legend_ncol) * 0.03 + 0.1
+        if bottom_margin is None
+        else bottom_margin
+    )
     bottom_margin = bottom_margin if legend_ncol else 0.0
     fig.tight_layout(rect=[0, bottom_margin, 0.95, 1])
     if debug:
