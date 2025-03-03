@@ -146,13 +146,7 @@ if __name__ == "__main__":
     fig.savefig("scripts/figs/h3_mono_b.pdf")
     h3 = make_hierarchies()["h3"]
     h3_mono_l = h3.force_mono_L()
-    fig, axs = h3_mono_l.plot(
-        text=True,
-        relabel=False,
-        legend_ncol=5,
-        legend_bbox_y=-0.013,
-        bottom_margin=0.22,
-    )
+    fig, axs = h3_mono_l.plot(text=True, relabel=False, legend_ncol=5)
     fig.savefig("scripts/figs/h3_mono_l.pdf")
     fig, axs = h3_mono_l.plot(text=True, relabel=True)
     fig.savefig("scripts/figs/h3_mono_l_relabel.pdf")

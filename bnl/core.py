@@ -326,11 +326,9 @@ class H:
             return self_mono_B
 
         ## Start from the first level and work down
-        new_levels = []
-        for level in self_mono_B.levels:
-            if len(new_levels) == 0:
-                new_levels.append(level)
-                continue
+        new_levels = [self_mono_B.levels[0]]
+        for i in range(1, self_mono_B.d):
+            level = self_mono_B.levels[i]
             # Prepend parent labels to child labels for each segment in the child
             parent_level = new_levels[-1]
             new_child_labels = [
