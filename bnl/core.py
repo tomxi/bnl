@@ -2,10 +2,10 @@ import numpy as np
 from scipy import stats
 import librosa, mir_eval
 
-from .utils import _eigen_gap_scluster, _resample_matrix
+from .utils import eigen_gap_scluster, resample_matrix, cluster_boundaries
 from .viz import multi_seg
-from .utils import quantize
 from .formatting import mireval2multi, multi2mireval
+from mir_eval.util import intervals_to_boundaries, boundaries_to_intervals
 
 
 class S:
@@ -216,7 +216,7 @@ class H:
         all_bs = np.array(sorted(set(self.beta).union(bs)))
         seg_dur = all_bs[1:] - all_bs[:-1]
         seg_agreement_area = np.outer(seg_dur, seg_dur)
-        return _resample_matrix(
+        return resample_matrix(
             seg_agreement_area * self.Ahat(bs=all_bs, weights=level_weights), all_bs, bs
         )
 
@@ -266,7 +266,7 @@ class H:
         boundaries = np.unique(np.concatenate(([0, len(novelty) - 1], boundaries)))
 
         # Convert boundaries to hierarchical intervals
-        intervals = _cluster_boundaries(boundaries, novelty, self.ticks, depth)
+        intervals = cluster_boundaries(boundaries, novelty, self.ticks, depth)
 
         return H(intervals, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
@@ -275,9 +275,9 @@ class H:
         current_k = min_k
         labs = []
         for lvl_itvls in itvls:
-            bs = mir_eval.util.intervals_to_boundaries(lvl_itvls)
+            bs = intervals_to_boundaries(lvl_itvls)
             M = self.Mhat(bs=bs)
-            lab, current_k = _eigen_gap_scluster(M, min_k=current_k)
+            lab, current_k = eigen_gap_scluster(M, min_k=current_k)
             labs.append(lab)
         return H(itvls, labs, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
@@ -289,39 +289,25 @@ class H:
         # Decode labels
         return self.decode_L(new_H.itvls, min_k=min_k)
 
-
-def _cluster_boundaries(boundaries, novelty, ticks, depth):
-    """Convert boundaries with novelty values into hierarchical intervals of specified depth.
-
-    Args:
-        boundaries (np.ndarray): Array of boundary indices
-        novelty (np.ndarray): Novelty curve values
-        ticks (np.ndarray): Time points corresponding to novelty curve
-        depth (int): Maximum number of hierarchical levels
-
-    Returns:
-        list: List of interval arrays, one per hierarchical level
-    """
-    # Determine depth based on unique boundary salience
-    depth = min(depth, len(np.unique(novelty[boundaries])))
-
-    # Quantize boundary salience via KMeans
-    boundary_salience = quantize(
-        novelty[boundaries], quantize_method="kmeans", quant_bins=depth
-    )
-    rated_boundaries = {
-        round(ticks[b], 3): s for b, s in zip(boundaries, boundary_salience)
-    }
-
-    # Create hierarchical intervals based on salience thresholds
-    intervals = []
-    for l in range(depth):
-        salience_thresh = depth - l
-        boundaries_at_level = [
-            b for b in rated_boundaries if rated_boundaries[b] >= salience_thresh
-        ]
-        intervals.append(mir_eval.util.boundaries_to_intervals(boundaries_at_level))
-    return intervals
+    def force_mono_B(self):
+        """Force monotonic boundaries across levels.
+        If a boundary is present in a parent level, it has to appear in a child level.
+        """
+        ## Start from the first level and work down
+        new_levels = []
+        for level in self.levels:
+            if len(new_levels) == 0:
+                new_levels.append(level)
+                continue
+            parent_boundaries = new_levels[-1].beta
+            child_boundaries = level.beta
+            new_child_boundaries = sorted(
+                list(set(parent_boundaries).union(child_boundaries))
+            )
+            new_child_labels = [level.L(b) for b in new_child_boundaries[:-1]]
+            new_child_itvls = boundaries_to_intervals(new_child_boundaries)
+            new_levels.append(S(new_child_itvls, new_child_labels))
+        return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
 
 def levels2H(levels, sr=10, Bhat_bw=1):

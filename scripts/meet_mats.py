@@ -15,7 +15,11 @@ def make_hierarchies():
         [tests.ITVLS3, tests.ITVLS4, tests.ITVLS5],
         [tests.LABELS3, tests.LABELS4, tests.LABELS5],
     )
-    return dict(h1=hier1, h2=hier2)
+    hier3 = bnl.H(
+        [tests.ITVLS1, tests.ITVLS2, tests.ITVLS3, tests.ITVLS4, tests.ITVLS5],
+        [tests.LABELS1, tests.LABELS2, tests.LABELS3, tests.LABELS4, tests.LABELS5],
+    )
+    return dict(h1=hier1, h2=hier2, h3=hier3)
 
 
 def make_meet_mat(hier, frame_size=0.1, strict_mono=False):
@@ -131,6 +135,12 @@ def plot_comparison(ref, est, frame_size=0.5):
 
 
 if __name__ == "__main__":
-    hier_ref, hier_est = list(make_hierarchies().values())
-    fig, axs = plot_comparison(hier_ref, hier_est, frame_size=0.1)
-    fig.savefig("scripts/figs/meet_mats_compare_both.pdf")
+    # hier_ref, hier_est = list(make_hierarchies().values())
+    # fig, axs = plot_comparison(hier_ref, hier_est, frame_size=0.1)
+    # fig.savefig("scripts/figs/meet_mats_compare_both.pdf")
+    h3 = make_hierarchies()["h3"]
+    fig, axs = h3.plot(text=True, relabel=False, figsize=(10, 5))
+    fig.savefig("scripts/figs/h3.pdf")
+    h3_mono_b = h3.force_mono_B()
+    fig, axs = h3_mono_b.plot(text=True, relabel=False, figsize=(10, 5))
+    fig.savefig("scripts/figs/h3_mono_b.pdf")

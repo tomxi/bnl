@@ -21,6 +21,32 @@ def scatter_scores(
     ylabel: str = "y label",
     ax: any = None,
 ) -> matplotlib.axes._axes.Axes:
+    """
+    Create a scatter plot of two data series.
+
+    This function plots two data series as a scatter plot, with optional customizations for title, axis labels, and using an existing axes object.
+    It also adds a diagonal line from (0,0) to (1,1), sets equal aspect ratio, and limits both axes to the range [0, 1].
+
+    Parameters
+    ----------
+    x_data : pd.Series
+        Data for x-axis values
+    y_data : pd.Series
+        Data for y-axis values
+    title : str, optional
+        Plot title, defaults to "L scores per track"
+    xlabel : str, optional
+        X-axis label, defaults to "x label"
+    ylabel : str, optional
+        Y-axis label, defaults to "y label"
+    ax : matplotlib.axes._axes.Axes, optional
+        Existing axes to plot on. If None, creates a new figure and axes.
+
+    Returns
+    -------
+    matplotlib.axes._axes.Axes
+        The axes object containing the scatter plot
+    """
     if ax is None:
         _, ax = plt.subplots()
 
@@ -41,6 +67,34 @@ def scatter_scores(
 
 
 def assign_label_styles(labels, **kwargs):
+    """
+    Creates a mapping of labels to visual style properties for consistent visualization.
+
+    This function processes a list of labels (which may contain nested lists),
+    extracts unique labels, sorts them, and assigns consistent visual styles
+    (like colors and hatch patterns) to each label.
+
+    Parameters
+    ----------
+    labels : list
+        List of labels (can contain nested lists). Duplicate labels will be handled only once.
+    **kwargs : dict
+        Additional style properties to apply to all labels. These will override
+        the default styles if there are conflicts.
+
+    Returns
+    -------
+    dict
+        A dictionary mapping each unique label to its style properties.
+        Each entry contains properties like 'facecolor', 'edgecolor', 'linewidth',
+        'hatch', and 'label'.
+
+    Notes
+    -----
+    - If there are 80 or fewer unique labels, uses 'tab10' colormap with 8 hatch patterns.
+    - If there are more than 80 unique labels, uses 'tab20' colormap with 15 hatch patterns.
+    - Default styles include white edgecolor and linewidth of 1.
+    """
     labels = labels.copy()
     unique_labels = []
     while labels:
@@ -96,13 +150,14 @@ def assign_label_styles(labels, **kwargs):
     return seg_map
 
 
-def segments(
+def flat_segment(
     intervals,
     labels,
     ax=None,
     text=False,
     style_map=None,
 ):
+    """Plot a single layer of flat segmentation."""
     if ax is None:
         fig = plt.gcf()
         ax = fig.gca()
@@ -153,7 +208,7 @@ def multi_seg(
     legend_handles = [mpatches.Patch(**style) for style in style_map.values()]
 
     for level, (itvl, lbl) in enumerate(hier):
-        ax = segments(itvl, lbl, ax=axs[level], style_map=style_map, text=text)
+        ax = flat_segment(itvl, lbl, ax=axs[level], style_map=style_map, text=text)
         if y_label:
             ax.set_yticks([0.5])
             ax.set_yticklabels([level + 1])
@@ -174,11 +229,11 @@ def multi_seg(
             handles=legend_handles,
             loc="lower center",
             ncol=legend_ncol,
-            bbox_to_anchor=(0.5, -0.06 * (len(legend_handles) // legend_ncol + 2.2)),
+            # bbox_to_anchor=(0.5, -0.06 * (len(legend_handles) // legend_ncol + 2.2)),
         )
     if y_label:
         fig.text(0.94, 0.55, "Segmentation Levels", va="center", rotation="vertical")
-    # fig.tight_layout(rect=[0,0,0.95,1])
+    fig.tight_layout(rect=[0, 0, 0.95, 1])
     return fig, axs
 
 
@@ -192,6 +247,7 @@ def heatmap(
     figsize=(5, 5),
     no_deci=False,
 ):
+    """Plot a heatmap of a 2D DataArray."""
     if ax is None:
         fig, ax = plt.subplots(figsize=figsize)
 

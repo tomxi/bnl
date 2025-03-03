@@ -130,9 +130,6 @@ def eigen_gap_scluster(M, k=None, min_k=1):
     return KM.fit_predict(membership), k
 
 
-import numpy as np
-
-
 def slice_matrix(matrix, old_bounds, new_bounds):
     """
     Slice the input matrix so that its grid is defined on the union of old_bounds and new_bounds.
@@ -278,3 +275,37 @@ def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame"):
         raise ValueError("Invalid aggregation mode specified.")
 
     return agg_recall, q_ranking_recall, q_ranking_normalizer
+
+
+def cluster_boundaries(boundaries, novelty, ticks, depth):
+    """Convert boundaries with novelty values into hierarchical intervals of specified depth.
+
+    Args:
+        boundaries (np.ndarray): Array of boundary indices
+        novelty (np.ndarray): Novelty curve values
+        ticks (np.ndarray): Time points corresponding to novelty curve
+        depth (int): Maximum number of hierarchical levels
+
+    Returns:
+        list: List of interval arrays, one per hierarchical level
+    """
+    # Determine depth based on unique boundary salience
+    depth = min(depth, len(np.unique(novelty[boundaries])))
+
+    # Quantize boundary salience via KMeans
+    boundary_salience = quantize(
+        novelty[boundaries], quantize_method="kmeans", quant_bins=depth
+    )
+    rated_boundaries = {
+        round(ticks[b], 3): s for b, s in zip(boundaries, boundary_salience)
+    }
+
+    # Create hierarchical intervals based on salience thresholds
+    intervals = []
+    for l in range(depth):
+        salience_thresh = depth - l
+        boundaries_at_level = [
+            b for b in rated_boundaries if rated_boundaries[b] >= salience_thresh
+        ]
+        intervals.append(mir_eval.util.boundaries_to_intervals(boundaries_at_level))
+    return intervals
