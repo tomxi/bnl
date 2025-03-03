@@ -139,8 +139,20 @@ if __name__ == "__main__":
     # fig, axs = plot_comparison(hier_ref, hier_est, frame_size=0.1)
     # fig.savefig("scripts/figs/meet_mats_compare_both.pdf")
     h3 = make_hierarchies()["h3"]
-    fig, axs = h3.plot(text=True, relabel=False, figsize=(10, 5))
+    fig, axs = h3.plot(text=True, relabel=False)
     fig.savefig("scripts/figs/h3.pdf")
     h3_mono_b = h3.force_mono_B()
-    fig, axs = h3_mono_b.plot(text=True, relabel=False, figsize=(10, 5))
+    fig, axs = h3_mono_b.plot(text=True, relabel=False)
     fig.savefig("scripts/figs/h3_mono_b.pdf")
+    h3 = make_hierarchies()["h3"]
+    h3_mono_l = h3.force_mono_L()
+    fig, axs = h3_mono_l.plot(
+        text=True,
+        relabel=False,
+        legend_ncol=5,
+        legend_bbox_y=-0.013,
+        bottom_margin=0.22,
+    )
+    fig.savefig("scripts/figs/h3_mono_l.pdf")
+    fig, axs = h3_mono_l.plot(text=True, relabel=True)
+    fig.savefig("scripts/figs/h3_mono_l_relabel.pdf")

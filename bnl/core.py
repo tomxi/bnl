@@ -197,11 +197,11 @@ class H:
         )
         return np.max(indexed_Ahats, axis=0)
 
-    def has_monoA(self):
+    def has_mono_L(self):
         """Check if labels are monotonic across levels."""
         return np.allclose(self.A(bs=self.beta), self.Astar(bs=self.beta))
 
-    def has_monoB(self):
+    def has_mono_B(self):
         """Check if boundaries are monotonic across levels."""
         return all(
             set(self.levels[i - 1].beta).issubset(self.levels[i].beta)
@@ -293,28 +293,61 @@ class H:
         """Force monotonic boundaries across levels.
         If a boundary is present in a parent level, it has to appear in a child level.
         """
+        ## check if boundaries are monotonic already
+        if self.has_mono_B():
+            return self
+
         ## Start from the first level and work down
         new_levels = []
         for level in self.levels:
             if len(new_levels) == 0:
                 new_levels.append(level)
                 continue
-            parent_boundaries = new_levels[-1].beta
-            child_boundaries = level.beta
-            new_child_boundaries = sorted(
-                list(set(parent_boundaries).union(child_boundaries))
-            )
-            new_child_labels = [level.L(b) for b in new_child_boundaries[:-1]]
-            new_child_itvls = boundaries_to_intervals(new_child_boundaries)
-            new_levels.append(S(new_child_itvls, new_child_labels))
+            parent_bounds = new_levels[-1].beta
+            child_bounds = level.beta
+            if set(parent_bounds).issubset(child_bounds):
+                new_levels.append(level)
+            else:
+                new_child_bounds = sorted(list(set(parent_bounds).union(child_bounds)))
+                new_child_labels = [level.L(b) for b in new_child_bounds[:-1]]
+                new_child_itvls = boundaries_to_intervals(new_child_bounds)
+                new_levels.append(S(new_child_itvls, new_child_labels))
+        return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
+
+    def force_mono_L(self):
+        """Force monotonic labels across levels.
+        We do this by prepending parent labels to child labels.
+        """
+        ## First check boundary monotonicity, and force it if necessary
+        self_mono_B = self if self.has_mono_B() else self.force_mono_B()
+
+        ## Now we check label monotonicity
+        if self_mono_B.has_mono_L():
+            return self_mono_B
+
+        ## Start from the first level and work down
+        new_levels = []
+        for level in self_mono_B.levels:
+            if len(new_levels) == 0:
+                new_levels.append(level)
+                continue
+            # Prepend parent labels to child labels for each segment in the child
+            parent_level = new_levels[-1]
+            new_child_labels = [
+                parent_level.L(b) + "." + level.L(b) for b in level.beta[:-1]
+            ]
+            new_levels.append(S(level.itvls, new_child_labels))
         return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
 
 def levels2H(levels, sr=10, Bhat_bw=1):
+    """Convert a list of levels to a hierarchical structure."""
     itvls = [l.itvls for l in levels]
     lbls = [l.labels for l in levels]
     return H(itvls, lbls, sr=sr, Bhat_bw=Bhat_bw)
 
 
 def multi2H(anno, sr=10, Bhat_bw=1):
-    return H(*multi2mireval(anno), sr=sr, Bhat_bw=Bhat_bw)
+    """Convert multiple segments to hierarchical format."""
+    segments = multi2mireval(anno)
+    return H(*segments, sr=sr, Bhat_bw=Bhat_bw)
