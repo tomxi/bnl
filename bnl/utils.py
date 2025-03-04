@@ -5,6 +5,8 @@ from collections import defaultdict
 from scipy import linalg, stats
 from sklearn.cluster import KMeans
 
+from .expand_hier import expand_hierarchy
+
 
 # Suppress mir_eval warnings
 def suppress_mir_eval_warnings():
