@@ -5,7 +5,7 @@ import numpy as np
 def multi2hier(anno) -> list:
     n_lvl_list = [obs.value["level"] for obs in anno]
     n_lvl = max(n_lvl_list) + 1
-    hier = [[[], []] for i in range(n_lvl)]
+    hier = [[[], []] for _ in range(n_lvl)]
     for obs in anno:
         lvl = obs.value["level"]
         label = obs.value["label"]
@@ -17,8 +17,8 @@ def multi2hier(anno) -> list:
 
 def hier2multi(hier) -> jams.Annotation:
     anno = jams.Annotation(namespace="multi_segment")
-    anno.duration = hier[0][0][-1][-1]
-    anno.time = hier[0][0][0][0]
+    anno.duration = round(hier[0][0][-1][-1], 3)
+    anno.time = round(hier[0][0][0][0], 3)
     for layer, (intervals, labels) in enumerate(hier):
         for ival, label in zip(intervals, labels):
             anno.append(
@@ -79,7 +79,7 @@ def multi2mirevalflat(multi_anno, layer=-1):
 
 def mirevalflat2openseg(itvls, labels):
     anno = jams.Annotation(namespace="segment_open")
-    duration = itvls[-1][-1]
+    duration = round(itvls[-1][-1], 3)
     for ival, label in zip(itvls, labels):
         anno.append(
             time=round(ival[0], 3),

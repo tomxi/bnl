@@ -109,12 +109,15 @@ class H:
         end_points = [level[-1][-1] for level in itvls]
 
         if len(set(start_points)) != 1 or len(set(end_points)) != 1:
-            raise ValueError(
-                f"All levels must share same start/end points. Got starts {start_points} and ends {end_points}."
-            )
+            # Make all level start/end points the same
+            start_point = min(start_points)
+            end_point = max(end_points)
+            for level in itvls:
+                level[0][0] = start_point
+                level[-1][-1] = end_point
 
         if labels is None:
-            labels = itvls
+            labels = [str(l) for l in itvls]
         self.itvls = itvls
         self.labels = labels
         self.anno = mireval2multi(itvls, labels)

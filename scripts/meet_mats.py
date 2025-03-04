@@ -30,7 +30,7 @@ def make_meet_mat(hier, frame_size=0.1, strict_mono=False):
     )
 
 
-def lmeasure_comparison(ref, est, frame_size=0.1):
+def lmeasure_comparison(ref: bnl.H, est: bnl.H, frame_size=0.1):
     """Compare per-frame lmeasure of two hierarchies by computing ranking recall and precision
     for both non-monotonic and monotonic meet matrices.
     """
@@ -51,7 +51,7 @@ def lmeasure_comparison(ref, est, frame_size=0.1):
     return results
 
 
-def plot_comparison(ref, est, frame_size=0.5):
+def plot_comparison(ref: bnl.H, est: bnl.H, frame_size=0.5):
     """Compare per-frame lmeasure of two hierarchies (with or without strict monotonicity) and plot the results."""
     full_result = lmeasure_comparison(ref, est, frame_size=frame_size)
     fig, axs = plt.subplots(
@@ -135,18 +135,68 @@ def plot_comparison(ref, est, frame_size=0.5):
 
 
 if __name__ == "__main__":
+    h_dict = make_hierarchies()
+    h3 = h_dict["h3"]
+    h2 = h_dict["h2"]
+    h1 = h_dict["h1"]
     # hier_ref, hier_est = list(make_hierarchies().values())
     # fig, axs = plot_comparison(hier_ref, hier_est, frame_size=0.1)
     # fig.savefig("scripts/figs/meet_mats_compare_both.pdf")
-    h3 = make_hierarchies()["h3"]
-    fig, axs = h3.plot(text=True, relabel=False)
-    fig.savefig("scripts/figs/h3.pdf")
+    # fig, axs = h3.plot(text=True, relabel=False)
+    # fig.savefig("scripts/figs/h3.pdf")
     h3_mono_b = h3.force_mono_B()
-    fig, axs = h3_mono_b.plot(text=True, relabel=False)
-    fig.savefig("scripts/figs/h3_mono_b.pdf")
-    h3 = make_hierarchies()["h3"]
-    h3_mono_l = h3.force_mono_L()
-    fig, axs = h3_mono_l.plot(text=True, relabel=False, legend_ncol=5)
-    fig.savefig("scripts/figs/h3_mono_l.pdf")
-    fig, axs = h3_mono_l.plot(text=True, relabel=True)
-    fig.savefig("scripts/figs/h3_mono_l_relabel.pdf")
+    # fig, axs = h3_mono_b.plot(text=True, relabel=False)
+    # fig.savefig("scripts/figs/h3_mono_b.pdf")
+    # h3_mono_l = h3.force_mono_L()
+    # fig, axs = h3_mono_l.plot(text=True, relabel=False, legend_ncol=5)
+    # fig.savefig("scripts/figs/h3_mono_l.pdf")
+    # fig, axs = h3_mono_l.plot(text=True, relabel=True)
+    # fig.savefig("scripts/figs/h3_mono_l_relabel.pdf")
+
+    # Now I want to look at how T-measure's are doing.
+    print(
+        mir_eval.hierarchy.tmeasure(
+            h1.itvls,
+            h2.itvls,
+            transitive=False,
+        )
+    )
+
+    print(
+        mir_eval.hierarchy.tmeasure(
+            h1.itvls,
+            h2.itvls,
+            transitive=True,
+        )
+    )
+
+    print(
+        mir_eval.hierarchy.tmeasure(
+            h1.itvls,
+            h3.itvls,
+            transitive=False,
+        )
+    )
+
+    print(
+        mir_eval.hierarchy.tmeasure(
+            h1.itvls,
+            h3.itvls,
+            transitive=True,
+        )
+    )
+
+    print(
+        mir_eval.hierarchy.tmeasure(
+            h1.itvls,
+            h3_mono_b.itvls,
+            transitive=False,
+        )
+    )
+    print(
+        mir_eval.hierarchy.tmeasure(
+            h1.itvls,
+            h3_mono_b.itvls,
+            transitive=True,
+        )
+    )

@@ -233,7 +233,7 @@ def resample_matrix(matrix, old_bounds, new_bounds):
     return new_matrix
 
 
-def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame"):
+def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=None):
     """
     Compute ranking recall and normalizer for each query position.
 
@@ -245,27 +245,55 @@ def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame"):
         Estimated meet matrix
     agg_mode : str
         Aggregation mode. 'frame' for frame-wise aggregation, 'triplet' for triplet-wise aggregation.
+    transitive : bool
+        If True, then transitive comparisons are counted, meaning that
+        ``(q, i)`` and ``(q, j)`` can differ by any number of levels.
+        If False, then ``(q, i)`` and ``(q, j)`` can differ by exactly one
+        level.
+    window : number or None
+        The maximum number of frames to consider for each query.
+        If `None`, then all frames are considered.
+
 
     Returns:
     --------
+    agg_recall: float
+        Aggregated ranking recall according to agg_mode
     q_ranking_recall : numpy.ndarray
         Ranking recall for each query position
     q_ranking_normalizer : numpy.ndarray
         Normalizer for each query position
     """
-    q_ranking_recall = np.zeros(meet_mat_ref.shape[0])
-    q_ranking_normalizer = np.zeros(meet_mat_ref.shape[0])
+    # Make sure we have the right number of frames
+    if meet_mat_ref.shape != meet_mat_est.shape:
+        raise ValueError(
+            "Estimated and reference hierarchies " "must have the same shape."
+        )
 
-    for q in range(meet_mat_ref.shape[0]):
-        # get the q'th row
-        q_relevance_ref = np.delete(meet_mat_ref.getrow(q).toarray().ravel(), q)
-        q_relevance_est = np.delete(meet_mat_est.getrow(q).toarray().ravel(), q)
+    # How many frames?
+    n = meet_mat_ref.shape[0]
+
+    # By default, the window covers the entire track
+    if window is None:
+        window = n
+
+    q_ranking_recall = np.zeros(n)
+    q_ranking_normalizer = np.zeros(n)
+
+    for query in range(n):
+        # Get the window around the query
+        win_slice = slice(max(0, query - window), min(n, query + window))
+        ref_window = meet_mat_ref[query, win_slice].toarray().ravel()
+        est_window = meet_mat_est[query, win_slice].toarray().ravel()
+        # get the query'th row
+        q_window_ref = np.delete(ref_window, query)
+        q_window_est = np.delete(est_window, query)
         # count ranking violations
         inversions, normalizer = mir_eval.hierarchy._compare_frame_rankings(
-            q_relevance_ref, q_relevance_est, transitive=True
+            q_window_ref, q_window_est, transitive=transitive
         )
-        q_ranking_recall[q] = (1.0 - inversions / normalizer) if normalizer else 0
-        q_ranking_normalizer[q] = normalizer
+        q_ranking_recall[query] = (1.0 - inversions / normalizer) if normalizer else 0
+        q_ranking_normalizer[query] = normalizer
 
     if agg_mode == "triplet":
         agg_recall = np.sum(q_ranking_recall) / np.sum(q_ranking_normalizer)
@@ -309,3 +337,59 @@ def cluster_boundaries(boundaries, novelty, ticks, depth):
         ]
         intervals.append(mir_eval.util.boundaries_to_intervals(boundaries_at_level))
     return intervals
+
+
+def pad_itvls(ref_itvls, est_itvls):
+    """Make sure ref hier and est hier are the same length by padding the shorter one"""
+    max_length = max(ref_itvls[-1][-1, -1], est_itvls[-1][-1, -1])
+    # Iterate over all the levels and make the last segment end at max_length
+    for i in range(len(ref_itvls)):
+        ref_itvls[i][-1, 1] = max_length
+    for i in range(len(est_itvls)):
+        est_itvls[i][-1, 1] = max_length
+
+    return ref_itvls, est_itvls
+
+
+def fill_out_anno(anno, new_duration):
+    """
+    Fill out an annotation object by adding "NL" (No Label) segments at the beginning and end if necessary.
+
+    Parameters:
+    ----------
+    anno : jams Annotation
+        The annotation object to fill out.
+    new_duration : float
+        The max time to fill out to.
+
+    Returns:
+    -------
+    Annotation
+        The filled out annotation object with added "NL" segments if needed.
+
+    Notes:
+    -----
+    This function ensures the annotation covers the entire time range from 0 to the last frame time
+    by adding "NL" segments at:
+    1. The beginning (from time 0 to annotation start) if the annotation doesn't start at time 0
+    2. The end (from annotation end to last frame time) if the annotation ends before the last frame
+    """
+    anno_start_time = round(anno.data[0].time, 3)
+    anno_end_time = round(anno.data[-1].time + anno.data[-1].duration, 3)
+    anno.duration = round(new_duration, 3)
+
+    if anno_end_time > anno.duration:
+        raise ValueError(
+            f"Annotation end time {anno_end_time} exceeds new duration {anno.duration}"
+        )
+    if anno_start_time != 0:
+        anno.append(value="NL", time=0, duration=anno_start_time, confidence=1)
+    if anno_end_time < anno.duration:
+        anno.append(
+            value="NL",
+            time=anno_end_time,
+            duration=anno.duration - anno_end_time,
+            confidence=1,
+        )
+
+    return anno
