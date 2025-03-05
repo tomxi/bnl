@@ -2,7 +2,12 @@ import numpy as np
 from scipy import stats
 import librosa, mir_eval
 
-from .utils import eigen_gap_scluster, resample_matrix, cluster_boundaries
+from .utils import (
+    eigen_gap_scluster,
+    resample_matrix,
+    cluster_boundaries,
+    best_matching_label,
+)
 from .viz import multi_seg
 from .formatting import mireval2multi, multi2mireval
 from mir_eval.util import intervals_to_boundaries, boundaries_to_intervals
@@ -13,18 +18,20 @@ class S:
 
     def __init__(self, itvls, labels=None, sr=10, Bhat_bw=1, time_decimal=3):
         """Initialize the flat segmentation."""
-        self.itvls = itvls
+
         if labels is None:
             labels = [str(itv) for itv in itvls]
         self.labels = labels
-        self.anno = mireval2multi([itvls], [labels])
 
         # Build Lstar and T
         self.Lstar = {
             round(b, time_decimal): str(l) for (b, e), l in zip(itvls, labels)
         }
-        self.beta = np.array(sorted(set(self.Lstar.keys()).union([itvls[-1][-1]])))
-        self.T0, self.T = self.beta[0], self.beta[-1]
+        self.T = round(itvls[-1][-1], time_decimal)
+        self.beta = np.array(sorted(set(self.Lstar.keys()).union([self.T])))
+        self.T0 = self.beta[0]
+        self.itvls = mir_eval.util.boundaries_to_intervals(self.beta)
+        self.anno = mireval2multi([self.itvls], [self.labels])
 
         # Build BSC and ticks
         self.update_sr(sr)
@@ -118,13 +125,14 @@ class H:
 
         if labels is None:
             labels = [[str(itvl) for itvl in layer_itvls] for layer_itvls in itvls]
-        self.itvls = itvls
-        self.labels = labels
-        self.anno = mireval2multi(itvls, labels)
+
         self.levels = [
             S(i, l, sr=sr, Bhat_bw=Bhat_bw, time_decimal=time_decimal)
             for i, l in zip(itvls, labels)
         ]
+        self.itvls = [l.itvls for l in self.levels]
+        self.labels = [l.labels for l in self.levels]
+        self.anno = mireval2multi(self.itvls, self.labels)
         self.d = len(self.levels)
         self.T0, self.T = self.levels[0].T0, self.levels[0].T
         self.beta = np.unique(np.concatenate([seg.beta for seg in self.levels]))
@@ -322,17 +330,24 @@ class H:
                         ]
                     )
                 new_child_bounds = sorted(list(set(parent_bounds).union(child_bounds)))
-                new_child_labels = [level.L(b) for b in new_child_bounds[:-1]]
                 new_child_itvls = boundaries_to_intervals(new_child_bounds)
+                # new_child_temp_labels = [level.L(b) for b in new_child_bounds[:-1]]
+                # New Strategy: for each segment, look for max overlap in the old segment.
+                new_child_labels = [
+                    best_matching_label(query_itvl, level.itvls, level.labels)
+                    for query_itvl in new_child_itvls
+                ]
                 new_levels.append(S(new_child_itvls, new_child_labels))
         return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
-    def force_mono_L(self):
+    def force_mono_L(self, min_seg_dur=0):
         """Force monotonic labels across levels.
         We do this by prepending parent labels to child labels.
         """
         ## First check boundary monotonicity, and force it if necessary
-        self_mono_B = self if self.has_mono_B() else self.force_mono_B()
+        self_mono_B = (
+            self if self.has_mono_B() else self.force_mono_B(min_seg_dur=min_seg_dur)
+        )
 
         ## Now we check label monotonicity
         if self_mono_B.has_mono_L():
@@ -352,7 +367,7 @@ class H:
 
 
 def levels2H(levels, sr=10, Bhat_bw=1):
-    """Convert a list of levels to a hierarchical structure."""
+    """Convert a list of levels to a hierarchical format."""
     itvls = [l.itvls for l in levels]
     lbls = [l.labels for l in levels]
     return H(itvls, lbls, sr=sr, Bhat_bw=Bhat_bw)

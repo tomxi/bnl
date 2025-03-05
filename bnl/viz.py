@@ -234,7 +234,6 @@ def multi_seg(
         )
     if y_label:
         fig.text(0.94, 0.55, "Segmentation Levels", va="center", rotation="vertical")
-    # fig.tight_layout(rect=[0,0,0.95,1])
     return fig, axs
 
 

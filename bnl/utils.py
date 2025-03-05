@@ -235,6 +235,7 @@ def resample_matrix(matrix, old_bounds, new_bounds):
     return new_matrix
 
 
+# Modified from mir_eval.hierarchy
 def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=None):
     """
     Compute ranking recall and normalizer for each query position.
@@ -396,3 +397,15 @@ def fill_out_anno(anno, new_duration):
         )
 
     return anno
+
+
+def best_matching_label(query_itvl, itvls, labels):
+    """Find the maximum overlap label for the query interval based on the given intervals and labels."""
+    best_label = None
+    best_overlap = 0
+    for itvl, label in zip(itvls, labels):
+        overlap = max(0, min(query_itvl[1], itvl[1]) - max(query_itvl[0], itvl[0]))
+        if overlap > best_overlap:
+            best_label = label
+            best_overlap = overlap
+    return best_label
