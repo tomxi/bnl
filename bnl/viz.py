@@ -193,6 +193,7 @@ def multi_seg(
     text=False,
     y_label=True,
     x_label=True,
+    legend_offset=-0.06,
 ):
     """Plots the given multi_seg annotation."""
     hier = multi2hier(ms_anno)
@@ -229,7 +230,7 @@ def multi_seg(
             handles=legend_handles,
             loc="lower center",
             ncol=legend_ncol,
-            bbox_to_anchor=(0.5, -0.06 * (len(legend_handles) // legend_ncol + 2.2)),
+            bbox_to_anchor=(0.5, legend_offset),
         )
     if y_label:
         fig.text(0.94, 0.55, "Segmentation Levels", va="center", rotation="vertical")

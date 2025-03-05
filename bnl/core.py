@@ -292,9 +292,10 @@ class H:
         # Decode labels
         return self.decode_L(new_H.itvls, min_k=min_k)
 
-    def force_mono_B(self):
+    def force_mono_B(self, min_seg_dur=0):
         """Force monotonic boundaries across levels.
         If a boundary is present in a parent level, it has to appear in a child level.
+        If there were boundaries in the child level within min_seg_dur of the new created boundaries, get rid of them.
         """
         ## check if boundaries are monotonic already
         if self.has_mono_B():
@@ -311,6 +312,15 @@ class H:
             if set(parent_bounds).issubset(child_bounds):
                 new_levels.append(level)
             else:
+                # Get rid of boundaries in the child level within min_seg_dur of any parent boundaries
+                if min_seg_dur:
+                    child_bounds = set(
+                        [
+                            b
+                            for b in child_bounds
+                            if all(abs(b - pb) > min_seg_dur for pb in parent_bounds)
+                        ]
+                    )
                 new_child_bounds = sorted(list(set(parent_bounds).union(child_bounds)))
                 new_child_labels = [level.L(b) for b in new_child_bounds[:-1]]
                 new_child_itvls = boundaries_to_intervals(new_child_bounds)
