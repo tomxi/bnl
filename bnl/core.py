@@ -365,6 +365,25 @@ class H:
             new_levels.append(S(level.itvls, new_child_labels))
         return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
+    def prune_identical_levels(self):
+        """Prune identical levels."""
+        new_levels = [self.levels[0]]
+        for i in range(1, self.d):
+            # Check if current level and previous level are identical in boundaries and label structure
+            # First check if they have the same boundaries
+            if np.array_equal(self.levels[i].beta, self.levels[i - 1].beta):
+                # Now check if the label agreement matrices are the same
+                # by evaluating both at the same set of boundaries
+                common_bs = self.levels[i].beta
+                if np.allclose(
+                    self.levels[i].A(bs=common_bs),
+                    new_levels[-1].A(bs=common_bs),
+                ):
+                    continue
+
+            new_levels.append(self.levels[i])
+        return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
+
 
 def levels2H(levels, sr=10, Bhat_bw=1):
     """Convert a list of levels to a hierarchical format."""
