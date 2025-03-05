@@ -105,8 +105,8 @@ class H:
     def __init__(self, itvls, labels=None, sr=10, Bhat_bw=1, time_decimal=3):
         """Initialize the hierarchical segmentation."""
         # Validate same start/end points across levels
-        start_points = [level[0][0] for level in itvls]
-        end_points = [level[-1][-1] for level in itvls]
+        start_points = [round(level[0][0], time_decimal) for level in itvls]
+        end_points = [round(level[-1][-1], time_decimal) for level in itvls]
 
         if len(set(start_points)) != 1 or len(set(end_points)) != 1:
             # Make all level start/end points the same
@@ -117,7 +117,7 @@ class H:
                 level[-1][-1] = end_point
 
         if labels is None:
-            labels = [str(l) for l in itvls]
+            labels = [[str(itvl) for itvl in layer_itvls] for layer_itvls in itvls]
         self.itvls = itvls
         self.labels = labels
         self.anno = mireval2multi(itvls, labels)

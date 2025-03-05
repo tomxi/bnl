@@ -307,13 +307,13 @@ def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=N
     return agg_recall, q_ranking_recall, q_ranking_normalizer
 
 
-def cluster_boundaries(boundaries, novelty, ticks, depth):
+def cluster_boundaries(boundaries, novelty, ticks, depth, boundary_time_decimal=3):
     """Convert boundaries with novelty values into hierarchical intervals of specified depth.
 
     Args:
         boundaries (np.ndarray): Array of boundary indices
         novelty (np.ndarray): Novelty curve values
-        ticks (np.ndarray): Time points corresponding to novelty curve
+        ticks (np.ndarray): Time points corresponding to novelty curve in seconds
         depth (int): Maximum number of hierarchical levels
 
     Returns:
@@ -327,7 +327,8 @@ def cluster_boundaries(boundaries, novelty, ticks, depth):
         novelty[boundaries], quantize_method="kmeans", quant_bins=depth
     )
     rated_boundaries = {
-        round(ticks[b], 3): s for b, s in zip(boundaries, boundary_salience)
+        round(ticks[b], boundary_time_decimal): s
+        for b, s in zip(boundaries, boundary_salience)
     }
 
     # Create hierarchical intervals based on salience thresholds
@@ -376,9 +377,9 @@ def fill_out_anno(anno, new_duration):
     1. The beginning (from time 0 to annotation start) if the annotation doesn't start at time 0
     2. The end (from annotation end to last frame time) if the annotation ends before the last frame
     """
-    anno_start_time = round(anno.data[0].time, 3)
-    anno_end_time = round(anno.data[-1].time + anno.data[-1].duration, 3)
-    anno.duration = round(new_duration, 3)
+    anno_start_time = anno.data[0].time
+    anno_end_time = anno.data[-1].time + anno.data[-1].duration
+    anno.duration = new_duration
 
     if anno_end_time > anno.duration:
         raise ValueError(

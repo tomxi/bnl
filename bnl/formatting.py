@@ -9,7 +9,7 @@ def multi2hier(anno) -> list:
     for obs in anno:
         lvl = obs.value["level"]
         label = obs.value["label"]
-        interval = [round(obs.time, 3), round(obs.time + obs.duration, 3)]
+        interval = [obs.time, obs.time + obs.duration]
         hier[lvl][0].append(interval)
         hier[lvl][1].append(f"{label}")
     return hier
@@ -17,13 +17,13 @@ def multi2hier(anno) -> list:
 
 def hier2multi(hier) -> jams.Annotation:
     anno = jams.Annotation(namespace="multi_segment")
-    anno.duration = round(hier[0][0][-1][-1], 3)
-    anno.time = round(hier[0][0][0][0], 3)
+    anno.duration = hier[0][0][-1][-1]
+    anno.time = hier[0][0][0][0]
     for layer, (intervals, labels) in enumerate(hier):
         for ival, label in zip(intervals, labels):
             anno.append(
-                time=round(ival[0], 3),
-                duration=round(ival[1] - ival[0], 3),
+                time=ival[0],
+                duration=ival[1] - ival[0],
                 value={"label": str(label), "level": layer},
             )
     return anno
@@ -64,8 +64,8 @@ def openseg2multi(annos: list) -> jams.Annotation:
             longest_duration = openseg.duration
         for obs in openseg:
             multi_anno.append(
-                time=round(obs.time, 3),
-                duration=round(obs.duration, 3),
+                time=obs.time,
+                duration=obs.duration,
                 value={"label": obs.value, "level": lvl},
             )
     multi_anno.duration = longest_duration
@@ -79,11 +79,11 @@ def multi2mirevalflat(multi_anno, layer=-1):
 
 def mirevalflat2openseg(itvls, labels):
     anno = jams.Annotation(namespace="segment_open")
-    duration = round(itvls[-1][-1], 3)
+    duration = itvls[-1][-1]
     for ival, label in zip(itvls, labels):
         anno.append(
-            time=round(ival[0], 3),
-            duration=round(ival[1] - ival[0], 3),
+            time=ival[0],
+            duration=ival[1] - ival[0],
             value=str(label),
         )
     anno.duration = duration

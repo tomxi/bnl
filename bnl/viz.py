@@ -187,15 +187,12 @@ def flat_segment(
 
 def multi_seg(
     ms_anno,
-    figsize=(8, 5),
+    figsize=(8, 4),
     relabel=True,
     legend_ncol=6,
-    bottom_margin=None,
     text=False,
     y_label=True,
     x_label=True,
-    legend_bbox_y=None,
-    debug=False,
 ):
     """Plots the given multi_seg annotation."""
     hier = multi2hier(ms_anno)
@@ -228,24 +225,15 @@ def multi_seg(
         axs[-1].set_xlabel("Time")
 
     if legend_ncol:
-        bbox_y = legend_bbox_y if legend_bbox_y is not None else 0.0
         fig.legend(
             handles=legend_handles,
             loc="lower center",
             ncol=legend_ncol,
-            bbox_to_anchor=(0.5, bbox_y),
+            bbox_to_anchor=(0.5, -0.06 * (len(legend_handles) // legend_ncol + 2.2)),
         )
     if y_label:
         fig.text(0.94, 0.55, "Segmentation Levels", va="center", rotation="vertical")
-    bottom_margin = (
-        (len(legend_handles) // legend_ncol) * 0.03 + 0.1
-        if bottom_margin is None
-        else bottom_margin
-    )
-    bottom_margin = bottom_margin if legend_ncol else 0.0
-    fig.tight_layout(rect=[0, bottom_margin, 0.95, 1])
-    if debug:
-        print(bottom_margin, bbox_y)
+    # fig.tight_layout(rect=[0,0,0.95,1])
     return fig, axs
 
 
