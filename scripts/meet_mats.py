@@ -170,9 +170,10 @@ def get_adobe_hiers(
 
 
 def save_tmeasure(tid):
-    out = []
     for anno_id, ref_h in enumerate(get_ref_hiers(tid)):
         out_name = f"out/{tid}_{anno_id}_tmeasure.json"
+        if os.path.exists(out_name):
+            continue
         result = {}
 
         est_h = get_adobe_hiers(tid)
@@ -204,9 +205,7 @@ def save_tmeasure(tid):
 
         with open(out_name, "w") as f:
             json.dump(result, f)
-        out.append(result)
-
-    return out
+    return 0
 
 
 if __name__ == "__main__":
