@@ -4,8 +4,6 @@ import numpy as np
 from scipy import linalg, stats
 from sklearn.cluster import KMeans
 
-from .external import expand_hierarchy, clean_segments, reindex
-
 
 # Suppress mir_eval warnings
 def suppress_mir_eval_warnings():

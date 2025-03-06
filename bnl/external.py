@@ -587,3 +587,6 @@ def clean_segments(levels, min_duration=8, fix_level=3, verbose=False):
 
     # print_verbose("Done cleaning segments.", verbose)
     return segs
+
+
+__all__ = ["reindex", "expand_hierarchy", "clean_segments"]

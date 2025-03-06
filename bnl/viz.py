@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
 from .formatting import multi2hier, hier2mireval
-from .utils import reindex
+from .external import reindex
 
 import itertools
 from cycler import cycler
