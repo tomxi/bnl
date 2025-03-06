@@ -1,6 +1,7 @@
 import numpy as np
 from scipy import stats
 import librosa, mir_eval
+from mir_eval.util import intervals_to_boundaries, boundaries_to_intervals
 
 from .utils import (
     eigen_gap_scluster,
@@ -10,7 +11,6 @@ from .utils import (
 )
 from .viz import multi_seg
 from .formatting import mireval2multi, multi2mireval
-from mir_eval.util import intervals_to_boundaries, boundaries_to_intervals
 
 
 class S:

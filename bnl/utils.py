@@ -1,11 +1,10 @@
 import mir_eval, os
 import numpy as np
-from collections import defaultdict
 
 from scipy import linalg, stats
 from sklearn.cluster import KMeans
 
-from .expand_hier import expand_hierarchy
+from .external import expand_hierarchy, clean_segments, reindex
 
 
 # Suppress mir_eval warnings
@@ -59,51 +58,6 @@ def laplacian(rec_mat, normalization="random_walk"):
         return unnormalized_laplacian
     else:
         raise NotImplementedError(f"bad laplacian normalization mode: {normalization}")
-
-
-# from bmcfee/lsd_viz
-def _reindex_labels(ref_int, ref_lab, est_int, est_lab):
-    # for each estimated label
-    #    find the reference label that is maximally overlaps with
-
-    score_map = defaultdict(lambda: 0)
-
-    for r_int, r_lab in zip(ref_int, ref_lab):
-        for e_int, e_lab in zip(est_int, est_lab):
-            score_map[(e_lab, r_lab)] += max(
-                0, min(e_int[1], r_int[1]) - max(e_int[0], r_int[0])
-            )
-
-    r_taken = set()
-    e_map = dict()
-
-    hits = [(score_map[k], k) for k in score_map]
-    hits = sorted(hits, reverse=True)
-
-    while hits:
-        cand_v, (e_lab, r_lab) = hits.pop(0)
-        if r_lab in r_taken or e_lab in e_map:
-            continue
-        e_map[e_lab] = r_lab
-        r_taken.add(r_lab)
-
-    # Anything left over is unused
-    unused = set(est_lab) - set(ref_lab)
-
-    for e, u in zip(set(est_lab) - set(e_map.keys()), unused):
-        e_map[e] = u
-
-    return [e_map[e] for e in est_lab]
-
-
-def reindex(hierarchy):
-    new_hier = [hierarchy[0]]
-    for i in range(1, len(hierarchy)):
-        ints, labs = hierarchy[i]
-        labs = _reindex_labels(new_hier[i - 1][0], new_hier[i - 1][1], ints, labs)
-        new_hier.append((ints, labs))
-
-    return new_hier
 
 
 def eigen_gap_scluster(M, k=None, min_k=1):

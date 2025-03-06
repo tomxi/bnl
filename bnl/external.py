@@ -1,6 +1,179 @@
+# Adapted From Brian McFee
+
+from collections import Counter, defaultdict
 import numpy as np
+import jams
+import re
+
+HMX_MAPPING = {
+    "altchorus": "chorus",
+    "bigoutro": "outro",
+    "(.*)\\d+.*": "\\1",
+    "(.*)_instrumental": "\\1",
+    "chorus.*": "chorus",
+    "instbridge": "bridge",
+    "instchorus": "chorus",
+    "instintro": "intro",
+    "instrumentalverse": "verse",
+    "intropt2": "intro",
+    "miniverse": "verse",
+    "quietchorus": "chorus",
+    "rhythmlessintro": "intro",
+    "verse_slow": "verse",
+    "verseinst": "verse",
+    "versepart": "verse",
+    "vocaloutro": "outro",
+}
+HMX_SUBS = [(re.compile(x), HMX_MAPPING[x]) for x in HMX_MAPPING]
 
 
+# from bmcfee/lsd_viz
+def _reindex_labels(ref_int, ref_lab, est_int, est_lab):
+    # for each estimated label
+    #    find the reference label that is maximally overlaps with
+
+    score_map = defaultdict(lambda: 0)
+
+    for r_int, r_lab in zip(ref_int, ref_lab):
+        for e_int, e_lab in zip(est_int, est_lab):
+            score_map[(e_lab, r_lab)] += max(
+                0, min(e_int[1], r_int[1]) - max(e_int[0], r_int[0])
+            )
+
+    r_taken = set()
+    e_map = dict()
+
+    hits = [(score_map[k], k) for k in score_map]
+    hits = sorted(hits, reverse=True)
+
+    while hits:
+        cand_v, (e_lab, r_lab) = hits.pop(0)
+        if r_lab in r_taken or e_lab in e_map:
+            continue
+        e_map[e_lab] = r_lab
+        r_taken.add(r_lab)
+
+    # Anything left over is unused
+    unused = set(est_lab) - set(ref_lab)
+
+    for e, u in zip(set(est_lab) - set(e_map.keys()), unused):
+        e_map[e] = u
+
+    return [e_map[e] for e in est_lab]
+
+
+def reindex(hierarchy):
+    new_hier = [hierarchy[0]]
+    for i in range(1, len(hierarchy)):
+        ints, labs = hierarchy[i]
+        labs = _reindex_labels(new_hier[i - 1][0], new_hier[i - 1][1], ints, labs)
+        new_hier.append((ints, labs))
+
+    return new_hier
+
+
+def flatten_labels(labels, dataset="hmx"):
+    """
+    Apply Hierarchy Expansion Rules for a specific dataset
+    dataset can be hmx, slm, rwc, or jsd
+    """
+    # Are there other rules for segment coalescing?
+    # VerseA, VerseB -> Verse
+    # verse_(guitar solo) ...
+    # _(.*)
+    # /.*
+    if dataset == "slm":
+        return ["{}".format(_.replace("'", "")) for _ in labels]
+    elif dataset == "hmx":
+        # Apply all label substitutions
+        labels_out = []
+        for lab in labels:
+            for pattern, replace in HMX_SUBS:
+                lab = pattern.sub(replace, lab)
+            labels_out.append(lab)
+        return labels_out
+    elif dataset == "jsd":
+        return ["theme" if "theme" in _ else _ for _ in labels]
+    elif dataset == "rwc":
+        return ["{}".format(_.split(" ")[0]) for _ in labels]
+    else:
+        raise NotImplementedError("bad dataset")
+
+
+def expand_labels(labels, dataset="hmx"):
+
+    flat = flatten_labels(labels, dataset)
+
+    seg_counter = Counter()
+
+    expanded = []
+    for label in flat:
+        expanded.append("{:s}_{:d}".format(label, seg_counter[label]))
+        seg_counter[label] += 1
+
+    return expanded
+
+
+def issame(labs1, labs2):
+
+    # Hash the strings
+    h1 = [hash(_) for _ in labs1]
+    h2 = [hash(_) for _ in labs2]
+
+    # Build the segment label agreement matrix
+    a1 = np.equal.outer(h1, h1)
+    a2 = np.equal.outer(h2, h2)
+
+    # Labelings are the same if the segment label agreements are identical
+    return np.all(a1 == a2)
+
+
+def expand_hierarchy(_ann, dataset="hmx", always_include=False):
+    """
+    Apply Hierarchy Expansion Rules for a specific dataset
+    dataset can be hmx, slm, rwc, or jsd
+    input a flat annotation
+    output a list of annotations
+    """
+    ints, labs = _ann.to_interval_values()
+
+    labs_up = flatten_labels(labs, dataset)
+    labs_down = expand_labels(labs_up, dataset)
+
+    annotations = []
+
+    # If contraction did anything, include it.  Otherwise don't.
+    if always_include or not issame(labs_up, labs):
+        ann = jams.Annotation(
+            namespace="segment_open", time=_ann.time, duration=_ann.duration
+        )
+
+        for ival, label in zip(ints, labs_up):
+            ann.append(time=ival[0], duration=ival[1] - ival[0], value=label)
+        annotations.append(ann)
+
+    # Push the original segmentation
+    ann = jams.Annotation(
+        namespace="segment_open", time=_ann.time, duration=_ann.duration
+    )
+    for ival, label in zip(ints, labs):
+        ann.append(time=ival[0], duration=ival[1] - ival[0], value=label)
+    annotations.append(ann)
+
+    # If expansion did anything, include it.  Otherwise don't.
+    if always_include or not issame(labs_down, labs):
+        ann = jams.Annotation(
+            namespace="segment_open", time=_ann.time, duration=_ann.duration
+        )
+
+        for ival, label in zip(ints, labs_down):
+            ann.append(time=ival[0], duration=ival[1] - ival[0], value=label)
+        annotations.append(ann)
+
+    return annotations
+
+
+## Adobe clean segment code.
 def print_verbose(text, verbose):
     """Print text if verbose
 
