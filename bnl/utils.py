@@ -361,9 +361,3 @@ def best_matching_label(query_itvl, itvls, labels):
             best_label = label
             best_overlap = overlap
     return best_label
-
-
-def get_salami_tids(salami_jams_dir="/Users/tomxi/data/salami-jams"):
-    found_jams_files = os.listdir(salami_jams_dir)
-    tids = sorted([os.path.splitext(f)[0] for f in found_jams_files])
-    return tids
