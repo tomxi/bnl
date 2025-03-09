@@ -390,7 +390,7 @@ class H:
 
     def unique_labeling(self):
         """Return a new H with default labeling."""
-        return
+        return H(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
 
 def levels2H(levels, sr=10, Bhat_bw=1):

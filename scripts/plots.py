@@ -135,21 +135,68 @@ def plot_comparison(ref: bnl.H, est: bnl.H, frame_size=0.5):
     return fig, axs
 
 
+def fig_hiers(hiers):
+    fig, axs = plt.subplots(1, len(hiers), figsize=(12, 4))
+    for i, h in enumerate(hiers):
+        h.plot(ax=axs[i], text=True, relabel=False, legend_ncol=None)
+    return fig, axs
+
+
+def fig_meet_mats(h):
+    # I want to plot annotation and meet mats for flat, hierarchical, and boundary
+    # make a 1 row 3 column grid, with the first row for the annotation, the second row for the meet mat
+    fig, axs = plt.subplots(
+        1,
+        3,
+        figsize=(8, 3),
+        sharex="all",
+        sharey="row",
+    )
+
+    hiers = [bnl.levels2H([h.levels[1]]), h.unique_labeling(), h]
+
+    titles = ["Level 2 Flat", "Boundary Hierarchy", "Hierarchy"]
+    for i, title in enumerate(titles):
+        axs[i].set_title(title)
+        h = hiers[i]
+        meet_mat = make_meet_mat(h, strict_mono=False).toarray()
+        # ticks = (h.ticks[:-1] + h.ticks[1:]) / 2.0
+        # Plot Meet mat on axs[i]
+        librosa.display.specshow(
+            meet_mat,
+            ax=axs[i],
+            x_coords=h.ticks,
+            y_coords=h.ticks,
+            x_axis="time",
+            y_axis="time",
+            cmap="gray_r",
+        )
+    fig.tight_layout()
+    return fig, axs
+
+
 if __name__ == "__main__":
     h_dict = make_hierarchies()
     h3 = h_dict["h3"]
     h2 = h_dict["h2"]
     h1 = h_dict["h1"]
-    # hier_ref, hier_est = list(make_hierarchies().values())
-    # fig, axs = plot_comparison(hier_ref, hier_est, frame_size=0.1)
-    # fig.savefig("scripts/figs/meet_mats_compare_both.pdf")
-    # fig, axs = h3.plot(text=True, relabel=False)
-    # fig.savefig("scripts/figs/h3.pdf")
-    h3_mono_b = h3.force_mono_B()
-    # fig, axs = h3_mono_b.plot(text=True, relabel=False)
-    # fig.savefig("scripts/figs/h3_mono_b.pdf")
-    # h3_mono_l = h3.force_mono_L()
-    # fig, axs = h3_mono_l.plot(text=True, relabel=False, legend_ncol=5)
-    # fig.savefig("scripts/figs/h3_mono_l.pdf")
-    # fig, axs = h3_mono_l.plot(text=True, relabel=True)
-    # fig.savefig("scripts/figs/h3_mono_l_relabel.pdf")
+
+    recompute = True
+
+    if not os.path.exists("scripts/figs/hier_fig.pdf") or recompute:
+        seg_fig, _ = h2.plot(
+            text=True,
+            relabel=False,
+            figsize=(5.5, 2.5),
+            legend_ncol=None,
+        )
+        seg_fig.suptitle("3 Level Hierarchy")
+        seg_fig.tight_layout(pad=0.2, rect=[0, 0, 0.93, 1])
+        seg_fig.savefig("scripts/figs/hier_fig.pdf")
+        plt.close()
+
+    if not os.path.exists("scripts/figs/hier_meets.pdf") or True:
+        fig, axs = fig_meet_mats(h2)
+        fig.savefig("scripts/figs/hier_meets.pdf")
+        plt.close()
+        # Plot meet matrices for the 3 hierarchies

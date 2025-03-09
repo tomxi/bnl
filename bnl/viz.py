@@ -194,14 +194,16 @@ def multi_seg(
     y_label=True,
     x_label=True,
     legend_offset=-0.06,
+    axs=None,
 ):
     """Plots the given multi_seg annotation."""
     hier = multi2hier(ms_anno)
     if relabel:
         hier = reindex(hier)
     N = len(hier)
-    fig, axs = plt.subplots(N, figsize=figsize)
-    if N == 1:
+    if axs is None:
+        fig, axs = plt.subplots(N, figsize=figsize)
+    if N == 1 and not isinstance(axs, list):
         axs = [axs]
 
     _, lbls = hier2mireval(hier)
