@@ -23,11 +23,10 @@ def make_hierarchies():
     return dict(h1=hier1, h2=hier2, h3=hier3)
 
 
-def make_meet_mat(hier, frame_size=0.1, strict_mono=False):
+def make_meet_mat(hier, strict_mono=False):
     """Create meet matrices for a hierarchy with given frame size."""
-    hier.update_sr(1 / frame_size)
     return mir_eval.hierarchy._meet(
-        hier.itvls, hier.labels, frame_size, strict_mono=strict_mono
+        hier.itvls, hier.labels, frame_size=1.0 / hier.sr, strict_mono=strict_mono
     )
 
 
@@ -36,10 +35,14 @@ def lmeasure_comparison(ref: bnl.H, est: bnl.H, frame_size=0.1):
     for both non-monotonic and monotonic meet matrices.
     """
     results = dict(orig={}, mono={})
+    ## Make sure ref and est have the same sr: 1 / frame_size
+    ref.update_sr(1 / frame_size)
+    est.update_sr(1 / frame_size)
+
     for mode in results.keys():
         strict_mono = True if mode == "mono" else False
-        mat_ref = make_meet_mat(ref, frame_size=frame_size, strict_mono=strict_mono)
-        mat_est = make_meet_mat(est, frame_size=frame_size, strict_mono=strict_mono)
+        mat_ref = make_meet_mat(ref, strict_mono=strict_mono)
+        mat_est = make_meet_mat(est, strict_mono=strict_mono)
         recall, rank_recall, norm_recall = gauc(mat_ref, mat_est)
         precision, rank_precision, norm_precision = gauc(mat_est, mat_ref)
         results[mode] = {
@@ -135,32 +138,31 @@ def plot_comparison(ref: bnl.H, est: bnl.H, frame_size=0.5):
     return fig, axs
 
 
-def fig_hiers(hiers):
-    fig, axs = plt.subplots(1, len(hiers), figsize=(12, 4))
-    for i, h in enumerate(hiers):
-        h.plot(ax=axs[i], text=True, relabel=False, legend_ncol=None)
-    return fig, axs
+# def fig_hiers(hiers):
+#     fig, axs = plt.subplots(1, len(hiers), figsize=(12, 4))
+#     for i, h in enumerate(hiers):
+#         h.plot(ax=axs[i], text=True, relabel=False, legend_ncol=None)
+#     return fig, axs
 
 
-def fig_meet_mats(h):
+def fig_meet_mats(h, figsize=(8, 3)):
     # I want to plot annotation and meet mats for flat, hierarchical, and boundary
     # make a 1 row 3 column grid, with the first row for the annotation, the second row for the meet mat
     fig, axs = plt.subplots(
         1,
         3,
-        figsize=(8, 3),
+        figsize=figsize,
         sharex="all",
         sharey="row",
     )
 
     hiers = [bnl.levels2H([h.levels[1]]), h.unique_labeling(), h]
 
-    titles = ["Level 2 Flat", "Boundary Hierarchy", "Hierarchy"]
+    titles = ["Flat: Level 2", "Hierarchy: Boundary", "Hierarchy: Label"]
     for i, title in enumerate(titles):
         axs[i].set_title(title)
         h = hiers[i]
-        meet_mat = make_meet_mat(h, strict_mono=False).toarray()
-        # ticks = (h.ticks[:-1] + h.ticks[1:]) / 2.0
+        meet_mat = make_meet_mat(h).toarray()
         # Plot Meet mat on axs[i]
         librosa.display.specshow(
             meet_mat,
@@ -171,6 +173,8 @@ def fig_meet_mats(h):
             y_axis="time",
             cmap="gray_r",
         )
+        if i != 0:
+            axs[i].set_ylabel("")
     fig.tight_layout()
     return fig, axs
 
@@ -187,7 +191,7 @@ if __name__ == "__main__":
         seg_fig, _ = h2.plot(
             text=True,
             relabel=False,
-            figsize=(5.5, 2.5),
+            figsize=(5, 2.2),
             legend_ncol=None,
         )
         seg_fig.suptitle("3 Level Hierarchy")
@@ -195,8 +199,8 @@ if __name__ == "__main__":
         seg_fig.savefig("scripts/figs/hier_fig.pdf")
         plt.close()
 
-    if not os.path.exists("scripts/figs/hier_meets.pdf") or True:
-        fig, axs = fig_meet_mats(h2)
+    if not os.path.exists("scripts/figs/hier_meets.pdf") or recompute:
+        fig, axs = fig_meet_mats(h2, figsize=(8, 3))
         fig.savefig("scripts/figs/hier_meets.pdf")
         plt.close()
         # Plot meet matrices for the 3 hierarchies
