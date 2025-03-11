@@ -250,11 +250,39 @@ class H:
         seg_dur = bs[1:] - bs[:-1]
         return self.M(bs, level_weights=level_weights) / np.outer(seg_dur, seg_dur)
 
-    # def plot(self, **kwargs):
-    #     """Plot the hierarchical segmentation."""
-    #     new_kwargs = dict()
-    #     new_kwargs.update(kwargs)
-    #     return multi_seg(self.anno, **new_kwargs)
+    def plot(self, axs=None, **kwargs):
+        """Plot the hierarchical segmentation."""
+        # kwargs handling
+        kw = dict(
+            text=True,
+            figsize=(5, 0.4 * self.d + 0.5),
+            h_ratios=[1] * self.d,
+            w_ratios=[1],
+        )
+        kw.update(kwargs)
+        show_label = kw.pop("text")
+
+        if axs is None:
+            fig, axs = viz.create_fig(**kw)
+            # flatten nested list of axes
+            axs = np.array(axs).flatten()
+        else:
+            fig = axs[0].get_figure()
+
+        # Check len(axs) and self.d is the same
+        if len(axs) != self.d:
+            raise ValueError(
+                f"Number of axes ({len(axs)}) does not match number of levels ({self.d})."
+            )
+
+        # Plot each level
+        if self.d > 1:
+            for i in range(self.d - 1):
+                self.levels[i].plot(
+                    ax=axs[i], ytick=i + 1, time_ticks=False, text=show_label
+                )
+        self.levels[-1].plot(ax=axs[-1], ytick=self.d, time_ticks=True, text=show_label)
+        return fig, axs
 
     def decode_B(
         self,

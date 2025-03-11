@@ -148,15 +148,15 @@ def segment(
     else:
         ax.set_yticks([0.5])
         ax.set_yticklabels([ytick])
-    return ax
+    return ax.get_figure(), ax
 
 
-def create_grid_fig(
-    figsize=(3.5, 5),
+def create_fig(
+    h_ratios=[1, 1, 1],
+    w_ratios=[1, 1],
     h_gaps=0.05,
     w_gaps=0.05,
-    height_ratios=[1, 1, 1],
-    width_ratios=[1, 1],
+    figsize=(3.5, 5),
 ):
     """
     Create a figure with specified dimensions and height/width ratios, with gaps between subplots.
@@ -169,9 +169,9 @@ def create_grid_fig(
         Vertical gap size between subplots, by default 0.05
     w_gaps : float or list, optional
         Horizontal gap size between subplots, by default 0.05
-    height_ratios : list, optional
+    h_ratios : list, optional
         Relative heights of subplots, by default [1, 1, 1]
-    width_ratios : list, optional
+    w_ratios : list, optional
         Relative widths of subplots, by default [1, 1]
 
     Returns
@@ -188,38 +188,38 @@ def create_grid_fig(
     )
 
     # Handle edge cases of single row/column
-    if len(height_ratios) <= 0 or len(width_ratios) <= 0:
+    if len(h_ratios) <= 0 or len(w_ratios) <= 0:
         return fig, []
 
-    if len(height_ratios) == 1 and len(width_ratios) == 1:
+    if len(h_ratios) == 1 and len(w_ratios) == 1:
         axs = [[fig.add_subplot(111)]]
         return fig, axs
 
-    # Normalize h_gaps to a list with one fewer element than height_ratios
+    # Normalize h_gaps to a list with one fewer element than h_ratios
     if not isinstance(h_gaps, list):
-        h_gaps = [h_gaps] * (len(height_ratios) - 1)
-    while len(h_gaps) < len(height_ratios) - 1:
+        h_gaps = [h_gaps] * (len(h_ratios) - 1)
+    while len(h_gaps) < len(h_ratios) - 1:
         h_gaps.append(h_gaps[-1])
-    normalized_h_gaps = h_gaps[: len(height_ratios) - 1]
+    normalized_h_gaps = h_gaps[: len(h_ratios) - 1]
 
-    # Normalize w_gaps to a list with one fewer element than width_ratios
+    # Normalize w_gaps to a list with one fewer element than w_ratios
     if not isinstance(w_gaps, list):
-        w_gaps = [w_gaps] * (len(width_ratios) - 1)
-    while len(w_gaps) < len(width_ratios) - 1:
+        w_gaps = [w_gaps] * (len(w_ratios) - 1)
+    while len(w_gaps) < len(w_ratios) - 1:
         w_gaps.append(w_gaps[-1])
-    normalized_w_gaps = w_gaps[: len(width_ratios) - 1]
+    normalized_w_gaps = w_gaps[: len(w_ratios) - 1]
 
     # Create interleaved heights using zip
     gridspec_heights = []
-    for height, gap in zip(height_ratios[:-1], normalized_h_gaps):
+    for height, gap in zip(h_ratios[:-1], normalized_h_gaps):
         gridspec_heights.extend([height, gap])
-    gridspec_heights.append(height_ratios[-1])  # Add final height without gap
+    gridspec_heights.append(h_ratios[-1])  # Add final height without gap
 
     # Create interleaved widths using zip
     gridspec_widths = []
-    for width, gap in zip(width_ratios[:-1], normalized_w_gaps):
+    for width, gap in zip(w_ratios[:-1], normalized_w_gaps):
         gridspec_widths.extend([width, gap])
-    gridspec_widths.append(width_ratios[-1])  # Add final width without gap
+    gridspec_widths.append(w_ratios[-1])  # Add final width without gap
 
     # Create gridspec
     gs = fig.add_gridspec(
@@ -231,16 +231,16 @@ def create_grid_fig(
 
     # Create 2D array of axes
     axs = []
-    for i in range(len(height_ratios)):
+    for i in range(len(h_ratios)):
         row = []
-        for j in range(len(width_ratios)):
+        for j in range(len(w_ratios)):
             ax = fig.add_subplot(gs[i * 2, j * 2])
             ax.set_xticks([])
             ax.set_yticks([])
             row.append(ax)
         axs.append(row)
 
-    return fig, axs
+    return ax.get_figure(), axs
 
 
 def jointplot():
