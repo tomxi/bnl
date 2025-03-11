@@ -4,56 +4,6 @@ from mir_eval import hierarchy
 import numpy as np
 
 
-def make_fig(hier, q_fraq=0.3):
-    ts = (hier.ticks[:-1] + hier.ticks[1:]) / 2
-    q = int(q_fraq * (len(ts) - 1))
-
-    fig, axs = viz.create_fig(
-        w_ratios=[1],
-        h_ratios=[0.8, 0.8, 0.8, 12, 3, 12],
-        figsize=(5, 15.5),
-        h_gaps=[0.001] * 3 + [0.5] * 2,
-    )
-
-    axs = np.array(axs).flatten()
-    # for ax in axs[1:]:
-    #     ax.sharex(axs[0])
-    axs[4].sharex(axs[3])
-
-    # Let's plot the 3 level hierarchy
-    hier.plot(axs=axs[:3])
-    axs[0].set_title("Hierarchical Segmentation")
-
-    # Now plot the meet matrix on axs[3]
-    meet = hierarchy._meet(hier.itvls, hier.labels, frame_size=1.0 / hier.sr).toarray()
-    viz.sq(meet, hier.ticks, ax=axs[3], cmap="gray_r")
-    axs[3].set_title("Meet matrix")
-    # add crosshair at q
-    axs[3].vlines(
-        ts[q], ts[0], ts[-1], colors="r", linestyles="dashed", label="Query Frame"
-    )
-    axs[3].hlines(ts[q], ts[0], ts[-1], colors="r", linestyles="dashed")
-    axs[3].legend()
-
-    # Plot relevance at q on axs[4]
-    q_rel = meet[q]
-    axs[4].plot(ts, q_rel, color="k")
-    axs[4].vlines(
-        ts[q], 0, max(q_rel), colors="r", linestyles="dashed", label="Query Frame"
-    )
-    axs[4].legend()
-    axs[4].set(title="Relevance to q", xlabel="Time (s)", ylabel="Relevance")
-
-    # Relevant pairs u, v for frame q on axs[5]
-    u_more_relevant_mat = np.greater.outer(q_rel, q_rel)
-    v_more_relevant_mat = np.less.outer(q_rel, q_rel)
-    combined_mat = u_more_relevant_mat.astype(int) - v_more_relevant_mat.astype(int)
-    viz.sq(combined_mat, hier.ticks, ax=axs[5])
-    axs[5].set(title="Relevant Pairs (u, v)", xlabel="Frame u", ylabel="Frame v")
-
-    return fig, axs
-
-
 def plot_column(hier, q_fraq=0.3, axs=None):
     ts = (hier.ticks[:-1] + hier.ticks[1:]) / 2
     q = int(q_fraq * (len(ts) - 1))
