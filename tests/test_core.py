@@ -1,8 +1,21 @@
 import pytest
 import numpy as np
-from bnl.core import S, multi2H
+from bnl.core import H, S, multi2H
 from bnl.formatting import mireval2multi
 import tests
+
+
+def make_hierarchies():
+    hier1 = H([tests.ITVLS1, tests.ITVLS2], [tests.LABELS1, tests.LABELS2])
+    hier2 = H(
+        [tests.ITVLS3, tests.ITVLS4, tests.ITVLS5],
+        [tests.LABELS3, tests.LABELS4, tests.LABELS5],
+    )
+    hier3 = H(
+        [tests.ITVLS1, tests.ITVLS2, tests.ITVLS3, tests.ITVLS4, tests.ITVLS5],
+        [tests.LABELS1, tests.LABELS2, tests.LABELS3, tests.LABELS4, tests.LABELS5],
+    )
+    return dict(h1=hier1, h2=hier2, h3=hier3)
 
 
 def test_flat_segmentation_initialization():

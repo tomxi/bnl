@@ -16,3 +16,5 @@ ITVLS5 = np.array(
     [[0, 1.2], [1.2, 2], [2, 3], [3, 4], [4, 4.7], [4.7, 5.3], [5.3, 6.01]]
 )
 LABELS5 = ["I", "IV", "ii", "V", "I", "IV", "I"]
+
+from .test_core import make_hierarchies

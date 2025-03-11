@@ -6,6 +6,7 @@ import bnl, tests
 from bnl.utils import gauc
 from bnl import fio, viz
 import mir_eval, librosa, os, jams, json
+from mir_eval.hierarchy import _meet
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -35,8 +36,12 @@ def lmeasure_comparison(ref: bnl.H, est: bnl.H, frame_size=0.1):
 
     for mode in results.keys():
         strict_mono = True if mode == "mono" else False
-        mat_ref = make_meet_mat(ref, strict_mono=strict_mono)
-        mat_est = make_meet_mat(est, strict_mono=strict_mono)
+        mat_ref = _meet(
+            ref.itvls, ref.labels, frame_size=1.0 / ref.sr, strict_mono=strict_mono
+        )
+        mat_est = _meet(
+            est.itvls, est.labels, frame_size=1.0 / est.sr, strict_mono=strict_mono
+        )
         recall, rank_recall, norm_recall = gauc(mat_ref, mat_est)
         precision, rank_precision, norm_precision = gauc(mat_est, mat_ref)
         results[mode] = {
@@ -160,7 +165,7 @@ def fig_a_meet_mats(h, figsize=(8, 3)):
             h.itvls, h.labels, frame_size=1.0 / h.sr
         ).toarray()
         # Plot Meet mat on axs[i]
-        quadmesh = viz.square(meet_mat, h.ticks, axs[i], cmap="gray_r")
+        quadmesh = viz.sq(meet_mat, h.ticks, axs[i], cmap="gray_r")
         if i != 0:
             axs[i].set_ylabel("")
     fig.tight_layout()
@@ -190,7 +195,7 @@ def fig_b_frame_q_recall(h, q_frac=0.3, figsize=(8, 3)):
     meet_mat = mir_eval.hierarchy._meet(
         h.itvls, h.labels, frame_size=1.0 / h.sr
     ).toarray()
-    quadmesh = viz.square(meet_mat, h.ticks, axs[0], cmap="gray_r")
+    quadmesh = viz.sq(meet_mat, h.ticks, axs[0], cmap="gray_r")
     axs[0].set_title("Meet Matrix")
     # Add vline and hline at query frame q
 

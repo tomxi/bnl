@@ -1,16 +1,11 @@
 import numpy as np
 from scipy import stats
-import librosa, mir_eval
+import librosa
+from matplotlib import pyplot as plt
 from mir_eval.util import intervals_to_boundaries, boundaries_to_intervals
 
-from .utils import (
-    eigen_gap_scluster,
-    resample_matrix,
-    cluster_boundaries,
-    best_matching_label,
-)
-from .viz import multi_seg
 from .formatting import mireval2multi, multi2mireval
+from . import viz, utils
 
 
 class S:
@@ -106,11 +101,20 @@ class S:
         """Return the label agreement matrix."""
         return self.A(bs) / self.total_label_agreement_area
 
-    def plot(self, **kwargs):
+    def plot(self, ax=None, **kwargs):
         """Plot the segmentation."""
-        new_kwargs = dict(text=True, legend_ncol=0, figsize=(6, 0.9), y_label=False)
+
+        new_kwargs = dict(text=True, ytick="", time_ticks=True, figsize=(3.5, 0.5))
         new_kwargs.update(kwargs)
-        return multi_seg(self.anno, **new_kwargs)
+        if ax is None:
+            _, ax = plt.subplot(figsize=new_kwargs["figsize"])
+
+        new_kwargs.pop("figsize")
+        return viz.segment(self.itvls, self.labels, ax=ax, **new_kwargs)
+
+    def unique_labeling(self):
+        """Return a new S with default labeling."""
+        return S(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
 
 class H:
@@ -234,7 +238,7 @@ class H:
         all_bs = np.array(sorted(set(self.beta).union(bs)))
         seg_dur = all_bs[1:] - all_bs[:-1]
         seg_agreement_area = np.outer(seg_dur, seg_dur)
-        return resample_matrix(
+        return utils.resample_matrix(
             seg_agreement_area * self.Ahat(bs=all_bs, weights=level_weights), all_bs, bs
         )
 
@@ -246,11 +250,11 @@ class H:
         seg_dur = bs[1:] - bs[:-1]
         return self.M(bs, level_weights=level_weights) / np.outer(seg_dur, seg_dur)
 
-    def plot(self, **kwargs):
-        """Plot the hierarchical segmentation."""
-        new_kwargs = dict()
-        new_kwargs.update(kwargs)
-        return multi_seg(self.anno, **new_kwargs)
+    # def plot(self, **kwargs):
+    #     """Plot the hierarchical segmentation."""
+    #     new_kwargs = dict()
+    #     new_kwargs.update(kwargs)
+    #     return multi_seg(self.anno, **new_kwargs)
 
     def decode_B(
         self,
@@ -284,7 +288,7 @@ class H:
         boundaries = np.unique(np.concatenate(([0, len(novelty) - 1], boundaries)))
 
         # Convert boundaries to hierarchical intervals
-        intervals = cluster_boundaries(boundaries, novelty, self.ticks, depth)
+        intervals = utils.cluster_boundaries(boundaries, novelty, self.ticks, depth)
 
         return H(intervals, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
@@ -295,14 +299,13 @@ class H:
         for lvl_itvls in itvls:
             bs = intervals_to_boundaries(lvl_itvls)
             M = self.Mhat(bs=bs)
-            lab, current_k = eigen_gap_scluster(M, min_k=current_k)
+            lab, current_k = utils.eigen_gap_scluster(M, min_k=current_k)
             labs.append(lab)
         return H(itvls, labs, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
     def decode(self, depth=4, min_k=2, **kwargs):
         """Decode the hierarchical segmentation."""
         # Decode boundaries
-        # print('Bhat bw:', self.Bhat_bw)
         new_H = self.decode_B(depth=depth, **kwargs)
         # Decode labels
         return self.decode_L(new_H.itvls, min_k=min_k)
@@ -341,7 +344,7 @@ class H:
                 # new_child_temp_labels = [level.L(b) for b in new_child_bounds[:-1]]
                 # New Strategy: for each segment, look for max overlap in the old segment.
                 new_child_labels = [
-                    best_matching_label(query_itvl, level.itvls, level.labels)
+                    utils.best_matching_label(query_itvl, level.itvls, level.labels)
                     for query_itvl in new_child_itvls
                 ]
                 new_levels.append(S(new_child_itvls, new_child_labels))

@@ -1,72 +1,29 @@
-import numpy as np
-import pandas as pd
 import librosa
-import matplotlib
+from librosa.display import TimeFormatter
+
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-
-from .formatting import multi2hier, hier2mireval
-from .external import reindex
 
 import itertools
 from cycler import cycler
 
 
-def scatter_scores(
-    x_data: pd.Series,
-    y_data: pd.Series,
-    title: str = "L scores per track",
-    xlabel: str = "x label",
-    ylabel: str = "y label",
-    ax: any = None,
-) -> matplotlib.axes._axes.Axes:
-    """
-    Create a scatter plot of two data series.
-
-    This function plots two data series as a scatter plot, with optional customizations for title, axis labels, and using an existing axes object.
-    It also adds a diagonal line from (0,0) to (1,1), sets equal aspect ratio, and limits both axes to the range [0, 1].
-
-    Parameters
-    ----------
-    x_data : pd.Series
-        Data for x-axis values
-    y_data : pd.Series
-        Data for y-axis values
-    title : str, optional
-        Plot title, defaults to "L scores per track"
-    xlabel : str, optional
-        X-axis label, defaults to "x label"
-    ylabel : str, optional
-        Y-axis label, defaults to "y label"
-    ax : matplotlib.axes._axes.Axes, optional
-        Existing axes to plot on. If None, creates a new figure and axes.
-
-    Returns
-    -------
-    matplotlib.axes._axes.Axes
-        The axes object containing the scatter plot
-    """
-    if ax is None:
-        _, ax = plt.subplots()
-
-    ax.scatter(
-        x=x_data,
-        y=y_data,
-        alpha=0.5,
-        s=3,
+def sq(mat, ticks, ax, **kwargs):
+    """Plot a meet matrix for a given hierarchy."""
+    quadmesh = librosa.display.specshow(
+        mat,
+        ax=ax,
+        x_coords=ticks,
+        y_coords=ticks,
+        x_axis="time",
+        y_axis="time",
+        **kwargs,
     )
-    ax.set_xlim((0, 1))
-    ax.set_ylim((0, 1))
-    ax.plot([0, 1], [0, 1], "r:")
-    ax.set_aspect("equal", "box")
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    return ax
+    return quadmesh
 
 
-def assign_label_styles(labels, **kwargs):
+def label_style_dict(labels, **kwargs):
     """
     Creates a mapping of labels to visual style properties for consistent visualization.
 
@@ -96,6 +53,8 @@ def assign_label_styles(labels, **kwargs):
     - Default styles include white edgecolor and linewidth of 1.
     """
     labels = labels.copy()
+    # Get unique labels
+    # This is a bit of a hack to flatten the list of labels
     unique_labels = []
     while labels:
         l = labels.pop()
@@ -105,35 +64,24 @@ def assign_label_styles(labels, **kwargs):
             unique_labels.append(l)
     unique_labels.sort()
 
+    # More hatch patterns for more labels
+    some_hatch = ["", "\\", "..", "xx", "O.", "*", "\\O", "oo", "xxO"]
+    more_hatch = [h + "--" for h in some_hatch]
+
     if len(unique_labels) <= 80:
-        hatch_cycler = cycler(hatch=["", "..", "xx", "O.", "*", "\\O", "oo", "xxO"])
+        hatch_cycler = cycler(hatch=some_hatch)
         fc_cycler = cycler(color=plt.get_cmap("tab10").colors)
         p_cycler = hatch_cycler * fc_cycler
     else:
-        hatch_cycler = cycler(
-            hatch=[
-                "",
-                "oo",
-                "xx",
-                "O.",
-                "*",
-                "..",
-                "\\",
-                "\\O",
-                "--",
-                "oo--",
-                "xx--",
-                "O.--",
-                "*--",
-                "\\--",
-                "\\O--",
-            ]
-        )
+        hatch_cycler = cycler(hatch=some_hatch + more_hatch)
         fc_cycler = cycler(color=plt.get_cmap("tab20").colors)
+        # make it repeat...
         p_cycler = itertools.cycle(hatch_cycler * fc_cycler)
 
+    # Create a mapping of labels to styles
     seg_map = dict()
     for lab, properties in zip(unique_labels, p_cycler):
+        # set style according to p_cycler
         style = {
             k: v
             for k, v in properties.items()
@@ -150,18 +98,25 @@ def assign_label_styles(labels, **kwargs):
     return seg_map
 
 
-def flat_segment(
+def label_legend_handles(labels, **style_dict_kwargs):
+    style_map = label_style_dict(labels, **style_dict_kwargs)
+    return [mpatches.Patch(**style) for style in style_map.values()]
+
+
+def segment(
     intervals,
     labels,
     ax,
     text=False,
+    ytick="",
+    time_ticks=False,
     style_map=None,
 ):
     """Plot a single layer of flat segmentation."""
     ax.set_xlim(intervals[0][0], intervals[-1][-1])
 
     if style_map is None:
-        style_map = assign_label_styles(labels, edgecolor="white")
+        style_map = label_style_dict(labels, edgecolor="white")
     transform = ax.get_xaxis_transform()
 
     for ival, lab in zip(intervals, labels):
@@ -178,146 +133,116 @@ def flat_segment(
                 bbox=dict(boxstyle="round", facecolor="white"),
             )
             ann.set_clip_path(rect)
+
+    if time_ticks:
+
+        # Use the default automatic tick locator
+        ax.xaxis.set_major_locator(ticker.AutoLocator())
+        ax.xaxis.set_major_formatter(TimeFormatter())
+        ax.set_xlabel("Time (s)")
+    else:
+        ax.set_xticks([])
+
+    if ytick == "":
+        ax.set_yticks([])
+    else:
+        ax.set_yticks([0.5])
+        ax.set_yticklabels([ytick])
     return ax
 
 
-def multi_seg(
-    ms_anno,
-    figsize=(8, 4),
-    relabel=True,
-    legend_ncol=6,
-    text=False,
-    y_label=True,
-    x_label=True,
-    legend_offset=-0.06,
-    axs=None,
+def create_grid_fig(
+    figsize=(3.5, 5),
+    h_gaps=0.05,
+    w_gaps=0.05,
+    height_ratios=[1, 1, 1],
+    width_ratios=[1, 1],
 ):
-    """Plots the given multi_seg annotation."""
-    hier = multi2hier(ms_anno)
-    if relabel:
-        hier = reindex(hier)
-    N = len(hier)
-    if axs is None:
-        fig, axs = plt.subplots(N, figsize=figsize)
-    if N == 1 and not isinstance(axs, list):
-        axs = [axs]
-
-    _, lbls = hier2mireval(hier)
-    style_map = assign_label_styles(lbls)
-    legend_handles = [mpatches.Patch(**style) for style in style_map.values()]
-
-    for level, (itvl, lbl) in enumerate(hier):
-        ax = flat_segment(itvl, lbl, ax=axs[level], style_map=style_map, text=text)
-        if y_label:
-            ax.set_yticks([0.5])
-            ax.set_yticklabels([level + 1])
-        else:
-            ax.set_yticks([])
-        ax.set_xticks([])
-        ax.yaxis.tick_right()
-        ax.yaxis.set_label_position("right")
-
-    if x_label:
-        # Show time axis on the last layer
-        axs[-1].xaxis.set_major_locator(ticker.AutoLocator())
-        axs[-1].xaxis.set_major_formatter(librosa.display.TimeFormatter())
-        axs[-1].set_xlabel("Time")
-
-    if legend_ncol:
-        fig.legend(
-            handles=legend_handles,
-            loc="lower center",
-            ncol=legend_ncol,
-            bbox_to_anchor=(0.5, legend_offset),
-        )
-    if y_label:
-        fig.text(0.94, 0.55, "Segmentation Levels", va="center", rotation="vertical")
-    return fig, axs
-
-
-def heatmap(
-    da,
-    ax=None,
-    title=None,
-    xlabel=None,
-    ylabel=None,
-    colorbar=True,
-    figsize=(5, 5),
-    no_deci=False,
-):
-    """Plot a heatmap of a 2D DataArray."""
-    if ax is None:
-        fig, ax = plt.subplots(figsize=figsize)
-
-    da = da.squeeze()
-    if len(da.shape) == 1:
-        da = da.expand_dims(dim="_", axis=0)
-        da = da.assign_coords(_=[""])
-
-    im = ax.imshow(da.values.astype(float), cmap="coolwarm")
-
-    try:
-        # try to get axis label and ticks from dataset coords
-        ycoord, xcoord = da.dims
-        xticks = da.indexes[xcoord]
-        yticks = da.indexes[ycoord]
-        if xlabel is None:
-            xlabel = xcoord
-        if ylabel is None:
-            ylabel = ycoord
-
-        ax.set_xticks(np.arange(len(xticks)), labels=xticks)
-        ax.set_yticks(np.arange(len(yticks)), labels=yticks)
-
-        plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
-        ax.set_xlabel(xlabel)
-        ax.set_ylabel(ylabel)
-    except:
-        pass
-
-    for i in range(da.shape[0]):
-        for j in range(da.shape[1]):
-            if no_deci:
-                ax.text(j, i, f"{da.values[i, j]}", ha="center", va="center", color="k")
-            else:
-                ax.text(
-                    j, i, f"{da.values[i, j]:.3f}", ha="center", va="center", color="k"
-                )
-
-    ax.set_title(title)
-    if colorbar:
-        plt.colorbar(im, shrink=0.8)
-    return fig, ax
-
-
-def square(mat, ticks, ax, **kwargs):
-    """Plot a meet matrix for a given hierarchy."""
-    quadmesh = librosa.display.specshow(
-        mat,
-        ax=ax,
-        x_coords=ticks,
-        y_coords=ticks,
-        x_axis="time",
-        y_axis="time",
-        **kwargs,
-    )
-    return quadmesh
-
-
-# Helper function used for visualization in the following examples
-def identify_axes(ax_dict, fontsize=48):
     """
-    Helper to identify the Axes in the examples below.
-
-    Draws the label in a large font in the center of the Axes.
+    Create a figure with specified dimensions and height/width ratios, with gaps between subplots.
 
     Parameters
     ----------
-    ax_dict : dict[str, Axes]
-        Mapping between the title / label and the Axes.
-    fontsize : int, optional
-        How big the label should be.
+    figsize : tuple, optional
+        Figure dimensions (width, height) in inches, by default (5, 5)
+    h_gaps : float or list, optional
+        Vertical gap size between subplots, by default 0.05
+    w_gaps : float or list, optional
+        Horizontal gap size between subplots, by default 0.05
+    height_ratios : list, optional
+        Relative heights of subplots, by default [1, 1, 1]
+    width_ratios : list, optional
+        Relative widths of subplots, by default [1, 1]
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        The created figure
+    axs : 2D array
+        2D array of subplot axes
     """
-    kw = dict(ha="center", va="center", fontsize=fontsize, color="darkgrey")
-    for k, ax in ax_dict.items():
-        ax.text(0.5, 0.5, k, transform=ax.transAxes, **kw)
+    # Create figure with tight layout
+    fig = plt.figure(
+        tight_layout={"pad": 0.1, "w_pad": 0, "h_pad": 0},
+        figsize=figsize,
+    )
+
+    # Handle edge cases of single row/column
+    if len(height_ratios) <= 0 or len(width_ratios) <= 0:
+        return fig, []
+
+    if len(height_ratios) == 1 and len(width_ratios) == 1:
+        axs = [[fig.add_subplot(111)]]
+        return fig, axs
+
+    # Normalize h_gaps to a list with one fewer element than height_ratios
+    if not isinstance(h_gaps, list):
+        h_gaps = [h_gaps] * (len(height_ratios) - 1)
+    while len(h_gaps) < len(height_ratios) - 1:
+        h_gaps.append(h_gaps[-1])
+    normalized_h_gaps = h_gaps[: len(height_ratios) - 1]
+
+    # Normalize w_gaps to a list with one fewer element than width_ratios
+    if not isinstance(w_gaps, list):
+        w_gaps = [w_gaps] * (len(width_ratios) - 1)
+    while len(w_gaps) < len(width_ratios) - 1:
+        w_gaps.append(w_gaps[-1])
+    normalized_w_gaps = w_gaps[: len(width_ratios) - 1]
+
+    # Create interleaved heights using zip
+    gridspec_heights = []
+    for height, gap in zip(height_ratios[:-1], normalized_h_gaps):
+        gridspec_heights.extend([height, gap])
+    gridspec_heights.append(height_ratios[-1])  # Add final height without gap
+
+    # Create interleaved widths using zip
+    gridspec_widths = []
+    for width, gap in zip(width_ratios[:-1], normalized_w_gaps):
+        gridspec_widths.extend([width, gap])
+    gridspec_widths.append(width_ratios[-1])  # Add final width without gap
+
+    # Create gridspec
+    gs = fig.add_gridspec(
+        len(gridspec_heights),
+        len(gridspec_widths),
+        height_ratios=gridspec_heights,
+        width_ratios=gridspec_widths,
+    )
+
+    # Create 2D array of axes
+    axs = []
+    for i in range(len(height_ratios)):
+        row = []
+        for j in range(len(width_ratios)):
+            ax = fig.add_subplot(gs[i * 2, j * 2])
+            ax.set_xticks([])
+            ax.set_yticks([])
+            row.append(ax)
+        axs.append(row)
+
+    return fig, axs
+
+
+def jointplot():
+    # Todo: implement jointplot with seaborn.
+    pass
