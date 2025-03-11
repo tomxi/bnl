@@ -153,15 +153,11 @@ def assign_label_styles(labels, **kwargs):
 def flat_segment(
     intervals,
     labels,
-    ax=None,
+    ax,
     text=False,
     style_map=None,
 ):
     """Plot a single layer of flat segmentation."""
-    if ax is None:
-        fig = plt.gcf()
-        ax = fig.gca()
-        ax.set_yticks([])
     ax.set_xlim(intervals[0][0], intervals[-1][-1])
 
     if style_map is None:
@@ -292,3 +288,36 @@ def heatmap(
     if colorbar:
         plt.colorbar(im, shrink=0.8)
     return fig, ax
+
+
+def square(mat, ticks, ax, **kwargs):
+    """Plot a meet matrix for a given hierarchy."""
+    quadmesh = librosa.display.specshow(
+        mat,
+        ax=ax,
+        x_coords=ticks,
+        y_coords=ticks,
+        x_axis="time",
+        y_axis="time",
+        **kwargs,
+    )
+    return quadmesh
+
+
+# Helper function used for visualization in the following examples
+def identify_axes(ax_dict, fontsize=48):
+    """
+    Helper to identify the Axes in the examples below.
+
+    Draws the label in a large font in the center of the Axes.
+
+    Parameters
+    ----------
+    ax_dict : dict[str, Axes]
+        Mapping between the title / label and the Axes.
+    fontsize : int, optional
+        How big the label should be.
+    """
+    kw = dict(ha="center", va="center", fontsize=fontsize, color="darkgrey")
+    for k, ax in ax_dict.items():
+        ax.text(0.5, 0.5, k, transform=ax.transAxes, **kw)

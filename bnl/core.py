@@ -30,7 +30,7 @@ class S:
         self.T = round(itvls[-1][-1], time_decimal)
         self.beta = np.array(sorted(set(self.Lstar.keys()).union([self.T])))
         self.T0 = self.beta[0]
-        self.itvls = mir_eval.util.boundaries_to_intervals(self.beta)
+        self.itvls = boundaries_to_intervals(self.beta)
         self.anno = mireval2multi([self.itvls], [self.labels])
 
         # Build BSC and ticks
@@ -62,10 +62,17 @@ class S:
         """Update sampling rate and ticks."""
         if hasattr(self, "sr") and self.sr == sr:
             return
-        self.sr = sr
-        self.ticks = np.linspace(
-            self.T0, self.T, int(np.round((self.T - self.T0) * self.sr)) + 1
+        self.sr = float(sr)
+        ## Use the same logic as mir_eval to build the ticks
+        # Figure out how many frames we need
+        from mir_eval.hierarchy import _round
+
+        frame_size = 1.0 / self.sr
+        n_frames = int(
+            (_round(self.T, frame_size) - _round(self.T0, frame_size)) / frame_size
         )
+
+        self.ticks = np.arange(n_frames + 1) * frame_size + self.T0
 
     def L(self, x):
         """Return the label for a given time x."""
