@@ -1,5 +1,6 @@
 import librosa
 from librosa.display import TimeFormatter
+import numpy as np
 
 import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
@@ -156,7 +157,7 @@ def create_fig(
     w_ratios=[1, 1],
     h_gaps=0.05,
     w_gaps=0.05,
-    figsize=(3.5, 5),
+    figsize=(5, 5),
 ):
     """
     Create a figure with specified dimensions and height/width ratios, with gaps between subplots.
@@ -183,7 +184,7 @@ def create_fig(
     """
     # Create figure with tight layout
     fig = plt.figure(
-        tight_layout={"pad": 0.1, "w_pad": 0, "h_pad": 0},
+        constrained_layout=True,
         figsize=figsize,
     )
 
@@ -200,7 +201,7 @@ def create_fig(
         h_gaps = [h_gaps] * (len(h_ratios) - 1)
     while len(h_gaps) < len(h_ratios) - 1:
         h_gaps.append(h_gaps[-1])
-    normalized_h_gaps = h_gaps[: len(h_ratios) - 1]
+    h_gaps = h_gaps[: len(h_ratios) - 1]
 
     # Normalize w_gaps to a list with one fewer element than w_ratios
     if not isinstance(w_gaps, list):
@@ -211,7 +212,7 @@ def create_fig(
 
     # Create interleaved heights using zip
     gridspec_heights = []
-    for height, gap in zip(h_ratios[:-1], normalized_h_gaps):
+    for height, gap in zip(h_ratios[:-1], h_gaps):
         gridspec_heights.extend([height, gap])
     gridspec_heights.append(h_ratios[-1])  # Add final height without gap
 
@@ -234,13 +235,12 @@ def create_fig(
     for i in range(len(h_ratios)):
         row = []
         for j in range(len(w_ratios)):
-            ax = fig.add_subplot(gs[i * 2, j * 2])
-            ax.set_xticks([])
-            ax.set_yticks([])
-            row.append(ax)
+            row.append(fig.add_subplot(gs[i * 2, j * 2]))
         axs.append(row)
 
-    return ax.get_figure(), axs
+    fig = axs[0][0].get_figure()
+    fig.set_constrained_layout_pads(w_pad=0.01, h_pad=0.01, wspace=0.01, hspace=0.01)
+    return fig, np.array(axs)
 
 
 def jointplot():

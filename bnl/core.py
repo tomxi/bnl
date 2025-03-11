@@ -265,14 +265,12 @@ class H:
         if axs is None:
             fig, axs = viz.create_fig(**kw)
             # flatten nested list of axes
-            axs = np.array(axs).flatten()
-        else:
-            fig = axs[0].get_figure()
+            axs = axs.flatten()
 
         # Check len(axs) and self.d is the same
-        if len(axs) != self.d:
+        if len(axs) < self.d:
             raise ValueError(
-                f"Number of axes ({len(axs)}) does not match number of levels ({self.d})."
+                f"Number of axes ({len(axs)}) is smaller than number of levels ({self.d})."
             )
 
         # Plot each level
@@ -282,7 +280,7 @@ class H:
                     ax=axs[i], ytick=i + 1, time_ticks=False, text=show_label
                 )
         self.levels[-1].plot(ax=axs[-1], ytick=self.d, time_ticks=True, text=show_label)
-        return fig, axs
+        return axs[0].get_figure(), axs
 
     def decode_B(
         self,
