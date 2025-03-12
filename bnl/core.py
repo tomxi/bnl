@@ -44,7 +44,7 @@ class S:
         """Update bandwidth for Bhat calculation.
         Populates ._Bhat and .Bhat_bw
         """
-        if hasattr(self, "Bhat_bw") and self.Bhat_bw == bw:
+        if self.Bhat_bw == bw:
             return
         self.Bhat_bw = bw
         boundaries = self.beta[1:-1]
@@ -59,7 +59,7 @@ class S:
 
     def update_sr(self, sr):
         """Update sampling rate and ticks."""
-        if hasattr(self, "sr") and self.sr == sr:
+        if self.sr == sr:
             return
         self.sr = float(sr)
         ## Use the same logic as mir_eval to build the ticks
@@ -114,6 +114,7 @@ class S:
         """
         if bs is None:
             bs = self.beta
+        bs = np.array(sorted(set(bs)))
         lai = self.A(bs=bs, compare_fn=compare_fn)
         seg_dur = bs[1:] - bs[:-1]
         seg_dur_area_mat = np.outer(seg_dur, seg_dur)

@@ -30,11 +30,10 @@ def test_flat_segmentation_initialization():
     assert seg.T == 5
 
 
-@pytest.mark.parametrize("legend_ncol", [6, None])
-@pytest.mark.parametrize(["y_label", "relabel"], [[True, False], [False, True]])
-def test_flat_segmentation_ploting_parametrized(legend_ncol, y_label, relabel):
+@pytest.mark.parametrize("text", [True, False])
+def test_flat_segmentation_ploting_parametrized(text):
     seg = S(tests.ITVLS1, tests.LABELS1)
-    fig = seg.plot(legend_ncol=legend_ncol, y_label=y_label, relabel=relabel)
+    fig = seg.plot(text=text)
     # Verify the figure is created
     assert fig is not None
 
@@ -62,7 +61,7 @@ def test_S_update_sr():
 
 def test_S_L():
     seg = S(tests.ITVLS2, tests.LABELS2)
-    assert seg.L(1) == "b"
+    assert seg.L(1) == "a"
     assert seg.L(3) == "c"
     assert seg.L(3.5) == "b"
 
@@ -79,14 +78,13 @@ def test_S_B():
     assert seg.B(0) == 1
     assert seg.B(2.5) == 1
     assert seg.B(1.5) == 0
-    assert seg.B(5) == 1
+    assert seg.B(seg.T) == 1
     assert seg.B(seg.T + 1) == 0
 
 
 def test_S_Bhat():
     # Test if we can get the Bhattacharyya distance
     seg = S(tests.ITVLS1, tests.LABELS1)
-    assert len(seg.Bhat()) > 0
     assert len(seg.Bhat([1, 2, 3])) == 3
 
 

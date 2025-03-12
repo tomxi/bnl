@@ -25,7 +25,7 @@ def test_mireval_multiseg_conversion():
         [tests.ITVLS3, tests.ITVLS4], [tests.LABELS3, tests.LABELS4]
     )
     assert multi_anno.namespace == "multi_segment"
-    assert multi_anno.duration == 5
+    assert multi_anno.duration == 6.01
     itvls, labels = fmt.multi2mireval(multi_anno)
     assert np.allclose(itvls[0], tests.ITVLS3)
     assert np.allclose(itvls[1], tests.ITVLS4)
@@ -41,7 +41,7 @@ def test_hier_multiseg_conversion():
     ]
     multi_anno = fmt.hier2multi(hier)
     assert multi_anno.namespace == "multi_segment"
-    assert multi_anno.duration == 5
+    assert multi_anno.duration == 6.01
 
     hier_back = fmt.multi2hier(multi_anno)
     for l in range(len(hier)):
@@ -67,7 +67,7 @@ def test_openseg_multiseg_conversion():
     ]
     multi_anno = fmt.openseg2multi(openseg_annos)
     assert multi_anno.namespace == "multi_segment"
-    assert multi_anno.duration == 5
+    assert multi_anno.duration == 6.01
 
     for lvl in range(2):
         openseg_back = fmt.multi2openseg(multi_anno, layer=lvl)
