@@ -11,7 +11,7 @@ from . import viz, utils
 class S:
     """A flat segmentation, labeled intervals."""
 
-    def __init__(self, itvls, labels=None, sr=10, Bhat_bw=1, time_decimal=4):
+    def __init__(self, itvls, labels=None, sr=None, Bhat_bw=None, time_decimal=4):
         """Initialize the flat segmentation."""
 
         if labels is None:
