@@ -4,12 +4,12 @@
 
 # To represent a contions relevance curve, we use the S object
 
-from . import S, utils
+from . import S, H, utils
 from mir_eval.util import boundaries_to_intervals
 import numpy as np
 
 
-def get_segment_relevence(hier, t, meet_mode="deepest"):
+def get_segment_relevence(hier: H, t: float, meet_mode="deepest"):
     """
     Get the relevance curve for a given query time point t in seconds.
 
@@ -19,11 +19,13 @@ def get_segment_relevence(hier, t, meet_mode="deepest"):
         The hierarchical structure.
     t : float
         The query time point.
-
+    meet_mode : str
+        The meeting mode to use for relevance calculation.
+        Options are "deepest", "mono", or "mean".
     Returns
     -------
     S
-        The relevance curve as an S object.
+        The relevance curve as an S segment object.
     """
     ts = (hier.beta[:-1] + hier.beta[1:]) / 2.0
     relevance = [hier.meet(t, m, mode=meet_mode) for m in ts]
@@ -31,12 +33,12 @@ def get_segment_relevence(hier, t, meet_mode="deepest"):
 
 
 def recall_at_t(
-    h_ref,
-    h_est,
-    t,
-    meet_mode="deepest",
-    window=15,
-    transitive=False,
+    h_ref: H,
+    h_est: H,
+    t: float,
+    meet_mode: str = "deepest",
+    window: float = 15,
+    transitive: bool = False,
 ):
     """
     Compute recall at time t for a reference and estimated hierarchy.
@@ -85,7 +87,13 @@ def recall_at_t(
     return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
 
 
-def recall(h_ref, h_est, meet_mode="deepest", window=None, transitive=True):
+def recall(
+    h_ref: H,
+    h_est: H,
+    meet_mode: str = "deepest",
+    window: float = 0,
+    transitive: bool = True,
+):
     common_bs = np.array(sorted(list(set(h_ref.beta).union(h_est.beta))))
     common_ts = (common_bs[:-1] + common_bs[1:]) / 2.0
 
@@ -114,7 +122,13 @@ def recall(h_ref, h_est, meet_mode="deepest", window=None, transitive=True):
         )
 
 
-def precision(h_ref, h_est, meet_mode="deepest", window=None, transitive=True):
+def precision(
+    h_ref: H,
+    h_est: H,
+    meet_mode: str = "deepest",
+    window: float = 0,
+    transitive: bool = True,
+):
     return recall(
         h_est, h_ref, meet_mode=meet_mode, window=window, transitive=transitive
     )
