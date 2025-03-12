@@ -10,8 +10,10 @@ import itertools
 from cycler import cycler
 
 
-def sq(mat, ticks, ax, **kwargs):
+def sq(mat, ticks, ax=None, **kwargs):
     """Plot a meet matrix for a given hierarchy."""
+    if ax is None:
+        _, ax = plt.subplots(figsize=(3.5, 3.5))
     quadmesh = librosa.display.specshow(
         mat,
         ax=ax,
@@ -236,9 +238,9 @@ def create_fig(
         row = []
         for j in range(len(w_ratios)):
             row.append(fig.add_subplot(gs[i * 2, j * 2]))
-        axs.append(row)
+        axs.append(np.array(row))
 
-    fig = axs[0][0].get_figure()
+    fig = row[0].get_figure()
     fig.set_constrained_layout_pads(w_pad=0.01, h_pad=0.01, wspace=0.01, hspace=0.01)
     return fig, np.array(axs)
 

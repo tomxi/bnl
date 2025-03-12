@@ -260,7 +260,7 @@ def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=N
     return agg_recall, q_ranking_recall, q_ranking_normalizer
 
 
-def cluster_boundaries(boundaries, novelty, ticks, depth, boundary_time_decimal=3):
+def cluster_boundaries(boundaries, novelty, ticks, depth, boundary_time_decimal=4):
     """Convert boundaries with novelty values into hierarchical intervals of specified depth.
 
     Args:
@@ -361,3 +361,11 @@ def best_matching_label(query_itvl, itvls, labels):
             best_label = label
             best_overlap = overlap
     return best_label
+
+
+def bs2grid_area(bs):
+    bs = np.asarray(sorted(set(bs)))
+    if len(bs) < 2:
+        raise ValueError("bs must contain at least two unique elements.")
+    seg_dur = bs[1:] - bs[:-1]
+    return np.outer(seg_dur, seg_dur)

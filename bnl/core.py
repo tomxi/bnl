@@ -11,7 +11,7 @@ from . import viz, utils
 class S:
     """A flat segmentation, labeled intervals."""
 
-    def __init__(self, itvls, labels=None, sr=10, Bhat_bw=1, time_decimal=3):
+    def __init__(self, itvls, labels=None, sr=10, Bhat_bw=1, time_decimal=4):
         """Initialize the flat segmentation."""
 
         if labels is None:
@@ -24,6 +24,7 @@ class S:
         }
         self.T = round(itvls[-1][-1], time_decimal)
         self.beta = np.array(sorted(set(self.Lstar.keys()).union([self.T])))
+        self.seg_dur = self.beta[1:] - self.beta[:-1]
         self.T0 = self.beta[0]
         self.itvls = boundaries_to_intervals(self.beta)
         self.anno = mireval2multi([self.itvls], [self.labels])
@@ -32,14 +33,10 @@ class S:
         self.update_sr(sr)
         self.update_bw(Bhat_bw)
 
-        self.seg_dur = self.beta[1:] - self.beta[:-1]
-        self.seg_dur_area_mat = np.outer(self.seg_dur, self.seg_dur)
-        self.total_label_agreement_area = np.sum(
-            self.seg_dur_area_mat * self.A(bs=self.beta)
-        )
-
     def update_bw(self, bw):
-        """Update bandwidth for Bhat calculation."""
+        """Update bandwidth for Bhat calculation.
+        Populates ._Bhat and .Bhat_bw
+        """
         if hasattr(self, "Bhat_bw") and self.Bhat_bw == bw:
             return
         self.Bhat_bw = bw
@@ -87,27 +84,38 @@ class S:
         ts = np.array(ts)
         return self._Bhat(ts)
 
-    def A(self, bs=None):
-        """Return the label agreement indicator for given boundaries."""
+    def A(self, bs=None, compare_fn=np.equal):
+        """Return the label agreement indicator for given boundaries.
+        when substituting compare_fn to np.greater, it can be used to get
+        significant pairs when the labels are comparable.
+        compare_fn needs to support .outer
+        """
         if bs is None:
             bs = self.beta
-        bs = np.array(sorted(set(bs).union([self.T, self.T0])))
+        bs = np.array(sorted(set(bs)))
         ts = (bs[1:] + bs[:-1]) / 2  # Sample label from mid-points of each frame
-        sampled_anno = self.anno.to_samples(ts)
-        sample_labels = [obs[0]["label"] for obs in sampled_anno]
-        return np.equal.outer(sample_labels, sample_labels).astype(float)
+        labels = np.array([self.L(t) for t in ts])
+        return compare_fn.outer(labels, labels).astype(float)
 
-    def Ahat(self, bs=None):
-        """Return the label agreement matrix."""
-        return self.A(bs) / self.total_label_agreement_area
+    def Ahat(self, bs=None, compare_fn=np.equal):
+        """Return the label agreement matrix.
+        it's the indicator normalized by the area of the segments duration square.
+        """
+        if bs is None:
+            bs = self.beta
+        lai = self.A(bs=bs, compare_fn=compare_fn)
+        seg_dur = bs[1:] - bs[:-1]
+        seg_dur_area_mat = np.outer(seg_dur, seg_dur)
+        total_area = np.sum(seg_dur_area_mat * lai)
+        return lai / total_area if total_area > 0 else lai
 
     def plot(self, ax=None, **kwargs):
-        """Plot the segmentation."""
-
+        """Plot the segmentation. using viz.segment()"""
         new_kwargs = dict(text=True, ytick="", time_ticks=True, figsize=(3.5, 0.5))
         new_kwargs.update(kwargs)
         if ax is None:
-            _, ax = plt.subplot(figsize=new_kwargs["figsize"])
+            fig = plt.figure(figsize=new_kwargs["figsize"], constrained_layout=True)
+            ax = fig.add_subplot(111)
 
         new_kwargs.pop("figsize")
         return viz.segment(self.itvls, self.labels, ax=ax, **new_kwargs)
@@ -116,11 +124,23 @@ class S:
         """Return a new S with default labeling."""
         return S(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
+    def meet(self, u, v, compare_fn=np.equal):
+        """Return whether labels at times u and v meet according to compare_fn.
+
+        Args:
+            u, v: Time points to compare labels
+            compare_fn: Comparison function (default: np.equal)
+
+        Returns:
+            bool: Result of comparison between labels at u and v
+        """
+        return compare_fn(self.L(u), self.L(v))
+
 
 class H:
     """A hierarchical segmentation composed of multiple flat segmentations."""
 
-    def __init__(self, itvls, labels=None, sr=10, Bhat_bw=1, time_decimal=3):
+    def __init__(self, itvls, labels=None, sr=10, Bhat_bw=1, time_decimal=4):
         """Initialize the hierarchical segmentation."""
         # Validate same start/end points across levels
         start_points = [round(level[0][0], time_decimal) for level in itvls]
@@ -152,19 +172,16 @@ class H:
 
     def update_sr(self, sr):
         """Update sampling rate and ticks."""
-        if hasattr(self, "sr") and self.sr == sr:
-            return
-        self.sr = sr
-        self.ticks = np.linspace(
-            self.T0, self.T, int(np.round((self.T - self.T0) * self.sr)) + 1
-        )
+        for level in self.levels:
+            level.update_sr(sr)
+
+        self.sr = level.sr
+        self.ticks = level.ticks
 
     def update_bw(self, Bhat_bw):
-        if hasattr(self, "Bhat_bw") and self.Bhat_bw == Bhat_bw:
-            return
-        self.Bhat_bw = Bhat_bw
         for lvl in self.levels:
             lvl.update_bw(Bhat_bw)
+        self.Bhat_bw = Bhat_bw
 
     def Ahats(self, bs=None):
         """Return the normalized label agreement matrices for all levels."""
@@ -190,14 +207,14 @@ class H:
         weighted = np.array(weights).reshape(-1, 1) * self.Bhats(ts)
         return np.sum(weighted, axis=0)
 
-    def A(self, bs=None):
+    def A(self, bs=None, compare_fn=np.equal):
         """Return the sum of label agreement mats for all levels
         with segments defined by boundaires bs.
         """
         if bs is None:
             bs = self.beta
-        bs = np.array(sorted(set(bs).union([self.T, self.T0])))
-        return sum(level.A(bs=bs) for level in self.levels)
+        bs = np.array(sorted(bs))
+        return sum(level.A(bs=bs, compare_fn=compare_fn) for level in self.levels)
 
     def B(self):
         """Return the boundary count across all levels."""
@@ -212,7 +229,7 @@ class H:
         """
         if bs is None:
             bs = self.beta
-        bs = np.array(sorted(set(bs).union([self.T, self.T0])))
+        bs = np.array(sorted(set(bs)))
         Ahats = self.Ahats(bs=bs)
         indexed_Ahats = np.array(
             [(level + 1) * (Ahats[level] > 0).astype(int) for level in range(self.d)]
@@ -234,7 +251,7 @@ class H:
         """Return the resampled agreement area matrix."""
         if bs is None:
             bs = self.beta
-        bs = np.array(sorted(set(bs).union([self.T, self.T0])))
+        bs = np.array(sorted(set(bs)))
         all_bs = np.array(sorted(set(self.beta).union(bs)))
         seg_dur = all_bs[1:] - all_bs[:-1]
         seg_agreement_area = np.outer(seg_dur, seg_dur)
@@ -246,7 +263,7 @@ class H:
         """Return the normalized resampled agreement area matrix."""
         if bs is None:
             bs = self.beta
-        bs = np.array(sorted(set(bs).union([self.T, self.T0])))
+        bs = np.array(sorted(set(bs)))
         seg_dur = bs[1:] - bs[:-1]
         return self.M(bs, level_weights=level_weights) / np.outer(seg_dur, seg_dur)
 
@@ -427,6 +444,26 @@ class H:
     def unique_labeling(self):
         """Return a new H with default labeling."""
         return H(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
+
+    def meet(self, u, v, mode="deepest"):
+        # mode can be 'deepest', 'mono', 'mean'.
+        # Get the meet value per level
+        lvl_meet = [lvl.meet(u, v) for lvl in self.levels]
+        # Handle edge cases
+        if not any(lvl_meet):
+            return 0
+        elif all(lvl_meet):
+            return self.d
+
+        # switch on mode
+        if mode == "deepest":
+            return self.d - lvl_meet[::-1].index(True)
+        elif mode == "mono":
+            return lvl_meet.index(False)
+        elif mode == "mean":
+            return np.mean(lvl_meet)
+        else:
+            raise ValueError(f"Unknown mode: {mode}")
 
 
 def levels2H(levels, sr=10, Bhat_bw=1):
