@@ -29,6 +29,8 @@ def get_segment_relevence(hier: H, t: float, meet_mode="deepest"):
     """
     ts = (hier.beta[:-1] + hier.beta[1:]) / 2.0
     relevance = [hier.meet(t, m, mode=meet_mode) for m in ts]
+    # We return a segmentation with all the boundaries from the hierarchy
+    # and store the relevance value as the label.
     return S(boundaries_to_intervals(hier.beta), relevance)
 
 
@@ -59,6 +61,8 @@ def recall_at_t(
     """
     s_ref = get_segment_relevence(h_ref, t, meet_mode=meet_mode)
     s_est = get_segment_relevence(h_est, t, meet_mode=meet_mode)
+    # get beta (set of boundaries) from both s_ref and s_est.
+    # Between these boundaries things are piecewise constant.
     common_bs = sorted(list(set(s_ref.beta).union(s_est.beta)))
     min_t = min(common_bs)
     max_t = max(common_bs)
@@ -77,10 +81,14 @@ def recall_at_t(
         # They have to be greater by exactly 1
         compare_fn = np.frompyfunc(lambda x, y: int(x) - int(y) == 1, 2, 1)
 
+    # S.A returns all segment pair comparison with compare_fn.
+    # When compare_fn is np.equal, S.A is the meet matrix: SSM between two list of segment labels.
+    # We use np.greater here to get the orientation of the triplets
     positions_to_recall = s_ref.A(bs=common_bs, compare_fn=compare_fn)
     positions_recalled = (
         s_est.A(bs=common_bs, compare_fn=np.greater) * positions_to_recall
     )
+    # Calculate the area of the grid made by segment boundaries
     common_grid_area = utils.bs2grid_area(common_bs)
     area_to_recall = np.sum(positions_to_recall * common_grid_area)
     area_recalled = np.sum(positions_recalled * common_grid_area)

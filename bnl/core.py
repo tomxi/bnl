@@ -1,6 +1,6 @@
 import numpy as np
 from scipy import stats
-import librosa
+import librosa, warnings
 from matplotlib import pyplot as plt
 from mir_eval.util import intervals_to_boundaries, boundaries_to_intervals
 
@@ -30,8 +30,15 @@ class S:
         self.anno = mireval2multi([self.itvls], [self.labels])
 
         # Build BSC and ticks
-        self.update_sr(sr)
-        self.update_bw(Bhat_bw)
+        # Lazy init these attributes:
+        self._Bhat = None
+        self.Bhat_bw = None
+        self.sr = None
+        self.ticks = None
+        if sr:
+            self.update_sr(sr)
+        if Bhat_bw is not None:
+            self.update_bw(Bhat_bw)
 
     def update_bw(self, bw):
         """Update bandwidth for Bhat calculation.
@@ -82,6 +89,10 @@ class S:
         if ts is None:
             ts = self.ticks
         ts = np.array(ts)
+        if self.Bhat_bw is None:
+            warnings.warn("Bhat_bw is not set. setting it to 1.")
+            self.update_bw(1)
+
         return self._Bhat(ts)
 
     def A(self, bs=None, compare_fn=np.equal):
@@ -140,7 +151,7 @@ class S:
 class H:
     """A hierarchical segmentation composed of multiple flat segmentations."""
 
-    def __init__(self, itvls, labels=None, sr=10, Bhat_bw=1, time_decimal=4):
+    def __init__(self, itvls, labels=None, sr=None, Bhat_bw=None, time_decimal=4):
         """Initialize the hierarchical segmentation."""
         # Validate same start/end points across levels
         start_points = [round(level[0][0], time_decimal) for level in itvls]
@@ -171,7 +182,7 @@ class H:
         self.update_sr(sr)
 
     def update_sr(self, sr):
-        """Update sampling rate and ticks."""
+        """Update sampling rate and ticks for all levels."""
         for level in self.levels:
             level.update_sr(sr)
 
@@ -189,6 +200,9 @@ class H:
 
     def Bhats(self, ts=None):
         """Return the smoothed boundary strengths for all levels."""
+        if self.Bhat_bw is None:
+            warnings.warn("Bhat_bw is not set. setting it to 1.")
+            self.update_bw(1)
         return np.asarray([lvl.Bhat(ts) for lvl in self.levels])
 
     def Ahat(self, bs=None, weights=None):
@@ -466,14 +480,14 @@ class H:
             raise ValueError(f"Unknown mode: {mode}")
 
 
-def levels2H(levels, sr=10, Bhat_bw=1):
+def levels2H(levels, sr=None, Bhat_bw=None):
     """Convert a list of levels to a hierarchical format."""
     itvls = [l.itvls for l in levels]
     lbls = [l.labels for l in levels]
     return H(itvls, lbls, sr=sr, Bhat_bw=Bhat_bw)
 
 
-def multi2H(anno, sr=10, Bhat_bw=1):
+def multi2H(anno, sr=None, Bhat_bw=None):
     """Convert multiple segments to hierarchical format."""
     segments = multi2mireval(anno)
     return H(*segments, sr=sr, Bhat_bw=Bhat_bw)
