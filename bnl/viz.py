@@ -245,6 +245,78 @@ def create_fig(
     return fig, np.array(axs)
 
 
-def jointplot():
-    # Todo: implement jointplot with seaborn.
-    pass
+def plot_scatter_frame_vs_continuous(
+    results,
+    sel_dict={"output": "run_time"},
+    frame_sizes=[0.1, 0.25, 0.5, 1, 2],
+    ax=None,
+    **scatter_kwargs,
+):
+    """
+    Generates a scatter plot comparing the performance of frame-based vs. continuous
+    implementations for a given output type (e.g., 'output': 'run_time', 'lm', 'lr', 'lp).
+
+    Args:
+        results (xr.DataArray): An xarray DataArray containing the results,
+            with dimensions 'tid', 'frame_size', and 'output'.
+        output_type (str): The type of output to plot (e.g., 'run_time', 'lm').
+        ax (matplotlib.axes._axes.Axes, optional): An existing matplotlib Axes
+            object to plot on. If None, a new figure and axes will be created.
+            Defaults to None.
+
+    Returns:
+        matplotlib.axes._axes.Axes: The Axes object containing the plot.
+    """
+    # Name this selection
+    name = "_".join(sel_dict.values())
+
+    # Filter the xarray DataArray to only include the desired output type
+    results_filtered = results.sel(sel_dict)
+    results_filtered.name = name
+
+    # Convert the filtered xarray DataArray to a pandas DataFrame
+    df = results_filtered.to_dataframe().reset_index()
+    # Group by 'tid' and 'frame_size' and calculate the mean for the specified output type
+    df_grouped = df.groupby(["tid", "frame_size"])[name].mean().reset_index()
+    # Pivot the DataFrame to have the specified output type for each 'frame_size' as columns
+    df_pivot = df_grouped.pivot(index="tid", columns="frame_size", values=name)
+
+    # Create the scatter plot if ax is None
+    if ax is None:
+        _, ax = plt.subplots(figsize=(4, 5))
+    kwargs = dict(alpha=0.35, s=3, edgecolor="none")
+    kwargs.update(**scatter_kwargs)
+
+    for frame_size in frame_sizes:
+        if frame_size not in df_pivot.columns:
+            raise ValueError(f"Frame size {frame_size} not found in the data.")
+
+        ax.scatter(
+            df_pivot[0.0],
+            df_pivot[frame_size],
+            label=f"{frame_size:.1f} sec",
+            **kwargs,
+        )
+
+    ax.set_title(name)
+    ax.grid(True)
+
+    # Set the x and y axis limits, if max is over 2, then use log scale
+    if df_pivot.max().max() > 2:
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        min_v = df_pivot.min().min()
+        max_v = df_pivot.max().max()
+
+    else:
+        min_v, max_v = 0, 1
+
+    ax.set_xlim(min_v, max_v)
+    ax.set_ylim(min_v, max_v)
+    # Set the aspect ratio to be equal
+    ax.set_aspect("equal", adjustable="box")
+
+    # Plot a diagonal line for reference
+    ax.plot([min_v, max_v], [min_v, max_v], linestyle="--", color="k", alpha=0.5)
+
+    return ax
