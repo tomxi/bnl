@@ -4,7 +4,13 @@ import librosa, warnings
 from matplotlib import pyplot as plt
 from mir_eval.util import intervals_to_boundaries, boundaries_to_intervals
 
-from .formatting import mireval2multi, multi2mireval
+from .formatting import (
+    mireval2multi,
+    multi2mireval,
+    mirevalflat2openseg,
+    openseg2mirevalflat,
+)
+from .external import expand_hierarchy
 from . import viz, utils
 
 
@@ -27,7 +33,7 @@ class S:
         self.seg_dur = self.beta[1:] - self.beta[:-1]
         self.T0 = self.beta[0]
         self.itvls = boundaries_to_intervals(self.beta)
-        self.anno = mireval2multi([self.itvls], [self.labels])
+        self.anno = mirevalflat2openseg(self.itvls, self.labels)
 
         # Build BSC and ticks
         # Lazy init these attributes:
@@ -147,6 +153,17 @@ class S:
             bool: Result of comparison between labels at u and v
         """
         return compare_fn(self.L(u), self.L(v))
+
+    def expand(self, format="slm", always_include=False):
+        """Expand the segmentation into a hierarchical format."""
+        # Convert to hierarchical format using the specified format
+        expanded_levels = [
+            flat2S(l)
+            for l in expand_hierarchy(
+                self.anno, dataset=format, always_include=always_include
+            )
+        ]
+        return levels2H(expanded_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
 
 class H:
@@ -480,9 +497,27 @@ class H:
         else:
             raise ValueError(f"Unknown mode: {mode}")
 
+    def expand(self, format="slm", always_include=False):
+        """Expand the hierarchy annotations using the specified format.
+
+        Args:
+            format (str): Dataset format to use for expansion (default: 'slm')
+            always_include (bool): Whether to always include original annotations
+
+        Returns:
+            H: A hierarchical segmentation with all expanded levels
+        """
+        expanded_levels = []
+        for level in self.levels:
+            # Expand each level and collect all resulting levels
+            expanded = level.expand(format=format, always_include=always_include)
+            expanded_levels.extend(expanded.levels)
+
+        return levels2H(expanded_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
+
 
 def levels2H(levels, sr=None, Bhat_bw=None):
-    """Convert a list of levels to a hierarchical format."""
+    """Convert a list of levels (S) to a hierarchical format."""
     itvls = [l.itvls for l in levels]
     lbls = [l.labels for l in levels]
     return H(itvls, lbls, sr=sr, Bhat_bw=Bhat_bw)
@@ -492,3 +527,9 @@ def multi2H(anno, sr=None, Bhat_bw=None):
     """Convert multiple segments to hierarchical format."""
     segments = multi2mireval(anno)
     return H(*segments, sr=sr, Bhat_bw=Bhat_bw)
+
+
+def flat2S(anno, sr=None, Bhat_bw=None):
+    """Convert flat annotations to hierarchical format."""
+    segment = openseg2mirevalflat(anno)
+    return S(*segment, sr=sr, Bhat_bw=Bhat_bw)

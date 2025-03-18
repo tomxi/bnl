@@ -8,3 +8,4 @@ __pycache__
 scripts/figs/*
 .DS_Store
 scripts/out/*
+scripts/compare_implementation/*

@@ -4,9 +4,13 @@
 
 # To represent a contions relevance curve, we use the S object
 
-from . import S, H, utils
-from mir_eval.util import boundaries_to_intervals
+from . import S, H, utils, fio
+import xarray as xr
+import os
+from mir_eval.util import boundaries_to_intervals, f_measure
+from mir_eval import hierarchy
 import numpy as np
+import time
 
 
 def get_segment_relevence(hier: H, t: float, meet_mode="deepest"):
@@ -140,3 +144,60 @@ def precision(
     return recall(
         h_est, h_ref, meet_mode=meet_mode, window=window, transitive=transitive
     )
+
+
+def lmeasure(h_ref: H, h_est: H, meet_mode: str = "deepest", beta=1.0):
+    p = precision(h_ref, h_est, meet_mode=meet_mode)
+    r = recall(h_ref, h_est, meet_mode=meet_mode)
+    f = f_measure(p, r, beta=beta)
+    return (p, r, f)
+
+
+def time_lmeasure(ref, est, frame_size=0):
+    """
+    Measure the time taken to compute the lmeasure metric using both implementations.
+
+    Parameters:
+    - ref: Reference hierarchy
+    - est: Estimated hierarchy
+    - frame_size: frame_size for the metric calculation. 0 will use my implementation
+
+    Returns:
+    - Time taken for each implementation
+    """
+    # Measure time for different implementation with frame size or not
+    start_time = time.time()
+    if frame_size == 0:
+        results = lmeasure(ref, est)
+    else:
+        results = hierarchy.lmeasure(
+            ref.itvls, ref.labels, est.itvls, est.labels, frame_size=frame_size
+        )
+    run_time = time.time() - start_time
+    return run_time, results
+
+
+def time_salami_track(tid):
+    hiers = fio.salami_ref_hiers(tid=tid)
+    if len(hiers) < 2:
+        return
+
+    fname = f"./compare_implementation/{tid}.nc"
+    if os.path.exists(fname):
+        return
+    test_frame_size = [0, 0.1, 0.25, 0.5, 1, 2]
+    da_coords = dict(frame_size=test_frame_size, output=["run_time", "lp", "lr", "lm"])
+    # Create a dataarray for this track's results
+    result_da = xr.DataArray(dims=da_coords.keys(), coords=da_coords)
+
+    # Get the two hierarchies
+    ref = hiers[0]
+    est = hiers[1]
+
+    for frame_size in test_frame_size:
+        # Measure time for both implementations
+        run_time, results = time_lmeasure(ref, est, frame_size=frame_size)
+        result_da.loc[dict(frame_size=frame_size)] = [run_time, *results]
+
+    # save the results
+    result_da.to_netcdf(fname)

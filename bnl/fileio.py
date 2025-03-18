@@ -4,7 +4,7 @@ from . import multi2H, fmt, utils
 ROOT_DATA_DIR = "/Users/xi/data/"
 
 
-def salami_ref_hiers(tid, salami_jams_dir="salami-jams"):
+def salami_ref_hiers(tid, salami_jams_dir="salami-jams/"):
     jams_path = os.path.join(ROOT_DATA_DIR, salami_jams_dir, tid + ".jams")
     jam = jams.load(jams_path)
     duration = jam.file_metadata.duration
