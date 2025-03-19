@@ -11,7 +11,7 @@ from .formatting import (
     mirevalflat2openseg,
     openseg2mirevalflat,
 )
-from .external import expand_hierarchy
+from .external import expand_hierarchy, reindex
 from . import viz, utils
 
 
@@ -359,6 +359,14 @@ class H:
 
         return axs[0].get_figure(), axs
 
+    def relabel(self):
+        """Re-label the hierarchical segmentation."""
+        # Create a new set of labels for each level
+        ext_format = [[i, l] for i, l in zip(self.itvls, self.labels)]
+        new_hier = reindex(ext_format)
+        new_labels = [lvl[1] for lvl in new_hier]
+        return H(self.itvls, new_labels, sr=self.sr, Bhat_bw=self.Bhat_bw)
+
     def decode_B(
         self,
         depth=4,
@@ -517,9 +525,16 @@ class H:
 
         # switch on mode
         if mode == "deepest":
-            return self.d - lvl_meet[::-1].index(True)
+            # Find the deepest level (highest index) where the meet is True
+            for i in range(self.d - 1, -1, -1):
+                if lvl_meet[i]:
+                    return (
+                        i + 1
+                    )  # +1 because we want to return level number (1-indexed)
+                return 0
         elif mode == "mono":
-            return lvl_meet.index(False)
+            # Find the first level where the meet is False
+            return lvl_meet.index(False) if False in lvl_meet else self.d
         elif mode == "mean":
             return np.mean(lvl_meet)
         else:

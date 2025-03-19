@@ -3,6 +3,7 @@ from . import utils, viz
 from . import formatting as fmt
 from . import fileio as fio
 from . import external as ext
+from . import metrics
 
 __all__ = [
     "S",
@@ -14,4 +15,5 @@ __all__ = [
     "viz",
     "fio",
     "ext",
+    "metrics",
 ]
