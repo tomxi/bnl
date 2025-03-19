@@ -284,7 +284,7 @@ def plot_scatter_frame_vs_continuous(
     # Create the scatter plot if ax is None
     if ax is None:
         _, ax = plt.subplots(figsize=(4, 5))
-    kwargs = dict(alpha=0.35, s=3, edgecolor="none")
+    kwargs = dict(alpha=0.35, s=2.5, edgecolor="none")
     kwargs.update(**scatter_kwargs)
 
     for frame_size in frame_sizes:
