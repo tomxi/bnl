@@ -3,6 +3,7 @@ from scipy import stats
 import librosa, warnings
 from matplotlib import pyplot as plt
 from mir_eval.util import intervals_to_boundaries, boundaries_to_intervals
+import matplotlib.patches as mpatches
 
 from .formatting import (
     mireval2multi,
@@ -299,20 +300,25 @@ class H:
         seg_dur = bs[1:] - bs[:-1]
         return self.M(bs, level_weights=level_weights) / np.outer(seg_dur, seg_dur)
 
-    def plot(self, axs=None, **kwargs):
+    def plot(
+        self,
+        axs=None,
+        text=True,
+        legend=False,  #
+        legend_offset=0.2,
+        **create_fig_kwargs,
+    ):
         """Plot the hierarchical segmentation."""
         # kwargs handling
-        kw = dict(
-            text=True,
+        fig_kw = dict(
             figsize=(5, 0.4 * self.d + 0.5),
             h_ratios=[1] * self.d,
             w_ratios=[1],
         )
-        kw.update(kwargs)
-        show_label = kw.pop("text")
+        fig_kw.update(create_fig_kwargs)
 
         if axs is None:
-            fig, axs = viz.create_fig(**kw)
+            _, axs = viz.create_fig(**fig_kw)
             # flatten nested list of axes
             axs = axs.flatten()
 
@@ -322,13 +328,35 @@ class H:
                 f"Number of axes ({len(axs)}) is smaller than number of levels ({self.d})."
             )
 
+        ## Starting to do real work...
+        # build stylemap from labels
+        style_map = viz.label_style_dict(labels=self.labels)
+
         # Plot each level
         if self.d > 1:
             for i in range(self.d - 1):
                 self.levels[i].plot(
-                    ax=axs[i], ytick=i + 1, time_ticks=False, text=show_label
+                    ax=axs[i],
+                    ytick=i + 1,
+                    time_ticks=False,
+                    text=text,
+                    style_map=style_map,
                 )
-        self.levels[-1].plot(ax=axs[-1], ytick=self.d, time_ticks=True, text=show_label)
+        self.levels[-1].plot(
+            ax=axs[-1], ytick=self.d, time_ticks=True, text=text, style_map=style_map
+        )
+        # Set legend
+        if legend:
+            legend_handles = [mpatches.Patch(**style) for style in style_map.values()]
+            axs[-1].legend(
+                handles=legend_handles,
+                labels=list(style_map.keys()),
+                loc="upper center",
+                fontsize="small",
+                ncol=legend,
+                bbox_to_anchor=(0.5, -legend_offset),
+            )
+
         return axs[0].get_figure(), axs
 
     def decode_B(

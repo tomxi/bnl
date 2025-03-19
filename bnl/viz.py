@@ -1,5 +1,5 @@
-import librosa
-from librosa.display import TimeFormatter
+# import librosa
+from librosa.display import TimeFormatter, specshow
 import numpy as np
 
 import matplotlib.patches as mpatches
@@ -14,7 +14,7 @@ def sq(mat, ticks, ax=None, **kwargs):
     """Plot a meet matrix for a given hierarchy."""
     if ax is None:
         _, ax = plt.subplots(figsize=(3.5, 3.5))
-    quadmesh = librosa.display.specshow(
+    quadmesh = specshow(
         mat,
         ax=ax,
         x_coords=ticks,
@@ -26,7 +26,7 @@ def sq(mat, ticks, ax=None, **kwargs):
     return quadmesh
 
 
-def label_style_dict(labels, **kwargs):
+def label_style_dict(labels, boundary_color="white", **kwargs):
     """
     Creates a mapping of labels to visual style properties for consistent visualization.
 
@@ -68,20 +68,21 @@ def label_style_dict(labels, **kwargs):
     unique_labels.sort()
 
     # More hatch patterns for more labels
-    some_hatch = ["", "\\", "..", "xx", "O.", "*", "\\O", "oo", "xxO"]
-    more_hatch = [h + "--" for h in some_hatch]
+    hatchs = ["", "..", "O.", "*", "xx", "xxO", "\\O", "oo", "\\"]
+    more_hatchs = [h + "--" for h in hatchs]
 
     if len(unique_labels) <= 80:
-        hatch_cycler = cycler(hatch=some_hatch)
+        hatch_cycler = cycler(hatch=hatchs)
         fc_cycler = cycler(color=plt.get_cmap("tab10").colors)
         p_cycler = hatch_cycler * fc_cycler
     else:
-        hatch_cycler = cycler(hatch=some_hatch + more_hatch)
+        hatch_cycler = cycler(hatch=hatchs + more_hatchs)
         fc_cycler = cycler(color=plt.get_cmap("tab20").colors)
         # make it repeat...
         p_cycler = itertools.cycle(hatch_cycler * fc_cycler)
 
-    # Create a mapping of labels to styles
+    # Create a mapping of labels to styles by cycling through the properties
+    # and assigning them to the labels as they appear in the unique labels' ordering
     seg_map = dict()
     for lab, properties in zip(unique_labels, p_cycler):
         # set style according to p_cycler
@@ -94,16 +95,11 @@ def label_style_dict(labels, **kwargs):
         if "color" in style:
             style.setdefault("facecolor", style["color"])
             style.pop("color", None)
-        seg_map[lab] = dict(linewidth=1, edgecolor="white")
+        seg_map[lab] = dict(linewidth=1, edgecolor=boundary_color)
         seg_map[lab].update(style)
         seg_map[lab].update(kwargs)
         seg_map[lab]["label"] = lab
     return seg_map
-
-
-def label_legend_handles(labels, **style_dict_kwargs):
-    style_map = label_style_dict(labels, **style_dict_kwargs)
-    return [mpatches.Patch(**style) for style in style_map.values()]
 
 
 def segment(
@@ -245,11 +241,13 @@ def create_fig(
     return fig, np.array(axs)
 
 
+# For paper figure on benchmarking continuous versus frame-based implementation.
 def plot_scatter_frame_vs_continuous(
     results,
     sel_dict={"output": "run_time"},
     frame_sizes=[0.1, 0.25, 0.5, 1, 2],
     ax=None,
+    color_start_idx=0,  # New parameter to specify starting color index
     **scatter_kwargs,
 ):
     """
@@ -263,6 +261,8 @@ def plot_scatter_frame_vs_continuous(
         ax (matplotlib.axes._axes.Axes, optional): An existing matplotlib Axes
             object to plot on. If None, a new figure and axes will be created.
             Defaults to None.
+        color_start_idx (int, optional): Index in the default color cycle to start from.
+            Defaults to 0.
 
     Returns:
         matplotlib.axes._axes.Axes: The Axes object containing the plot.
@@ -284,6 +284,13 @@ def plot_scatter_frame_vs_continuous(
     # Create the scatter plot if ax is None
     if ax is None:
         _, ax = plt.subplots(figsize=(4, 5))
+
+    # Get the current color cycle and rotate it to start at the specified index
+    prop_cycle = plt.rcParams["axes.prop_cycle"]
+    colors = list(prop_cycle.by_key()["color"])
+    rotated_colors = colors[color_start_idx:] + colors[:color_start_idx]
+    ax.set_prop_cycle(cycler(color=rotated_colors))
+
     kwargs = dict(alpha=0.35, s=3, edgecolor="none")
     kwargs.update(**scatter_kwargs)
 
@@ -307,7 +314,6 @@ def plot_scatter_frame_vs_continuous(
         ax.set_yscale("log")
         min_v = df_pivot.min().min()
         max_v = df_pivot.max().max()
-
     else:
         min_v, max_v = 0, 1
 
@@ -317,6 +323,13 @@ def plot_scatter_frame_vs_continuous(
     ax.set_aspect("equal", adjustable="box")
 
     # Plot a diagonal line for reference
-    ax.plot([min_v, max_v], [min_v, max_v], linestyle="--", color="k", alpha=0.5)
+    ax.plot(
+        [min_v, max_v],
+        [min_v, max_v],
+        linestyle="-",
+        color="k",
+        alpha=0.5,
+        linewidth=0.5,
+    )
 
     return ax
