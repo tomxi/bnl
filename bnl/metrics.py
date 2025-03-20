@@ -8,9 +8,13 @@ from . import S, H, utils, fio
 import xarray as xr
 import os
 from mir_eval.util import boundaries_to_intervals, f_measure
-from mir_eval import hierarchy
+from mir_eval import hierarchy as meh
 import numpy as np
 import time
+
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, module="mir_eval")
 
 
 def get_segment_relevence(hier: H, t: float, meet_mode="deepest"):
@@ -43,8 +47,9 @@ def recall_at_t(
     h_est: H,
     t: float,
     meet_mode: str = "deepest",
-    window: float = 15,
-    transitive: bool = False,
+    window: float = 0,
+    transitive: bool = True,
+    debug=False,
 ):
     """
     Compute recall at time t for a reference and estimated hierarchy.
@@ -89,9 +94,14 @@ def recall_at_t(
     # When compare_fn is np.equal, S.A is the meet matrix: SSM between two list of segment labels.
     # We use np.greater here to get the orientation of the triplets
     positions_to_recall = s_ref.A(bs=common_bs, compare_fn=compare_fn)
+    # Anything greater is recalled, even when transitive
     positions_recalled = (
         s_est.A(bs=common_bs, compare_fn=np.greater) * positions_to_recall
     )
+
+    if debug:
+        return dict(iota=positions_to_recall, alpha=positions_recalled, bs=common_bs)
+
     # Calculate the area of the grid made by segment boundaries
     common_grid_area = utils.bs2grid_area(common_bs)
     area_to_recall = np.sum(positions_to_recall * common_grid_area)
@@ -146,11 +156,34 @@ def precision(
     )
 
 
-def lmeasure(h_ref: H, h_est: H, meet_mode: str = "deepest", beta=1.0):
-    p = precision(h_ref, h_est, meet_mode=meet_mode)
-    r = recall(h_ref, h_est, meet_mode=meet_mode)
+def lmeasure(h_ref: H, h_est: H, meet_mode: str = "deepest", beta=1.0, **kwargs):
+    p = precision(h_ref, h_est, meet_mode=meet_mode, **kwargs)
+    r = recall(h_ref, h_est, meet_mode=meet_mode, **kwargs)
     f = f_measure(p, r, beta=beta)
     return (p, r, f)
+
+
+def align_hier(h_ref: H, h_est: H):
+    # First, find the maximum length of the reference
+    _, t_end = meh._hierarchy_bounds(h_ref.itvls)
+
+    # Pre-process the intervals to match the range of the reference,
+    # and start at 0
+    new_h_ref = H(
+        *meh._align_intervals(h_ref.itvls, h_ref.labels, t_min=0.0, t_max=None)
+    )
+    new_h_est = H(
+        *meh._align_intervals(h_est.itvls, h_est.labels, t_min=0.0, t_max=t_end)
+    )
+    return new_h_ref, new_h_est
+
+
+def evaluate(h_ref, h_est, **kwargs):
+    """
+    Evaluate the precision, recall, and F-measure between two hierarchies.
+    """
+    h_ref, h_est = align_hier(h_ref, h_est)
+    return lmeasure(h_ref, h_est, **kwargs)
 
 
 def time_lmeasure(ref, est, frame_size=0):
@@ -165,12 +198,14 @@ def time_lmeasure(ref, est, frame_size=0):
     Returns:
     - Time taken for each implementation
     """
+    # Pad and align the hierarchies
+    ref, est = align_hier(ref, est)
     # Measure time for different implementation with frame size or not
     start_time = time.time()
     if frame_size == 0:
         results = lmeasure(ref, est)
     else:
-        results = hierarchy.lmeasure(
+        results = meh.lmeasure(
             ref.itvls, ref.labels, est.itvls, est.labels, frame_size=frame_size
         )
     run_time = time.time() - start_time
@@ -201,3 +236,78 @@ def time_salami_track(tid):
 
     # save the results
     result_da.to_netcdf(fname)
+
+
+# Modified from mir_eval.hierarchy
+def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=None):
+    """
+    Compute ranking recall and normalizer for each query position.
+
+    Parameters:
+    -----------
+    meet_mat_ref : scipy.sparse matrix
+        Reference meet matrix
+    meet_mat_est : scipy.sparse matrix
+        Estimated meet matrix
+    agg_mode : str
+        Aggregation mode. 'frame' for frame-wise aggregation, 'triplet' for triplet-wise aggregation.
+    transitive : bool
+        If True, then transitive comparisons are counted, meaning that
+        ``(q, i)`` and ``(q, j)`` can differ by any number of levels.
+        If False, then ``(q, i)`` and ``(q, j)`` can differ by exactly one
+        level.
+    window : number or None
+        The maximum number of frames to consider for each query.
+        If `None`, then all frames are considered.
+
+
+    Returns:
+    --------
+    agg_recall: float
+        Aggregated ranking recall according to agg_mode
+    q_ranking_recall : numpy.ndarray
+        Ranking recall for each query position
+    q_ranking_normalizer : numpy.ndarray
+        Normalizer for each query position
+    """
+    # Make sure we have the right number of frames
+    if meet_mat_ref.shape != meet_mat_est.shape:
+        raise ValueError(
+            "Estimated and reference hierarchies " "must have the same shape."
+        )
+
+    # How many frames?
+    n = meet_mat_ref.shape[0]
+
+    # By default, the window covers the entire track
+    if window is None:
+        window = n
+
+    q_ranking_recall = np.zeros(n)
+    q_ranking_normalizer = np.zeros(n)
+    q_ranking_inversions = np.zeros(n)
+
+    for query in range(n):
+        # Get the window around the query
+        win_slice = slice(max(0, query - window), min(n, query + window))
+        ref_window = meet_mat_ref[query, win_slice].toarray().ravel()
+        est_window = meet_mat_est[query, win_slice].toarray().ravel()
+        # get the query'th row
+        q_window_ref = np.delete(ref_window, query)
+        q_window_est = np.delete(est_window, query)
+        # count ranking violations
+        inversions, normalizer = meh._compare_frame_rankings(
+            q_window_ref, q_window_est, transitive=transitive
+        )
+        q_ranking_recall[query] = (1.0 - inversions / normalizer) if normalizer else 0
+        q_ranking_normalizer[query] = normalizer
+        q_ranking_inversions[query] = inversions
+
+    if agg_mode == "triplet":
+        agg_recall = np.sum(q_ranking_recall) / np.sum(q_ranking_normalizer)
+    elif agg_mode == "frame":
+        agg_recall = np.mean(q_ranking_recall[np.where(q_ranking_normalizer != 0)])
+    else:
+        raise ValueError("Invalid aggregation mode specified.")
+
+    return agg_recall, q_ranking_recall, q_ranking_inversions, q_ranking_normalizer

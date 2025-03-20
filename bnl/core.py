@@ -13,6 +13,8 @@ from .formatting import (
 from .external import expand_hierarchy
 from . import viz, utils
 
+__all__ = ["S", "H", "multi2H", "levels2H", "flat2S"]
+
 
 class S:
     """A flat segmentation, labeled intervals."""
@@ -82,7 +84,9 @@ class S:
     def L(self, x):
         """Return the label for a given time x."""
         if not (self.T0 <= x <= self.T):
-            raise IndexError(f"RANGE: {x} outside the range of this segmentation!")
+            raise IndexError(
+                f"RANGE: {x} outside the range of this segmentation {self.T0, self.T}!"
+            )
         idx = np.searchsorted(self.beta, x, side="right") - 1
         return self.Lstar[self.beta[idx]]
 
