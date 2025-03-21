@@ -24,7 +24,7 @@ class S:
         """Initialize the flat segmentation."""
 
         if labels is None:
-            labels = [str(itv) for itv in itvls]
+            labels = [itv for itv in itvls]
         self.labels = labels
 
         # Build Lstar and T
@@ -193,7 +193,7 @@ class H:
                 level[-1][-1] = end_point
 
         if labels is None:
-            labels = [[str(itvl) for itvl in layer_itvls] for layer_itvls in itvls]
+            labels = [[itvl for itvl in layer_itvls] for layer_itvls in itvls]
 
         self.levels = [
             S(i, l, sr=sr, Bhat_bw=Bhat_bw, time_decimal=time_decimal)
@@ -533,13 +533,7 @@ class H:
 
         # switch on mode
         if mode == "deepest":
-            # Find the deepest level (highest index) where the meet is True
-            for i in range(self.d - 1, -1, -1):
-                if lvl_meet[i]:
-                    return (
-                        i + 1
-                    )  # +1 because we want to return level number (1-indexed)
-                return 0
+            return self.d - lvl_meet[::-1].index(True)
         elif mode == "mono":
             # Find the first level where the meet is False
             return lvl_meet.index(False) if False in lvl_meet else self.d
