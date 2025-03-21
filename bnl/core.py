@@ -3,7 +3,6 @@ from scipy import stats
 import librosa, warnings
 from matplotlib import pyplot as plt
 from mir_eval.util import intervals_to_boundaries, boundaries_to_intervals
-import matplotlib.patches as mpatches
 
 from .formatting import (
     mireval2multi,
@@ -11,8 +10,10 @@ from .formatting import (
     mirevalflat2openseg,
     openseg2mirevalflat,
 )
-from .external import expand_hierarchy, reindex
+from .external import expand_hierarchy
 from . import viz, utils
+
+__all__ = ["S", "H", "multi2H", "levels2H", "flat2S"]
 
 
 class S:
@@ -26,9 +27,7 @@ class S:
         self.labels = labels
 
         # Build Lstar and T
-        self.Lstar = {
-            round(b, time_decimal): str(l) for (b, e), l in zip(itvls, labels)
-        }
+        self.Lstar = {round(b, time_decimal): l for (b, e), l in zip(itvls, labels)}
         self.T = round(itvls[-1][-1], time_decimal)
         self.beta = np.array(sorted(set(self.Lstar.keys()).union([self.T])))
         self.seg_dur = self.beta[1:] - self.beta[:-1]
@@ -83,7 +82,15 @@ class S:
     def L(self, x):
         """Return the label for a given time x."""
         if not (self.T0 <= x <= self.T):
-            raise IndexError(f"RANGE: {x} outside the range of this segmentation!")
+            raise IndexError(
+                f"RANGE: {x} outside the range of this segmentation {self.T0, self.T}!"
+            )
+        elif x == self.T:
+            # The last boundary at T doesn't have a lstar mapping...
+            # it's the same label as the previous boundary i.e. beta[-2]
+            return self.Lstar[self.beta[-2]]
+
+        # Find the index of the rightmost boundary less than x
         idx = np.searchsorted(self.beta, x, side="right") - 1
         return self.Lstar[self.beta[idx]]
 
@@ -300,25 +307,20 @@ class H:
         seg_dur = bs[1:] - bs[:-1]
         return self.M(bs, level_weights=level_weights) / np.outer(seg_dur, seg_dur)
 
-    def plot(
-        self,
-        axs=None,
-        text=True,
-        legend=False,  #
-        legend_offset=0.2,
-        **create_fig_kwargs,
-    ):
+    def plot(self, axs=None, **kwargs):
         """Plot the hierarchical segmentation."""
         # kwargs handling
-        fig_kw = dict(
+        kw = dict(
+            text=True,
             figsize=(5, 0.4 * self.d + 0.5),
             h_ratios=[1] * self.d,
             w_ratios=[1],
         )
-        fig_kw.update(create_fig_kwargs)
+        kw.update(kwargs)
+        show_label = kw.pop("text")
 
         if axs is None:
-            _, axs = viz.create_fig(**fig_kw)
+            fig, axs = viz.create_fig(**kw)
             # flatten nested list of axes
             axs = axs.flatten()
 
@@ -328,44 +330,14 @@ class H:
                 f"Number of axes ({len(axs)}) is smaller than number of levels ({self.d})."
             )
 
-        ## Starting to do real work...
-        # build stylemap from labels
-        style_map = viz.label_style_dict(labels=self.labels)
-
         # Plot each level
         if self.d > 1:
             for i in range(self.d - 1):
                 self.levels[i].plot(
-                    ax=axs[i],
-                    ytick=i + 1,
-                    time_ticks=False,
-                    text=text,
-                    style_map=style_map,
+                    ax=axs[i], ytick=i + 1, time_ticks=False, text=show_label
                 )
-        self.levels[-1].plot(
-            ax=axs[-1], ytick=self.d, time_ticks=True, text=text, style_map=style_map
-        )
-        # Set legend
-        if legend:
-            legend_handles = [mpatches.Patch(**style) for style in style_map.values()]
-            axs[-1].legend(
-                handles=legend_handles,
-                labels=list(style_map.keys()),
-                loc="upper center",
-                fontsize="small",
-                ncol=legend,
-                bbox_to_anchor=(0.5, -legend_offset),
-            )
-
+        self.levels[-1].plot(ax=axs[-1], ytick=self.d, time_ticks=True, text=show_label)
         return axs[0].get_figure(), axs
-
-    def relabel(self):
-        """Re-label the hierarchical segmentation."""
-        # Create a new set of labels for each level
-        ext_format = [[i, l] for i, l in zip(self.itvls, self.labels)]
-        new_hier = reindex(ext_format)
-        new_labels = [lvl[1] for lvl in new_hier]
-        return H(self.itvls, new_labels, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
     def decode_B(
         self,
@@ -525,16 +497,9 @@ class H:
 
         # switch on mode
         if mode == "deepest":
-            # Find the deepest level (highest index) where the meet is True
-            for i in range(self.d - 1, -1, -1):
-                if lvl_meet[i]:
-                    return (
-                        i + 1
-                    )  # +1 because we want to return level number (1-indexed)
-                return 0
+            return self.d - lvl_meet[::-1].index(True)
         elif mode == "mono":
-            # Find the first level where the meet is False
-            return lvl_meet.index(False) if False in lvl_meet else self.d
+            return lvl_meet.index(False)
         elif mode == "mean":
             return np.mean(lvl_meet)
         else:

@@ -18,3 +18,6 @@ ITVLS5 = np.array(
 LABELS5 = ["I", "IV", "ii", "V", "I", "IV", "I"]
 
 from .test_core import make_hierarchies
+import warnings
+
+warnings.filterwarnings("ignore", category=UserWarning, module="mir_eval")
