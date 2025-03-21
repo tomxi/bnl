@@ -49,7 +49,7 @@ def recall_at_t(
     meet_mode: str = "deepest",
     window: float = 0,
     transitive: bool = True,
-    debug=False,
+    debug=0,  # 0 for no debug, 1 for debug, 2 for debug with mats
 ):
     """
     Compute recall at time t for a reference and estimated hierarchy.
@@ -99,15 +99,22 @@ def recall_at_t(
         s_est.A(bs=common_bs, compare_fn=np.greater) * positions_to_recall
     )
 
-    if debug:
-        return dict(iota=positions_to_recall, alpha=positions_recalled, bs=common_bs)
-
     # Calculate the area of the grid made by segment boundaries
     common_grid_area = utils.bs2grid_area(common_bs)
+
+    if debug == 2:
+        return dict(
+            iota=positions_to_recall,
+            alpha=positions_recalled,
+            bs=common_bs,
+            grid_area=common_grid_area,
+        )
     area_to_recall = np.sum(positions_to_recall * common_grid_area)
     area_recalled = np.sum(positions_recalled * common_grid_area)
-    total_area = np.sum(common_grid_area) / 2.0
-    return area_recalled, area_to_recall, total_area
+    max_area = np.sum(common_grid_area) / 2.0
+    if debug == 1:
+        return area_recalled / max_area, area_to_recall / max_area
+    return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
 
 
 def recall(

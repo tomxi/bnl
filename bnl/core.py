@@ -27,9 +27,7 @@ class S:
         self.labels = labels
 
         # Build Lstar and T
-        self.Lstar = {
-            round(b, time_decimal): str(l) for (b, e), l in zip(itvls, labels)
-        }
+        self.Lstar = {round(b, time_decimal): l for (b, e), l in zip(itvls, labels)}
         self.T = round(itvls[-1][-1], time_decimal)
         self.beta = np.array(sorted(set(self.Lstar.keys()).union([self.T])))
         self.seg_dur = self.beta[1:] - self.beta[:-1]
