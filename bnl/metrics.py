@@ -106,7 +106,8 @@ def recall_at_t(
     common_grid_area = utils.bs2grid_area(common_bs)
     area_to_recall = np.sum(positions_to_recall * common_grid_area)
     area_recalled = np.sum(positions_recalled * common_grid_area)
-    return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
+    total_area = np.sum(common_grid_area) / 2.0
+    return area_recalled, area_to_recall, total_area
 
 
 def recall(
@@ -239,7 +240,7 @@ def time_salami_track(tid):
 
 
 # Modified from mir_eval.hierarchy
-def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=None):
+def gauc_t(meet_mat_ref, meet_mat_est, transitive=True, window=None):
     """
     Compute ranking recall and normalizer for each query position.
 
@@ -249,8 +250,6 @@ def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=N
         Reference meet matrix
     meet_mat_est : scipy.sparse matrix
         Estimated meet matrix
-    agg_mode : str
-        Aggregation mode. 'frame' for frame-wise aggregation, 'triplet' for triplet-wise aggregation.
     transitive : bool
         If True, then transitive comparisons are counted, meaning that
         ``(q, i)`` and ``(q, j)`` can differ by any number of levels.
@@ -260,13 +259,10 @@ def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=N
         The maximum number of frames to consider for each query.
         If `None`, then all frames are considered.
 
-
     Returns:
     --------
-    agg_recall: float
-        Aggregated ranking recall according to agg_mode
-    q_ranking_recall : numpy.ndarray
-        Ranking recall for each query position
+    q_ranking_inversions : numpy.ndarray
+        Ranking inversions for each query position
     q_ranking_normalizer : numpy.ndarray
         Normalizer for each query position
     """
@@ -283,9 +279,9 @@ def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=N
     if window is None:
         window = n
 
-    q_ranking_recall = np.zeros(n)
     q_ranking_normalizer = np.zeros(n)
     q_ranking_inversions = np.zeros(n)
+    q_ranking_allpairs = np.zeros(n)
 
     for query in range(n):
         # Get the window around the query
@@ -299,15 +295,9 @@ def gauc(meet_mat_ref, meet_mat_est, agg_mode="frame", transitive=True, window=N
         inversions, normalizer = meh._compare_frame_rankings(
             q_window_ref, q_window_est, transitive=transitive
         )
-        q_ranking_recall[query] = (1.0 - inversions / normalizer) if normalizer else 0
-        q_ranking_normalizer[query] = normalizer
         q_ranking_inversions[query] = inversions
+        q_ranking_normalizer[query] = normalizer
+        # n choice 2 is the total number of pairs
+        q_ranking_allpairs[query] = len(q_window_ref) * (len(q_window_est) - 1) / 2
 
-    if agg_mode == "triplet":
-        agg_recall = np.sum(q_ranking_recall) / np.sum(q_ranking_normalizer)
-    elif agg_mode == "frame":
-        agg_recall = np.mean(q_ranking_recall[np.where(q_ranking_normalizer != 0)])
-    else:
-        raise ValueError("Invalid aggregation mode specified.")
-
-    return agg_recall, q_ranking_recall, q_ranking_inversions, q_ranking_normalizer
+    return q_ranking_inversions, q_ranking_normalizer, q_ranking_allpairs

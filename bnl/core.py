@@ -87,6 +87,12 @@ class S:
             raise IndexError(
                 f"RANGE: {x} outside the range of this segmentation {self.T0, self.T}!"
             )
+        elif x == self.T:
+            # The last boundary at T doesn't have a lstar mapping...
+            # it's the same label as the previous boundary i.e. beta[-2]
+            return self.Lstar[self.beta[-2]]
+
+        # Find the index of the rightmost boundary less than x
         idx = np.searchsorted(self.beta, x, side="right") - 1
         return self.Lstar[self.beta[idx]]
 
