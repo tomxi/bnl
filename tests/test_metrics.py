@@ -7,11 +7,9 @@ import tests
 import warnings
 
 
-def test_lmeasure_alignment(
-    tid="1437", l_slice=slice(3, None), atol=1e-2, frame_size=0.5
-):
+def test_lmeasure_alignment(tid="1437", atol=1e-2, frame_size=0.5, verbose=False):
     warnings.filterwarnings("ignore", category=UserWarning, module="mir_eval")
-    est = bnl.levels2H(fio.adobe_hiers(tid).levels[l_slice])
+    est = fio.adobe_hiers(tid)
     refs = fio.salami_ref_hiers(tid)
     for ref in refs:
         hr, he = mtr.align_hier(ref, est)
@@ -21,9 +19,10 @@ def test_lmeasure_alignment(
         bnl_result = mtr.lmeasure(hr, he)
         diff = np.array(mir_eval_result) - np.array(bnl_result)
 
-        print(f"Difference (fs={frame_size}):")
-        print(f"      \t  {np.abs(np.array(diff)*100).round(3)}%")
-        print(f" meh: \t  {np.array(mir_eval_result).round(4)}")
-        print(f" bnl: \t  {np.array(bnl_result).round(4)}")
+        if verbose:
+            print(f"Track {tid} L-measure Difference (fs={frame_size}):")
+            print(f"      \t  {np.abs(np.array(diff)*100).round(3)}%")
+            print(f" meh: \t  {np.array(mir_eval_result).round(4)}")
+            print(f" bnl: \t  {np.array(bnl_result).round(4)}")
 
         assert np.allclose(mir_eval_result, bnl_result, atol=atol)
