@@ -17,7 +17,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="mir_eval")
 
 
-def get_segment_relevence(hier: H, t: float, meet_mode="deepest"):
+def get_segment_relevance(hier: H, t: float, meet_mode="deepest"):
     """
     Get the relevance curve for a given query time point t in seconds.
 
@@ -68,8 +68,8 @@ def recall_at_t(
     float
         The recall at time t.
     """
-    s_ref = get_segment_relevence(h_ref, t, meet_mode=meet_mode)
-    s_est = get_segment_relevence(h_est, t, meet_mode=meet_mode)
+    s_ref = get_segment_relevance(h_ref, t, meet_mode=meet_mode)
+    s_est = get_segment_relevance(h_est, t, meet_mode=meet_mode)
     # get beta (set of boundaries) from both s_ref and s_est.
     # Between these boundaries things are piecewise constant.
     common_bs = sorted(list(set(s_ref.beta).union(s_est.beta)))
