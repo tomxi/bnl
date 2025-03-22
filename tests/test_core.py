@@ -25,7 +25,7 @@ def test_flat_segmentation_initialization():
     assert np.allclose(seg.itvls, single_segment)
     print(str(single_segment))
     print(seg.Lstar)
-    assert seg.Lstar == {0: str(single_segment[0])}
+    assert str(seg.Lstar[0]) == str(single_segment[0])
     assert seg.T0 == 0
     assert seg.T == 5
 

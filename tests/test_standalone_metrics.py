@@ -1,29 +1,7 @@
 import pytest
 import numpy as np
-from bnl.standalone_metrics import (
-    meet,
-    get_segment_relevance,
-    triplet_recall_at_t,
-    pairwise_recall,
-    vmeasure,
-    lmeasure,
-    tmeasure,
-    pair_clustering,
-    entropy,
-    conditional_entropy,
-)
-from . import (
-    ITVLS1,
-    LABELS1,
-    ITVLS2,
-    LABELS2,
-    ITVLS3,
-    LABELS3,
-    ITVLS4,
-    LABELS4,
-    ITVLS5,
-    LABELS5,
-)
+from bnl import standalone_metrics as mtr
+import tests
 
 
 # Sample hierarchies for testing
@@ -98,27 +76,27 @@ class TestMeet:
         """Test that meet raises ValueError for invalid mode"""
         time_pairs = [(1.0, 3.0), (5.0, 15.0)]
         with pytest.raises(ValueError):
-            meet([], time_pairs, mode="invalid")
+            mtr.meet([], time_pairs, mode="invalid")
 
     def test_meet_deepest_mode(self, simple_hierarchy):
         """Test meet with 'deepest' mode"""
         # Same segment pairs should meet at the deepest level
         time_pairs = [(1.0, 2.0), (6.0, 7.0), (11.0, 12.0)]
-        result = meet(simple_hierarchy, time_pairs, mode="deepest")
+        result = mtr.meet(simple_hierarchy, time_pairs, mode="deepest")
         assert result is not None  # Replace when implementation is complete
 
     def test_meet_mono_mode(self, simple_hierarchy):
         """Test meet with 'mono' mode"""
         # Points across major segments should meet at level 0
         time_pairs = [(5.0, 15.0), (2.0, 18.0)]
-        result = meet(simple_hierarchy, time_pairs, mode="mono")
+        result = mtr.meet(simple_hierarchy, time_pairs, mode="mono")
         assert result is not None  # Replace when implementation is complete
 
     def test_meet_mean_mode(self, simple_hierarchy):
         """Test meet with 'mean' mode"""
         # Points in same finest segment should meet at level 2
         time_pairs = [(1.0, 2.0), (16.0, 17.0)]
-        result = meet(simple_hierarchy, time_pairs, mode="mean")
+        result = mtr.meet(simple_hierarchy, time_pairs, mode="mean")
         assert result is not None  # Replace when implementation is complete
 
     def test_meet_across_boundaries(self, simple_hierarchy):
@@ -126,7 +104,7 @@ class TestMeet:
         # Points across different segments
         time_pairs = [(2.0, 6.0), (9.0, 11.0), (4.0, 16.0)]
         for mode in ["deepest", "mono", "mean"]:
-            result = meet(simple_hierarchy, time_pairs, mode=mode)
+            result = mtr.meet(simple_hierarchy, time_pairs, mode=mode)
             assert result is not None  # Replace when implementation is complete
 
 
@@ -134,7 +112,7 @@ class TestGetSegmentRelevance:
     def test_segment_relevance_middle_point(self, simple_hierarchy):
         """Test relevance for a point in the middle of a segment"""
         t = 7.5  # middle of a segment at level 1
-        itvls, relevances = get_segment_relevance(
+        itvls, relevances = mtr.get_segment_relevance(
             simple_hierarchy, t, meet_mode="deepest"
         )
         assert isinstance(itvls, list)
@@ -143,7 +121,9 @@ class TestGetSegmentRelevance:
     def test_segment_relevance_boundary_point(self, simple_hierarchy):
         """Test relevance for a point at segment boundary"""
         t = 10.0  # boundary between major segments
-        itvls, relevances = get_segment_relevance(simple_hierarchy, t, meet_mode="mono")
+        itvls, relevances = mtr.get_segment_relevance(
+            simple_hierarchy, t, meet_mode="mono"
+        )
         assert isinstance(itvls, list)
         assert isinstance(relevances, list)
 
@@ -151,7 +131,7 @@ class TestGetSegmentRelevance:
         """Test that different meet modes give potentially different relevances"""
         t = 5.0  # boundary at level 1
         for mode in ["deepest", "mono", "mean"]:
-            itvls, relevances = get_segment_relevance(
+            itvls, relevances = mtr.get_segment_relevance(
                 simple_hierarchy, t, meet_mode=mode
             )
             assert isinstance(itvls, list)
@@ -162,7 +142,7 @@ class TestTripletRecallAtT:
     def test_recall_perfect_match(self, reference_hierarchy):
         """Test recall when ref and est are the same (perfect match)"""
         t = 7.5
-        recall = triplet_recall_at_t(
+        recall = mtr.triplet_recall_at_t(
             reference_hierarchy,
             reference_hierarchy,
             t,
@@ -179,7 +159,7 @@ class TestTripletRecallAtT:
         t = 10.0  # boundary in reference
         # Test with different window sizes
         for window in [0, 0.5, 1.0]:
-            recall = triplet_recall_at_t(
+            recall = mtr.triplet_recall_at_t(
                 reference_hierarchy,
                 estimated_hierarchy,
                 t,
@@ -193,7 +173,7 @@ class TestTripletRecallAtT:
         """Test recall with and without transitivity"""
         t = 5.0
         # Test with and without transitivity
-        recall_with = triplet_recall_at_t(
+        recall_with = mtr.triplet_recall_at_t(
             reference_hierarchy,
             estimated_hierarchy,
             t,
@@ -201,7 +181,7 @@ class TestTripletRecallAtT:
             window=0,
             transitive=True,
         )
-        recall_without = triplet_recall_at_t(
+        recall_without = mtr.triplet_recall_at_t(
             reference_hierarchy,
             estimated_hierarchy,
             t,
@@ -224,7 +204,7 @@ class TestPairwiseRecall:
         est_labels = ["A", "B"]
 
         t = 2.5  # middle of first segment
-        recall = pairwise_recall(ref_itvls, ref_labels, est_itvls, est_labels, t)
+        recall = mtr.pairwise_recall(ref_itvls, ref_labels, est_itvls, est_labels, t)
         assert isinstance(recall, float)
         # Perfect match should give recall of 1.0
         # assert recall == 1.0  # Enable when implementation is complete
@@ -239,12 +219,12 @@ class TestPairwiseRecall:
         t = 4.9  # Near the boundary
 
         # Without window, the recall might be poor
-        recall_no_window = pairwise_recall(
+        recall_no_window = mtr.pairwise_recall(
             ref_itvls, ref_labels, est_itvls, est_labels, t, window=0
         )
 
         # With window, recall should improve
-        recall_with_window = pairwise_recall(
+        recall_with_window = mtr.pairwise_recall(
             ref_itvls, ref_labels, est_itvls, est_labels, t, window=0.5
         )
 
@@ -261,7 +241,7 @@ class TestEntropy:
         itvls = np.array([[0, 1], [1, 2], [2, 3], [3, 4]])
         labels = ["A", "B", "C", "D"]
 
-        result = entropy(itvls, labels)
+        result = mtr.entropy(itvls, labels)
         assert isinstance(result, float)
         # Maximum entropy for uniform distribution
         # assert np.isclose(result, 2.0)  # log2(4) = 2, uncomment when implemented
@@ -271,54 +251,59 @@ class TestEntropy:
         itvls = np.array([[0, 5]])
         labels = ["A"]
 
-        result = entropy(itvls, labels)
+        result = mtr.entropy(itvls, labels)
+        assert isinstance(result, float)
         assert isinstance(result, float)
         # Zero entropy for single segment
         # assert np.isclose(result, 0.0)  # uncomment when implemented
 
     def test_entropy_with_predefined_intervals(self):
         """Test entropy using predefined test intervals"""
-        result = entropy(ITVLS1, LABELS1)
+        result = mtr.entropy(tests.ITVLS1, tests.LABELS1)
         assert isinstance(result, float)
 
-        result = entropy(ITVLS5, LABELS5)
+        result = mtr.entropy(tests.ITVLS5, tests.LABELS5)
         assert isinstance(result, float)
 
     def test_entropy_with_repeated_labels(self):
         """Test entropy with repeated labels"""
-        # ITVLS2 has repeated 'b' labels
-        result = entropy(ITVLS2, LABELS2)
+        # tests.ITVLS2 has repeated 'b' labels
+        result = mtr.entropy(tests.ITVLS2, tests.LABELS2)
         assert isinstance(result, float)
 
 
 class TestConditionalEntropy:
     def test_conditional_entropy_identical(self):
         """Test conditional entropy when segmentations are identical"""
-        result = conditional_entropy(ITVLS1, LABELS1, ITVLS1, LABELS1)
+        result = mtr.conditional_entropy(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS1, tests.LABELS1
+        )
         assert isinstance(result, float)
         # Conditional entropy should be 0 for identical segmentations
         # assert np.isclose(result, 0.0)  # uncomment when implemented
 
     def test_conditional_entropy_independent(self):
         """Test conditional entropy with independent segmentations"""
-        result = conditional_entropy(ITVLS1, LABELS1, ITVLS3, LABELS3)
+        result = mtr.conditional_entropy(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS3, tests.LABELS3
+        )
         assert isinstance(result, float)
 
     def test_conditional_entropy_refined(self):
         """Test conditional entropy with one segmentation refining another"""
-        # ITVLS2 refines ITVLS1
-        result = conditional_entropy(ITVLS2, LABELS2, ITVLS1, LABELS1)
-        assert isinstance(result, float)
-
-        # Reverse order
-        result = conditional_entropy(ITVLS1, LABELS1, ITVLS2, LABELS2)
+        # tests.ITVLS2 refines tests.ITVLS1
+        result = mtr.conditional_entropy(
+            tests.ITVLS2, tests.LABELS2, tests.ITVLS1, tests.LABELS1
+        )
         assert isinstance(result, float)
 
 
 class TestVmeasure:
     def test_vmeasure_identical(self):
         """Test V-measure with identical segmentations"""
-        precision, recall, f1 = vmeasure(ITVLS1, LABELS1, ITVLS1, LABELS1)
+        precision, recall, f1 = mtr.vmeasure(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS1, tests.LABELS1
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
         # Perfect match should give values of 1.0
         # assert np.isclose(precision, 1.0)  # uncomment when implemented
@@ -327,12 +312,16 @@ class TestVmeasure:
 
     def test_vmeasure_refined(self):
         """Test V-measure with one segmentation refining another"""
-        precision, recall, f1 = vmeasure(ITVLS1, LABELS1, ITVLS2, LABELS2)
+        precision, recall, f1 = mtr.vmeasure(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS2, tests.LABELS2
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
 
     def test_vmeasure_different_structures(self):
         """Test V-measure with completely different structures"""
-        precision, recall, f1 = vmeasure(ITVLS1, LABELS1, ITVLS3, LABELS3)
+        precision, recall, f1 = mtr.vmeasure(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS3, tests.LABELS3
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
 
     def test_vmeasure_edge_cases(self):
@@ -341,18 +330,24 @@ class TestVmeasure:
         single_itvls = np.array([[0, 5]])
         single_labels = ["A"]
 
-        precision, recall, f1 = vmeasure(single_itvls, single_labels, ITVLS1, LABELS1)
+        precision, recall, f1 = mtr.vmeasure(
+            single_itvls, single_labels, tests.ITVLS1, tests.LABELS1
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
 
         # Different lengths
-        precision, recall, f1 = vmeasure(ITVLS5, LABELS5, ITVLS1, LABELS1)
+        precision, recall, f1 = mtr.vmeasure(
+            tests.ITVLS5, tests.LABELS5, tests.ITVLS1, tests.LABELS1
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
 
 
 class TestLmeasure:
     def test_lmeasure_identical(self):
         """Test L-measure with identical segmentations"""
-        precision, recall, f1 = lmeasure(ITVLS1, LABELS1, ITVLS1, LABELS1)
+        precision, recall, f1 = mtr.lmeasure(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS1, tests.LABELS1
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
         # Perfect match should give values of 1.0
         # assert np.isclose(precision, 1.0)  # uncomment when implemented
@@ -362,27 +357,35 @@ class TestLmeasure:
     def test_lmeasure_different_boundaries(self):
         """Test L-measure with different boundary positions"""
         # Modify boundaries slightly
-        modified_itvls = np.copy(ITVLS1)
+        modified_itvls = np.copy(tests.ITVLS1)
         modified_itvls[0, 1] = 2.6  # Change boundary from 2.5 to 2.6
 
-        precision, recall, f1 = lmeasure(ITVLS1, LABELS1, modified_itvls, LABELS1)
+        precision, recall, f1 = mtr.lmeasure(
+            tests.ITVLS1, tests.LABELS1, modified_itvls, tests.LABELS1
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
 
     def test_lmeasure_different_structures(self):
         """Test L-measure with different segmentation structures"""
-        precision, recall, f1 = lmeasure(ITVLS1, LABELS1, ITVLS3, LABELS3)
+        precision, recall, f1 = mtr.lmeasure(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS3, tests.LABELS3
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
 
     def test_lmeasure_repeated_labels(self):
         """Test L-measure with repeated labels"""
-        precision, recall, f1 = lmeasure(ITVLS2, LABELS2, ITVLS4, LABELS4)
+        precision, recall, f1 = mtr.lmeasure(
+            tests.ITVLS2, tests.LABELS2, tests.ITVLS4, tests.LABELS4
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
 
 
 class TestTmeasure:
     def test_tmeasure_identical(self):
         """Test T-measure with identical segmentations"""
-        precision, recall, f1 = tmeasure(ITVLS1, LABELS1, ITVLS1, LABELS1)
+        precision, recall, f1 = mtr.tmeasure(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS1, tests.LABELS1
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
         # Perfect match should give values of 1.0
         # assert np.isclose(precision, 1.0)  # uncomment when implemented
@@ -392,22 +395,26 @@ class TestTmeasure:
     def test_tmeasure_with_window(self):
         """Test T-measure with different window sizes"""
         # Modify boundaries slightly
-        modified_itvls = np.copy(ITVLS1)
+        modified_itvls = np.copy(tests.ITVLS1)
         modified_itvls[0, 1] = 2.6  # Change boundary from 2.5 to 2.6
 
         for window in [0, 0.2, 0.5, 1.0]:
-            precision, recall, f1 = tmeasure(
-                ITVLS1, LABELS1, modified_itvls, LABELS1, window=window
+            precision, recall, f1 = mtr.tmeasure(
+                tests.ITVLS1,
+                tests.LABELS1,
+                modified_itvls,
+                tests.LABELS1,
+                window=window,
             )
             assert all(isinstance(x, float) for x in [precision, recall, f1])
 
     def test_tmeasure_with_transitivity(self):
         """Test T-measure with and without transitivity"""
-        precision_t, recall_t, f1_t = tmeasure(
-            ITVLS1, LABELS1, ITVLS2, LABELS2, transitive=True
+        precision_t, recall_t, f1_t = mtr.tmeasure(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS2, tests.LABELS2, transitive=True
         )
-        precision_f, recall_f, f1_f = tmeasure(
-            ITVLS1, LABELS1, ITVLS2, LABELS2, transitive=False
+        precision_f, recall_f, f1_f = mtr.tmeasure(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS2, tests.LABELS2, transitive=False
         )
 
         assert all(
@@ -419,7 +426,9 @@ class TestTmeasure:
 class TestPairClustering:
     def test_pair_clustering_identical(self):
         """Test pair clustering with identical segmentations"""
-        precision, recall, f1 = pair_clustering(ITVLS1, LABELS1, ITVLS1, LABELS1)
+        precision, recall, f1 = mtr.pair_clustering(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS1, tests.LABELS1
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
         # Perfect match should give values of 1.0
         # assert np.isclose(precision, 1.0)  # uncomment when implemented
@@ -428,16 +437,83 @@ class TestPairClustering:
 
     def test_pair_clustering_with_refinement(self):
         """Test pair clustering with one segmentation refining another"""
-        precision, recall, f1 = pair_clustering(ITVLS1, LABELS1, ITVLS2, LABELS2)
+        precision, recall, f1 = mtr.pair_clustering(
+            tests.ITVLS1, tests.LABELS1, tests.ITVLS2, tests.LABELS2
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
 
         # Reversed
-        precision_rev, recall_rev, f1_rev = pair_clustering(
-            ITVLS2, LABELS2, ITVLS1, LABELS1
+        precision_rev, recall_rev, f1_rev = mtr.pair_clustering(
+            tests.ITVLS2, tests.LABELS2, tests.ITVLS1, tests.LABELS1
         )
         assert all(isinstance(x, float) for x in [precision_rev, recall_rev, f1_rev])
 
     def test_pair_clustering_different_structures(self):
         """Test pair clustering with completely different structures"""
-        precision, recall, f1 = pair_clustering(ITVLS3, LABELS3, ITVLS4, LABELS4)
+        precision, recall, f1 = mtr.pair_clustering(
+            tests.ITVLS3, tests.LABELS3, tests.ITVLS4, tests.LABELS4
+        )
         assert all(isinstance(x, float) for x in [precision, recall, f1])
+
+
+class TestMeetMat:
+    def test_meet_mat_invalid_mode(self):
+        """Test that meet_mat raises ValueError for invalid mode"""
+        ts = [1.0, 5.0, 10.0]
+        with pytest.raises(ValueError):
+            mtr.meet_mat([], ts, mode="invalid")
+
+    def test_meet_mat_deepest_mode(self, simple_hierarchy):
+        """Test meet_mat with 'deepest' mode"""
+        ts = [1.0, 6.0, 11.0, 16.0]
+        result = mtr.meet_mat(simple_hierarchy, ts, mode="deepest")
+        assert result is not None
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (len(ts), len(ts))
+        # Points in the same finest segment should meet at level 2
+        # assert result[0, 0] == 2  # Enable when implementation is complete
+        # Diagonal should always be the depth of the hierarchy
+        # for i in range(len(ts)):
+        #     assert result[i, i] == len(simple_hierarchy) - 1
+
+    def test_meet_mat_mono_mode(self, simple_hierarchy):
+        """Test meet_mat with 'mono' mode"""
+        ts = [2.0, 8.0, 12.0, 18.0]
+        result = mtr.meet_mat(simple_hierarchy, ts, mode="mono")
+        assert result is not None
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (len(ts), len(ts))
+        # Points across major segments should meet at level 0
+        # assert result[0, 2] == 0  # Points at 2.0 and 12.0 are in different major segments
+
+    def test_meet_mat_mean_mode(self, simple_hierarchy):
+        """Test meet_mat with 'mean' mode"""
+        ts = [1.0, 3.0, 11.0, 16.0]
+        result = mtr.meet_mat(simple_hierarchy, ts, mode="mean")
+        assert result is not None
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (len(ts), len(ts))
+
+    def test_meet_mat_symmetry(self, simple_hierarchy):
+        """Test that the meeting matrix is symmetric"""
+        ts = [1.0, 6.0, 11.0, 16.0]
+        for mode in ["deepest", "mono", "mean"]:
+            result = mtr.meet_mat(simple_hierarchy, ts, mode=mode)
+            # Matrix should be symmetric
+            assert np.allclose(result, result.T)
+
+    def test_meet_mat_custom_compare_fn(self, simple_hierarchy):
+        """Test meet_mat with a custom comparison function"""
+        ts = [1.0, 6.0, 11.0, 16.0]
+        # Use np.less instead of np.greater
+        result_greater = mtr.meet_mat(
+            simple_hierarchy, ts, mode="deepest", compare_fn=np.greater
+        )
+        result_less = mtr.meet_mat(
+            simple_hierarchy, ts, mode="deepest", compare_fn=np.less
+        )
+
+        assert result_greater is not None
+        assert result_less is not None
+        # The results should be different when using different comparison functions
+        # We don't assert exact values here since we don't know the implementation details

@@ -2,6 +2,39 @@ import mir_eval
 import numpy as np
 
 
+def meet_mat(hier, ts, mode="deepest", compare_fn=np.greater):
+    """
+    Compute the meeting matrix for a given hierarchy and time points.
+
+    Parameters
+    ----------
+    hier : list of list of (itvls, labels)
+        The hierarchy
+    ts : array-like
+        The time points to consider.
+    mode : str
+        The meeting mode to use.
+        Options are "deepest", "mono", or "mean".
+    compare_fn : function
+        The comparison function to use for the meeting calculation.
+        Default is np.greater.
+    Returns
+    -------
+    np.array
+        The meeting matrix.
+    """
+    if mode == "deepest":
+        return None
+    elif mode == "mono":
+        return None
+    elif mode == "mean":
+        return None
+    else:
+        raise ValueError(
+            f"Unknown meeting mode: {mode}.\n Use 'deepest', 'mono', or 'mean'."
+        )
+
+
 def meet(hier, time_pairs, mode="deepest", compare_fn=np.greater):
     """
     Compute the meeting point for a list of given time pairs (u, v) and mode.
@@ -169,8 +202,7 @@ def conditional_entropy(itvls, labels, condition_itvls, condition_labels):
     float
         The conditional entropy of the intervals and labels.
     """
-    entropy_value = 0.0
-    return entropy_value
+    return None
 
 
 def vmeasure(
