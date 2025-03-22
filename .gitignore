@@ -9,3 +9,6 @@ scripts/figs/*
 .DS_Store
 scripts/out/*
 scripts/compare_implementation/*
+
+texts/main.*
+!texts/main.tex
