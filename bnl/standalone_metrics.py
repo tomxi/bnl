@@ -232,31 +232,60 @@ def pairwise_recall(
     float
         The recall at time t.
     """
-    pass
+    # Find the common boundaries
+    common_bs = np.sort(np.unique((list(ref_itvls) + list(est_itvls))))
+
+    # Get the label at each common_bs
+    ref_labels = np.array(
+        [labels_at_t([ref_itvls], [ref_labels], t)[0] for t in common_bs[:-1]]
+    )
+    est_labels = np.array(
+        [labels_at_t([est_itvls], [est_labels], t)[0] for t in common_bs[:-1]]
+    )
+
+    positions_to_recall = np.equal.outer(ref_labels, ref_labels).astype(float)
+    positions_recalled = (
+        np.equal.outer(est_labels, est_labels).astype(float) * positions_to_recall
+    )
+    seg_dur = np.diff(common_bs)
+    common_grid_area = np.outer(seg_dur, seg_dur)
+    area_to_recall = np.sum(positions_to_recall * common_grid_area)
+    area_recalled = np.sum(positions_recalled * common_grid_area)
+    return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
 
 
 def entropy(itvls, labels):
     """
     Compute the entropy of a set of intervals and their corresponding labels.
-
-    Parameters
-    ----------
-    itvls : list
-        The intervals.
-    labels : list
-        The labels corresponding to the intervals.
-
     Returns
-    -------
-    float
-        The entropy of the intervals and labels.
+        The entropy of the intervals and labels in bits.
     """
-    pass
+    # Calculate total duration of all intervals
+    total_duration = float(sum(end - start for start, end in itvls))
+    if total_duration == 0:
+        return 0.0
+
+    # Aggregate durations by label
+    label_durations = {}
+    for (start, end), label in zip(itvls, labels):
+        duration = end - start
+        if duration > 0:  # Ignore zero-duration intervals
+            label_durations[label] = label_durations.get(label, 0) + duration
+
+    # return label_durations
+    # Calculate entropy using Shannon's formula: -Σ p_i * log2(p_i)
+    entropy_value = 0.0
+    for duration in label_durations.values():
+        p = duration / total_duration
+        if p > 0:  # Avoid log2(0)
+            entropy_value -= p * np.log2(p)
+
+    return entropy_value
 
 
 def conditional_entropy(itvls, labels, condition_itvls, condition_labels):
     """
-    Compute the conditional entropy of a set of intervals and their corresponding labels.
+    Compute the conditional entropy (in bits) of labels in "itvls" given the conditioning intervals.
 
     Parameters
     ----------
@@ -272,9 +301,49 @@ def conditional_entropy(itvls, labels, condition_itvls, condition_labels):
     Returns
     -------
     float
-        The conditional entropy of the intervals and labels.
+        The conditional entropy in bits.
     """
-    return None
+    # Merge boundaries and compute segment durations.
+    boundaries = np.concatenate(list(itvls) + list(condition_itvls))
+    common_bs = np.sort(np.unique(boundaries))
+    seg_dur = np.diff(common_bs)
+    total_duration = seg_dur.sum()
+    if total_duration <= 0:
+        return 0.0
+
+    # Obtain labels at each segment.
+    seg_labels = [labels_at_t([itvls], [labels], t)[0] for t in common_bs[:-1]]
+    cond_labels = [
+        labels_at_t([condition_itvls], [condition_labels], t)[0] for t in common_bs[:-1]
+    ]
+
+    # Compute conditional entropy.
+    entropy_value = 0.0
+    unique_cond = np.unique(cond_labels)
+    for c_val in unique_cond:
+        mask = np.array(cond_labels) == c_val
+        duration_c = seg_dur[mask].sum()
+        c_prob = duration_c / total_duration
+        if duration_c > 0:
+            # For segments with current condition, compute weighted probabilities over seg_labels.
+            labels_in_cond = np.array(seg_labels)[mask]
+            durations_in_cond = np.array(seg_dur)[mask]
+            unique_labels = np.unique(labels_in_cond)
+            # Sum durations for each label.
+            label_durations = np.array(
+                [
+                    durations_in_cond[labels_in_cond == lbl].sum()
+                    for lbl in unique_labels
+                ]
+            )
+
+            # Compute weighted probabilities.
+            probs = label_durations / duration_c
+            # Use only positive probabilities.
+            c_entropy = -np.sum(probs[probs > 0] * np.log2(probs[probs > 0]))
+            entropy_value += c_prob * c_entropy
+
+    return entropy_value
 
 
 def vmeasure(
@@ -282,6 +351,7 @@ def vmeasure(
     ref_labels,
     est_itvls,
     est_labels,
+    beta=1.0,
 ):
     """
     Compute the V-measure score for a reference and estimated labeled segmentation.
@@ -302,7 +372,19 @@ def vmeasure(
     precision, recall, f1
         The V-measure.
     """
-    pass
+    recall = 1 - conditional_entropy(
+        ref_itvls,
+        ref_labels,
+        est_itvls,
+        est_labels,
+    ) / entropy(ref_itvls, ref_labels)
+    precision = 1 - conditional_entropy(
+        est_itvls,
+        est_labels,
+        ref_itvls,
+        ref_labels,
+    ) / entropy(est_itvls, est_labels)
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=1.0)
 
 
 def lmeasure(
@@ -313,25 +395,6 @@ def lmeasure(
     meet_mode="deepest",
     beta=1.0,
 ):
-    """
-    Compute the L-measure score for a reference and estimated labeled segmentation.
-
-    Parameters
-    ----------
-    ref_itvls : list
-        The reference intervals.
-    ref_labels : list
-        The labels corresponding to the reference intervals.
-    est_itvls : list
-        The estimated intervals.
-    est_labels : list
-        The labels corresponding to the estimated intervals.
-
-    Returns
-    -------
-    precision, recall, f1
-        The L-measure.
-    """
     recall = triplet_recall(
         ref_itvls,
         ref_labels,
@@ -348,7 +411,6 @@ def lmeasure(
         meet_mode=meet_mode,
         transitive=True,
     )
-
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
@@ -362,18 +424,6 @@ def tmeasure(
 ):
     """
     Compute the T-measure score for a reference and estimated labeled segmentation.
-
-    Parameters
-    ----------
-    ref_itvls : list
-        The reference intervals.
-    ref_labels : list
-        The labels corresponding to the reference intervals.
-    est_itvls : list
-        The estimated intervals.
-    est_labels : list
-        The labels corresponding to the estimated intervals.
-
     Returns
     -------
     precision, recall, f1
@@ -404,24 +454,11 @@ def pair_clustering(
     ref_labels,
     est_itvls,
     est_labels,
+    beta=1.0,
 ):
     """
     Compute the pairwise clustering score for a reference and estimated labeled segmentation.
-
-    Parameters
-    ----------
-    ref_itvls : list
-        The reference intervals.
-    ref_labels : list
-        The labels corresponding to the reference intervals.
-    est_itvls : list
-        The estimated intervals.
-    est_labels : list
-        The labels corresponding to the estimated intervals.
-
-    Returns
-    -------
-    precision, recall, f1
-        The pairwise clustering score.
     """
-    pass
+    recall = pairwise_recall(ref_itvls, ref_labels, est_itvls, est_labels)
+    precision = pairwise_recall(est_itvls, est_labels, ref_itvls, ref_labels)
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
