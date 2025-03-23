@@ -19,12 +19,12 @@ Pairwise frame clustering metrics are then defined as follows:
 We can visualize the labels of a segmentation by plotting its Annotation Agreement Map (AAM) $A(u, v) = [(u, v) \in \rho]_\mathbbm{1}$ as is done in figure~\ref{fig:flat_anno_meet}.
 Notice $|\rho|$ represents the number of non zero entries in $A(u, v)$, and $|\rho_\text{ref} \cap \rho_\text{est}|$ represent the number of pairs in the overlapping areas between $A_\text{ref}(u, v)$ and $A_\text{est}(u, v)$.
 
-\begin{figure}
-    \centering
-    \includegraphics[width=0.5\linewidth]{content/figs/flat_anno_meet.png}
-    \caption{Annotation Agreement Map for the simple Rondo structure represented at the bottom}
-    \label{fig:flat_anno_meet}
-\end{figure}
+% \begin{figure}
+%     \centering
+%     \includegraphics[width=0.5\linewidth]{content/figs/flat_anno_meet.png}
+%     \caption{Annotation Agreement Map for the simple Rondo structure represented at the bottom}
+%     \label{fig:flat_anno_meet}
+% \end{figure}
 
 \subsection{V-measure}
 Inherent from its definition, the PFC metric favors coarser segmentations where its $A_\text{est}(u, v) = 1$ for large ranges of $u$ and $v$.

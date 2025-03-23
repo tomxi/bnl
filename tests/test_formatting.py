@@ -1,43 +1,49 @@
 import mir_eval
 import numpy as np
+import pytest
 from bnl import formatting as fmt
-import tests
 
 
-def test_mireval_hier_conversion():
-    # Test if we can go from mireval format to hierarchical format and back
-    hier = fmt.mireval2hier(
-        [tests.ITVLS1, tests.ITVLS2], [tests.LABELS1, tests.LABELS2]
-    )
-    assert len(hier) == 2
-    assert hier[0] == [tests.ITVLS1, tests.LABELS1]
-    assert hier[1] == [tests.ITVLS2, tests.LABELS2]
+@pytest.fixture(scope="module")
+def test_data():
+    """Create all test intervals and labels in one fixture."""
+    return {
+        "itvls1": np.array([[0, 2.5], [2.5, 6.01]]),
+        "labels1": ["A", "B"],
+        "itvls2": np.array([[0, 1.2], [1.2, 2.5], [2.5, 3.5], [3.5, 6.01]]),
+        "labels2": ["a", "b", "c", "b"],
+        "itvls3": np.array([[0, 1.2], [1.2, 4], [4, 6.01]]),
+        "labels3": ["Mi", "Re", "Do"],
+        "itvls4": np.array(
+            [[0, 0.8], [0.8, 1.6], [1.6, 2.4], [2.4, 3.2], [3.2, 4.0], [4.0, 6.01]]
+        ),
+        "labels4": ["do", "re", "mi", "fa", "sol", "la"],
+        "itvls5": np.array([[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6.01]]),
+        "labels5": ["1", "2", "3", "4", "5", "6"],
+    }
 
-    itvls_list, labels_list = fmt.hier2mireval(hier)
-    mir_eval.hierarchy.validate_hier_intervals(itvls_list)
-    assert itvls_list == [tests.ITVLS1, tests.ITVLS2]
-    assert labels_list == [tests.LABELS1, tests.LABELS2]
 
-
-def test_mireval_multiseg_conversion():
+def test_mireval_multiseg_conversion(test_data):
     # Test if we can go from mireval format to jams format and back
     multi_anno = fmt.mireval2multi(
-        [tests.ITVLS3, tests.ITVLS4], [tests.LABELS3, tests.LABELS4]
+        [test_data["itvls3"], test_data["itvls4"]],
+        [test_data["labels3"], test_data["labels4"]],
     )
     assert multi_anno.namespace == "multi_segment"
     assert multi_anno.duration == 6.01
     itvls, labels = fmt.multi2mireval(multi_anno)
-    assert np.allclose(itvls[0], tests.ITVLS3)
-    assert np.allclose(itvls[1], tests.ITVLS4)
-    assert labels == [tests.LABELS3, tests.LABELS4]
+    assert np.allclose(itvls[0], test_data["itvls3"])
+    assert np.allclose(itvls[1], test_data["itvls4"])
+    assert labels[0] == test_data["labels3"]
+    assert labels[1] == test_data["labels4"]
 
 
-def test_hier_multiseg_conversion():
+def test_hier_multiseg_conversion(test_data):
     # Test if we can go from hier format to jams format and back
     hier = [
-        [tests.ITVLS3, tests.LABELS3],
-        [tests.ITVLS4, tests.LABELS4],
-        [tests.ITVLS5, tests.LABELS5],
+        [test_data["itvls3"], test_data["labels3"]],
+        [test_data["itvls4"], test_data["labels4"]],
+        [test_data["itvls5"], test_data["labels5"]],
     ]
     multi_anno = fmt.hier2multi(hier)
     assert multi_anno.namespace == "multi_segment"
@@ -49,21 +55,21 @@ def test_hier_multiseg_conversion():
         assert hier_back[l][1] == hier[l][1]
 
 
-def test_mireval_openseg_conversion():
+def test_mireval_openseg_conversion(test_data):
     # Test if we can go from openseg format to mireval format and back
-    openseg_anno = fmt.mirevalflat2openseg(tests.ITVLS2, tests.LABELS2)
+    openseg_anno = fmt.mirevalflat2openseg(test_data["itvls2"], test_data["labels2"])
     assert openseg_anno.namespace == "segment_open"
 
     itvls, labels = fmt.openseg2mirevalflat(openseg_anno)
-    assert np.allclose(itvls, tests.ITVLS2)
-    assert labels == tests.LABELS2
+    assert np.allclose(itvls, test_data["itvls2"])
+    assert labels == test_data["labels2"]
 
 
-def test_openseg_multiseg_conversion():
+def test_openseg_multiseg_conversion(test_data):
     # Test if we can go from openseg format to multi format and back
     openseg_annos = [
-        fmt.mirevalflat2openseg(tests.ITVLS1, tests.LABELS1),
-        fmt.mirevalflat2openseg(tests.ITVLS2, tests.LABELS2),
+        fmt.mirevalflat2openseg(test_data["itvls1"], test_data["labels1"]),
+        fmt.mirevalflat2openseg(test_data["itvls2"], test_data["labels2"]),
     ]
     multi_anno = fmt.openseg2multi(openseg_annos)
     assert multi_anno.namespace == "multi_segment"

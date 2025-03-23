@@ -2,72 +2,71 @@ import mir_eval
 import numpy as np
 
 
-def meet_mat(hier, ts, mode="deepest", compare_fn=np.greater):
-    """
-    Compute the meeting matrix for a given hierarchy and time points.
-
-    Parameters
-    ----------
-    hier : list of list of (itvls, labels)
-        The hierarchy
-    ts : array-like
-        The time points to consider.
-    mode : str
-        The meeting mode to use.
-        Options are "deepest", "mono", or "mean".
-    compare_fn : function
-        The comparison function to use for the meeting calculation.
-        Default is np.greater.
-    Returns
-    -------
-    np.array
-        The meeting matrix.
-    """
-    if mode == "deepest":
-        return None
-    elif mode == "mono":
-        return None
-    elif mode == "mean":
-        return None
-    else:
-        raise ValueError(
-            f"Unknown meeting mode: {mode}.\n Use 'deepest', 'mono', or 'mean'."
-        )
-
-
-def meet(hier, time_pairs, mode="deepest", compare_fn=np.greater):
+def meet(hier_itvls, hier_labels, u, v, mode="deepest", compare_fn=np.equal):
     """
     Compute the meeting point for a list of given time pairs (u, v) and mode.
     This function calculates the meet matrix based at the time points and with mode.
 
     Parameters
     ----------
-    hier: list of list of (itvls, labels)
-        The hierarchy
-    time_pairs : array-like [(u1, v1), (u2, v2), ...]
-        The time pairs to consider.
+    hier_itvls : list of list of pairs
+        The hierarchical intervals.
+    hier_labels : list of list of values.
+        The labels.
+    u : float
+        The first time point.
+    v : float
+        The second time point.
     mode : str
         The meeting mode to use.
-        Options are "deepest", "mono", or "mean".
+        Options are "deepest", "mono"
     Returns
     -------
     np.array
         The relevance calculated at the specified time pairs.
         The degree of relevance, or depth of meet.
     """
+    # Strategy: build a num_pairs x num_level matrix, and record the meeting point
+
+    # First get the labels for u and v at each level
+    u_labels = np.array(labels_at_t(hier_itvls, hier_labels, u))
+    v_labels = np.array(labels_at_t(hier_itvls, hier_labels, v))
+
+    # Then compare them with the compare_fn
+    lvl_meet = np.atleast_1d(np.vectorize(compare_fn)(u_labels, v_labels))
+
     if mode == "deepest":
-        return None
+        # Find the idx of the Last True value or zero if all are False
+        return len(lvl_meet) - np.argmax(lvl_meet[::-1]) if any(lvl_meet) else 0
     elif mode == "mono":
-        return None
-    elif mode == "mean":
-        return None
+        # Find the idx of the first False value, len(lvl_meet) if all are True
+        return np.argmax(lvl_meet == False) if not all(lvl_meet) else len(lvl_meet)
     else:
-        raise ValueError(
-            f"Unknown meeting mode: {mode}.\n Use 'deepest', 'mono', or 'mean'."
-        )
+        raise ValueError(f"Unknown meeting mode: {mode}.\n Use 'deepest' or 'mono'.")
 
 
-def relevance_at_t(hier, t, meet_mode="deepest"):
+def labels_at_t(hier_itvls, hier_labels, t):
+    # we ensure t is in the range of the intervals.
+    if len(hier_itvls) == 0:
+        return None
+    elif t < hier_itvls[0][0][0] or t > hier_itvls[0][-1][-1]:
+        return [None] * len(hier_labels)
+    elif t == hier_itvls[0][-1][-1]:
+        return [labels[-1] for labels in hier_labels]
+
+    seg_idx = []
+    # Get the labels at time t for each level using searchsorted
+    for itvls, labels in zip(hier_itvls, hier_labels):
+        # Get the index of the interval that contains t
+        start_times = [itvl[0] for itvl in itvls]
+        seg_idx.append(np.searchsorted(start_times, t, side="right") - 1)
+
+    return [labels[idx] for idx, labels in zip(seg_idx, hier_labels)]
+
+
+def relevance_at_t(
+    hier_itvls, hier_labels, t, meet_mode="deepest", compare_fn=np.equal
+):
     """
     Get the relevance curve for a given query time point t in seconds.
 
@@ -81,19 +80,30 @@ def relevance_at_t(hier, t, meet_mode="deepest"):
         The query time point.
     meet_mode : str
         The meeting mode to use for relevance calculation.
-        Options are "deepest", "mono", or "mean".
+        Options are "deepest", "mono".
     Returns
     -------
     itvls: list of pairs,
         The intervals and the relevance values.
     relevances: list of values.
     """
-    pass
+    # merge list of boundaries into a single list and sort
+    all_bs = np.sort(np.unique(np.concatenate(hier_itvls)))
+    # get the meet at time t, all_bs[:-1], thats the relevance of t against each segemnt.
+    rel_val = np.vectorize(
+        lambda u: float(
+            meet(hier_itvls, hier_labels, t, u, meet_mode, compare_fn=compare_fn)
+        )
+    )(all_bs[:-1])
+
+    return mir_eval.util.boundaries_to_intervals(all_bs), rel_val
 
 
 def triplet_recall_at_t(
-    ref_hier,
-    est_hier,
+    ref_hier_itvls,
+    ref_hier_labels,
+    est_hier_itvls,
+    est_hier_labels,
     t,
     meet_mode="deepest",
     window=0,
@@ -125,8 +135,10 @@ def triplet_recall_at_t(
 
 
 def triplet_recall(
-    ref_hier,
-    est_hier,
+    ref_hier_itvls,
+    ref_hier_labels,
+    est_hier_itvls,
+    est_hier_labels,
     meet_mode="deepest",
     window=0,
     transitive=True,

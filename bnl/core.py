@@ -536,7 +536,7 @@ class H:
             return self.d - lvl_meet[::-1].index(True)
         elif mode == "mono":
             # Find the first level where the meet is False
-            return lvl_meet.index(False) if False in lvl_meet else self.d
+            return lvl_meet.index(False)
         elif mode == "mean":
             return np.mean(lvl_meet)
         else:
