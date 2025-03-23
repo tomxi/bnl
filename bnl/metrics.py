@@ -47,7 +47,6 @@ def recall_at_t(
     h_est: H,
     t: float,
     meet_mode: str = "deepest",
-    window: float = 0,
     transitive: bool = True,
     debug=0,  # 0 for no debug, 1 for debug, 2 for debug with mats
 ):
@@ -76,14 +75,6 @@ def recall_at_t(
     min_t = min(common_bs)
     max_t = max(common_bs)
 
-    if window:
-        # add t +- window to common_bs and get rid of all bs outside of this range
-        common_bs = [t - window] + common_bs + [t + window]
-        common_bs = [
-            b
-            for b in common_bs
-            if (b >= t - window) and (b <= t + window) and (b >= min_t) and (b <= max_t)
-        ]
     if transitive:
         compare_fn = np.greater
     else:
@@ -121,7 +112,6 @@ def recall(
     h_ref: H,
     h_est: H,
     meet_mode: str = "deepest",
-    window: float = 0,
     transitive: bool = True,
 ):
     common_bs = np.array(sorted(list(set(h_ref.beta).union(h_est.beta))))
@@ -134,7 +124,6 @@ def recall(
                 h_est,
                 t,
                 meet_mode=meet_mode,
-                window=window,
                 transitive=transitive,
             )
             for t in common_ts
@@ -156,17 +145,42 @@ def precision(
     h_ref: H,
     h_est: H,
     meet_mode: str = "deepest",
-    window: float = 0,
     transitive: bool = True,
 ):
-    return recall(
-        h_est, h_ref, meet_mode=meet_mode, window=window, transitive=transitive
-    )
+    return recall(h_est, h_ref, meet_mode=meet_mode, transitive=transitive)
 
 
 def lmeasure(h_ref: H, h_est: H, meet_mode: str = "deepest", beta=1.0):
-    p = precision(h_ref, h_est, meet_mode=meet_mode, window=0, transitive=True)
-    r = recall(h_ref, h_est, meet_mode=meet_mode, window=0, transitive=True)
+    p = precision(h_ref, h_est, meet_mode=meet_mode, transitive=True)
+    r = recall(h_ref, h_est, meet_mode=meet_mode, transitive=True)
+    f = f_measure(p, r, beta=beta)
+    return (p, r, f)
+
+
+def tmeasure(h_ref: H, h_est: H, meet_mode: str = "deepest", transitive=True, beta=1.0):
+    """
+    Compute the T-measure for a reference and estimated hierarchy.
+
+    Parameters
+    ----------
+    h_ref : Hierarchy
+        The reference hierarchy.
+    h_est : Hierarchy
+        The estimated hierarchy.
+    meet_mode : str
+        The meeting mode to use for relevance calculation.
+        Options are "deepest", "mono", or "mean".
+
+    Returns
+    -------
+    float
+        The T-measure.
+    """
+    # Get the meet matrices for both hierarchies
+    h_ref = h_ref.unique_labeling()
+    h_est = h_est.unique_labeling()
+    p = precision(h_ref, h_est, meet_mode=meet_mode, transitive=transitive)
+    r = recall(h_ref, h_est, meet_mode=meet_mode, transitive=transitive)
     f = f_measure(p, r, beta=beta)
     return (p, r, f)
 

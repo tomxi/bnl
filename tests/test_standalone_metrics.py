@@ -85,67 +85,113 @@ class TestRelevanceAtT:
         rel_s = bnl.mtr.get_segment_relevance(
             bnl.H(*simple_hierarchy), t, meet_mode=mode
         )
-        rel_itvls, rel_values = mtr.relevance_at_t(*simple_hierarchy, t, meet_mode=mode)
+        rel_itvls, rel_values = mtr.relevance_hierarchy_at_t(
+            *simple_hierarchy, t, meet_mode=mode
+        )
         assert np.allclose(rel_s.itvls, rel_itvls)
         assert np.allclose(rel_s.labels, rel_values)
 
 
 class TestTripletRecallAtT:
-    def test_recall_perfect_match(self, simple_hierarchy):
-        """Test recall when ref and est are the same (perfect match)"""
-        t = 7.5
+    @pytest.mark.parametrize("t", [1, 3, 5])
+    @pytest.mark.parametrize("meet_mode", ["deepest", "mono"])
+    @pytest.mark.parametrize("transitive", [True, False])
+    def test_triplet_recall_at_t(self, hierarchies, t, meet_mode, transitive):
+        """Test triplet recall at t with different parameters"""
         recall = mtr.triplet_recall_at_t(
-            *simple_hierarchy,
-            *simple_hierarchy,
+            hierarchies["h3"].itvls,
+            hierarchies["h3"].labels,
+            hierarchies["h2"].itvls,
+            hierarchies["h2"].labels,
             t,
-            meet_mode="deepest",
-            window=0,
-            transitive=True,
+            meet_mode=meet_mode,
+            transitive=transitive,
+        )
+        reference_recall = bnl.mtr.recall_at_t(
+            hierarchies["h3"],
+            hierarchies["h2"],
+            t,
+            meet_mode=meet_mode,
+            transitive=transitive,
+        )
+        # Check if recall is a float
+        assert recall == reference_recall
+
+
+class TestTripletRecall:
+    @pytest.mark.parametrize("meet_mode", ["deepest", "mono"])
+    @pytest.mark.parametrize("transitive", [True, False])
+    def test_triplet_recall_different_hierarchies(
+        self, hierarchies, meet_mode, transitive
+    ):
+        """Test triplet recall with different hierarchies"""
+        h3 = hierarchies["h3"]
+        h2 = hierarchies["h2"]
+        recall = mtr.triplet_recall(
+            h3.itvls,
+            h3.labels,
+            h2.itvls,
+            h2.labels,
+            meet_mode=meet_mode,
+            transitive=transitive,
+        )
+        ref_recall = bnl.mtr.recall(
+            h3,
+            h2,
+            meet_mode=meet_mode,
+            transitive=transitive,
+        )
+        # Check if recall is a float
+        assert isinstance(recall, float)
+        assert recall == ref_recall
+
+
+class TestLMeasure:
+    @pytest.mark.parametrize("meet_mode", ["deepest", "mono"])
+    def test_lmeasure_different_hierarchies(self, hierarchies, meet_mode):
+        """Test L-measure with different hierarchies"""
+        h3 = hierarchies["h3"]
+        h2 = hierarchies["h2"]
+        precision, recall, f1 = mtr.lmeasure(
+            h3.itvls,
+            h3.labels,
+            h2.itvls,
+            h2.labels,
+            meet_mode=meet_mode,
+        )
+        ref_precision, ref_recall, ref_f1 = bnl.mtr.lmeasure(
+            h3,
+            h2,
+            meet_mode=meet_mode,
+        )
+        # Check if recall is a float
+        assert isinstance(recall, float)
+        assert np.allclose([precision, recall, f1], [ref_precision, ref_recall, ref_f1])
+
+
+class TestTMeasure:
+    @pytest.mark.parametrize("meet_mode", ["deepest", "mono"])
+    @pytest.mark.parametrize("transitive", [True, False])
+    def test_tmeasure_different_hierarchies(self, hierarchies, meet_mode, transitive):
+        """Test T-measure with different hierarchies"""
+        h3 = hierarchies["h3"]
+        h2 = hierarchies["h2"]
+        precision, recall, f1 = mtr.tmeasure(
+            h3.itvls,
+            h3.labels,
+            h2.itvls,
+            h2.labels,
+            meet_mode=meet_mode,
+            transitive=transitive,
+        )
+        ref_precision, ref_recall, ref_f1 = bnl.mtr.tmeasure(
+            h3,
+            h2,
+            meet_mode=meet_mode,
+            transitive=transitive,
         )
         assert isinstance(recall, float)
-        # Perfect recall should be 1.0
-        # assert recall == 1.0  # Enable when implementation is complete
-
-
-#     def test_recall_with_window(self, reference_hierarchy, estimated_hierarchy):
-#         """Test recall with a window parameter"""
-#         t = 10.0  # boundary in reference
-#         # Test with different window sizes
-#         for window in [0, 0.5, 1.0]:
-#             recall = mtr.triplet_recall_at_t(
-#                 reference_hierarchy,
-#                 estimated_hierarchy,
-#                 t,
-#                 meet_mode="deepest",
-#                 window=window,
-#                 transitive=True,
-#             )
-#             assert isinstance(recall, float)
-
-#     def test_recall_with_transitive(self, reference_hierarchy, estimated_hierarchy):
-#         """Test recall with and without transitivity"""
-#         t = 5.0
-#         # Test with and without transitivity
-#         recall_with = mtr.triplet_recall_at_t(
-#             reference_hierarchy,
-#             estimated_hierarchy,
-#             t,
-#             meet_mode="deepest",
-#             window=0,
-#             transitive=True,
-#         )
-#         recall_without = mtr.triplet_recall_at_t(
-#             reference_hierarchy,
-#             estimated_hierarchy,
-#             t,
-#             meet_mode="deepest",
-#             window=0,
-#             transitive=False,
-#         )
-#         assert isinstance(recall_with, float)
-#         assert isinstance(recall_without, float)
-#         # Usually, transitivity should allow for higher recall
-#         # assert recall_with >= recall_without  # Enable when implementation is complete
+        assert np.allclose([precision, recall, f1], [ref_precision, ref_recall, ref_f1])
 
 
 # class TestPairwiseRecall:
@@ -293,87 +339,6 @@ class TestTripletRecallAtT:
 #             tests.ITVLS5, tests.LABELS5, tests.ITVLS1, tests.LABELS1
 #         )
 #         assert all(isinstance(x, float) for x in [precision, recall, f1])
-
-
-# class TestLmeasure:
-#     def test_lmeasure_identical(self):
-#         """Test L-measure with identical segmentations"""
-#         precision, recall, f1 = mtr.lmeasure(
-#             tests.ITVLS1, tests.LABELS1, tests.ITVLS1, tests.LABELS1
-#         )
-#         assert all(isinstance(x, float) for x in [precision, recall, f1])
-#         # Perfect match should give values of 1.0
-#         # assert np.isclose(precision, 1.0)  # uncomment when implemented
-#         # assert np.isclose(recall, 1.0)
-#         # assert np.isclose(f1, 1.0)
-
-#     def test_lmeasure_different_boundaries(self):
-#         """Test L-measure with different boundary positions"""
-#         # Modify boundaries slightly
-#         modified_itvls = np.copy(tests.ITVLS1)
-#         modified_itvls[0, 1] = 2.6  # Change boundary from 2.5 to 2.6
-
-#         precision, recall, f1 = mtr.lmeasure(
-#             tests.ITVLS1, tests.LABELS1, modified_itvls, tests.LABELS1
-#         )
-#         assert all(isinstance(x, float) for x in [precision, recall, f1])
-
-#     def test_lmeasure_different_structures(self):
-#         """Test L-measure with different segmentation structures"""
-#         precision, recall, f1 = mtr.lmeasure(
-#             tests.ITVLS1, tests.LABELS1, tests.ITVLS3, tests.LABELS3
-#         )
-#         assert all(isinstance(x, float) for x in [precision, recall, f1])
-
-#     def test_lmeasure_repeated_labels(self):
-#         """Test L-measure with repeated labels"""
-#         precision, recall, f1 = mtr.lmeasure(
-#             tests.ITVLS2, tests.LABELS2, tests.ITVLS4, tests.LABELS4
-#         )
-#         assert all(isinstance(x, float) for x in [precision, recall, f1])
-
-
-# class TestTmeasure:
-#     def test_tmeasure_identical(self):
-#         """Test T-measure with identical segmentations"""
-#         precision, recall, f1 = mtr.tmeasure(
-#             tests.ITVLS1, tests.LABELS1, tests.ITVLS1, tests.LABELS1
-#         )
-#         assert all(isinstance(x, float) for x in [precision, recall, f1])
-#         # Perfect match should give values of 1.0
-#         # assert np.isclose(precision, 1.0)  # uncomment when implemented
-#         # assert np.isclose(recall, 1.0)
-#         # assert np.isclose(f1, 1.0)
-
-#     def test_tmeasure_with_window(self):
-#         """Test T-measure with different window sizes"""
-#         # Modify boundaries slightly
-#         modified_itvls = np.copy(tests.ITVLS1)
-#         modified_itvls[0, 1] = 2.6  # Change boundary from 2.5 to 2.6
-
-#         for window in [0, 0.2, 0.5, 1.0]:
-#             precision, recall, f1 = mtr.tmeasure(
-#                 tests.ITVLS1,
-#                 tests.LABELS1,
-#                 modified_itvls,
-#                 tests.LABELS1,
-#                 window=window,
-#             )
-#             assert all(isinstance(x, float) for x in [precision, recall, f1])
-
-#     def test_tmeasure_with_transitivity(self):
-#         """Test T-measure with and without transitivity"""
-#         precision_t, recall_t, f1_t = mtr.tmeasure(
-#             tests.ITVLS1, tests.LABELS1, tests.ITVLS2, tests.LABELS2, transitive=True
-#         )
-#         precision_f, recall_f, f1_f = mtr.tmeasure(
-#             tests.ITVLS1, tests.LABELS1, tests.ITVLS2, tests.LABELS2, transitive=False
-#         )
-
-#         assert all(
-#             isinstance(x, float)
-#             for x in [precision_t, recall_t, f1_t, precision_f, recall_f, f1_f]
-#         )
 
 
 # class TestPairClustering:

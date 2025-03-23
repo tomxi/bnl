@@ -2,10 +2,33 @@ import mir_eval
 import numpy as np
 
 
+def labels_at_t(hier_itvls, hier_labels, t):
+    """
+    Get the labels at a specific time t for hierarchical intervals.
+    returns a list of labels at time t for each level.
+    """
+    # we ensure t is in the range of the intervals.
+    if len(hier_itvls) == 0:
+        return None
+    elif t < hier_itvls[0][0][0] or t > hier_itvls[0][-1][-1]:
+        return [None] * len(hier_labels)
+    elif t == hier_itvls[0][-1][-1]:
+        return [labels[-1] for labels in hier_labels]
+
+    seg_idx = []
+    # Get the labels at time t for each level using searchsorted
+    for itvls, labels in zip(hier_itvls, hier_labels):
+        # Get the index of the interval that contains t
+        start_times = [itvl[0] for itvl in itvls]
+        seg_idx.append(np.searchsorted(start_times, t, side="right") - 1)
+
+    return [labels[idx] for idx, labels in zip(seg_idx, hier_labels)]
+
+
 def meet(hier_itvls, hier_labels, u, v, mode="deepest", compare_fn=np.equal):
     """
     Compute the meeting point for a list of given time pairs (u, v) and mode.
-    This function calculates the meet matrix based at the time points and with mode.
+    use compare_fn on labels at u and v for defining meet.
 
     Parameters
     ----------
@@ -37,36 +60,15 @@ def meet(hier_itvls, hier_labels, u, v, mode="deepest", compare_fn=np.equal):
 
     if mode == "deepest":
         # Find the idx of the Last True value or zero if all are False
-        return len(lvl_meet) - np.argmax(lvl_meet[::-1]) if any(lvl_meet) else 0
+        return len(lvl_meet) - np.argmax(lvl_meet[::-1]) if lvl_meet.any() else 0
     elif mode == "mono":
         # Find the idx of the first False value, len(lvl_meet) if all are True
-        return np.argmax(lvl_meet == False) if not all(lvl_meet) else len(lvl_meet)
+        return np.argmax(lvl_meet == False) if not lvl_meet.all() else len(lvl_meet)
     else:
         raise ValueError(f"Unknown meeting mode: {mode}.\n Use 'deepest' or 'mono'.")
 
 
-def labels_at_t(hier_itvls, hier_labels, t):
-    # we ensure t is in the range of the intervals.
-    if len(hier_itvls) == 0:
-        return None
-    elif t < hier_itvls[0][0][0] or t > hier_itvls[0][-1][-1]:
-        return [None] * len(hier_labels)
-    elif t == hier_itvls[0][-1][-1]:
-        return [labels[-1] for labels in hier_labels]
-
-    seg_idx = []
-    # Get the labels at time t for each level using searchsorted
-    for itvls, labels in zip(hier_itvls, hier_labels):
-        # Get the index of the interval that contains t
-        start_times = [itvl[0] for itvl in itvls]
-        seg_idx.append(np.searchsorted(start_times, t, side="right") - 1)
-
-    return [labels[idx] for idx, labels in zip(seg_idx, hier_labels)]
-
-
-def relevance_at_t(
-    hier_itvls, hier_labels, t, meet_mode="deepest", compare_fn=np.equal
-):
+def relevance_hierarchy_at_t(hier_itvls, hier_labels, t, bs=None, meet_mode="deepest"):
     """
     Get the relevance curve for a given query time point t in seconds.
 
@@ -88,15 +90,17 @@ def relevance_at_t(
     relevances: list of values.
     """
     # merge list of boundaries into a single list and sort
-    all_bs = np.sort(np.unique(np.concatenate(hier_itvls)))
-    # get the meet at time t, all_bs[:-1], thats the relevance of t against each segemnt.
+    if bs is None:
+        bs = np.sort(np.unique(np.concatenate(hier_itvls)))
+    # get the meet at time t, all_bs[:-1], thats the relevance of t against each segment.
+
     rel_val = np.vectorize(
         lambda u: float(
-            meet(hier_itvls, hier_labels, t, u, meet_mode, compare_fn=compare_fn)
+            meet(hier_itvls, hier_labels, t, u, meet_mode, compare_fn=np.equal)
         )
-    )(all_bs[:-1])
+    )(bs[:-1])
 
-    return mir_eval.util.boundaries_to_intervals(all_bs), rel_val
+    return mir_eval.util.boundaries_to_intervals(bs), rel_val
 
 
 def triplet_recall_at_t(
@@ -106,7 +110,6 @@ def triplet_recall_at_t(
     est_hier_labels,
     t,
     meet_mode="deepest",
-    window=0,
     transitive=True,
     debug=0,
 ):
@@ -131,7 +134,43 @@ def triplet_recall_at_t(
     float
         The recall at time t.
     """
-    pass
+    common_bs = np.sort(np.unique(np.concatenate(ref_hier_itvls + est_hier_itvls)))
+    min_t = common_bs[0]
+    max_t = common_bs[-1]
+
+    common_itvls, ref_rel = relevance_hierarchy_at_t(
+        ref_hier_itvls, ref_hier_labels, t, bs=common_bs, meet_mode=meet_mode
+    )
+    common_itvls, est_rel = relevance_hierarchy_at_t(
+        est_hier_itvls, est_hier_labels, t, bs=common_bs, meet_mode=meet_mode
+    )
+
+    if transitive:
+        sig_compare_fn = np.greater
+    else:
+        # They have to be greater by exactly 1
+        sig_compare_fn = np.frompyfunc(lambda x, y: int(x) - int(y) == 1, 2, 1)
+
+    positions_to_recall = sig_compare_fn.outer(ref_rel, ref_rel).astype(float)
+    positions_recalled = (
+        np.greater.outer(est_rel, est_rel).astype(float) * positions_to_recall
+    )
+    seg_dur = np.diff(common_bs)
+    common_grid_area = np.outer(seg_dur, seg_dur)
+
+    if debug == 2:
+        return dict(
+            iota=positions_to_recall,
+            alpha=positions_recalled,
+            bs=common_bs,
+            grid_area=common_grid_area,
+        )
+    area_to_recall = np.sum(positions_to_recall * common_grid_area)
+    area_recalled = np.sum(positions_recalled * common_grid_area)
+    max_area = ((max_t - min_t) ** 2) / 2.0
+    if debug == 1:
+        return area_recalled / max_area, area_to_recall / max_area
+    return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
 
 
 def triplet_recall(
@@ -140,11 +179,32 @@ def triplet_recall(
     est_hier_itvls,
     est_hier_labels,
     meet_mode="deepest",
-    window=0,
     transitive=True,
     debug=0,
 ):
-    pass
+    common_bs = np.sort(np.unique(np.concatenate(ref_hier_itvls + est_hier_itvls)))
+    per_segment_recall = np.vectorize(
+        lambda t: triplet_recall_at_t(
+            ref_hier_itvls,
+            ref_hier_labels,
+            est_hier_itvls,
+            est_hier_labels,
+            t,
+            meet_mode=meet_mode,
+            transitive=transitive,
+            debug=debug,
+        )
+    )(common_bs[:-1])
+    seg_dur = np.diff(common_bs)
+
+    # if per_segment_recall is nan, ignore segment in calculation
+    valid_seg = ~np.isnan(per_segment_recall)
+    if np.sum(seg_dur[valid_seg]) == 0:
+        return 0.0
+    else:
+        return np.sum(per_segment_recall[valid_seg] * seg_dur[valid_seg]) / np.sum(
+            seg_dur[valid_seg]
+        )
 
 
 def pairwise_recall(
@@ -250,6 +310,8 @@ def lmeasure(
     ref_labels,
     est_itvls,
     est_labels,
+    meet_mode="deepest",
+    beta=1.0,
 ):
     """
     Compute the L-measure score for a reference and estimated labeled segmentation.
@@ -270,7 +332,24 @@ def lmeasure(
     precision, recall, f1
         The L-measure.
     """
-    pass
+    recall = triplet_recall(
+        ref_itvls,
+        ref_labels,
+        est_itvls,
+        est_labels,
+        meet_mode=meet_mode,
+        transitive=True,
+    )
+    precision = triplet_recall(
+        est_itvls,
+        est_labels,
+        ref_itvls,
+        ref_labels,
+        meet_mode=meet_mode,
+        transitive=True,
+    )
+
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
 def tmeasure(
@@ -278,7 +357,7 @@ def tmeasure(
     ref_labels,
     est_itvls,
     est_labels,
-    window=15,
+    meet_mode="deepest",
     transitive=False,
 ):
     """
@@ -300,7 +379,24 @@ def tmeasure(
     precision, recall, f1
         The T-measure.
     """
-    pass
+    # make labels non repeating
+    recall = triplet_recall(
+        ref_itvls,
+        ref_itvls,
+        est_itvls,
+        est_itvls,
+        meet_mode=meet_mode,
+        transitive=transitive,
+    )
+    precision = triplet_recall(
+        est_itvls,
+        est_itvls,
+        ref_itvls,
+        ref_itvls,
+        meet_mode=meet_mode,
+        transitive=transitive,
+    )
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=1.0)
 
 
 def pair_clustering(

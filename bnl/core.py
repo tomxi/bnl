@@ -524,19 +524,20 @@ class H:
     def meet(self, u, v, mode="deepest"):
         # mode can be 'deepest', 'mono', 'mean'.
         # Get the meet value per level
-        lvl_meet = [lvl.meet(u, v) for lvl in self.levels]
+        lvl_meet = np.array([lvl.meet(u, v) for lvl in self.levels])
         # Handle edge cases
-        if not any(lvl_meet):
+        if not np.any(lvl_meet):
             return 0
-        elif all(lvl_meet):
+        elif np.all(lvl_meet):
             return self.d
 
         # switch on mode
         if mode == "deepest":
-            return self.d - lvl_meet[::-1].index(True)
+            # Find the idx of the Last True value or zero if all are False
+            return len(lvl_meet) - np.argmax(lvl_meet[::-1]) if lvl_meet.any() else 0
         elif mode == "mono":
-            # Find the first level where the meet is False
-            return lvl_meet.index(False)
+            # Find the idx of the first False value, len(lvl_meet) if all are True
+            return np.argmax(lvl_meet == False) if not lvl_meet.all() else len(lvl_meet)
         elif mode == "mean":
             return np.mean(lvl_meet)
         else:
