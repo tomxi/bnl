@@ -25,6 +25,31 @@ def labels_at_t(hier_itvls, hier_labels, t):
     return [labels[idx] for idx, labels in zip(seg_idx, hier_labels)]
 
 
+def label_at_ts(itvls, labels, ts):
+    """Get labels at multiple time points for flat (non-hierarchical) intervals.
+
+    Parameters:
+        itvls: List of [start, end] intervals
+        labels: List of corresponding labels
+        ts: Time point(s) to query
+
+    Returns:
+        List of labels at each queried time point, empty list if no interval contains the time
+    """
+    ts = np.atleast_1d(ts)
+    starts = np.array([iv[0] for iv in itvls])
+    ends = np.array([iv[1] for iv in itvls])
+
+    # Find containing intervals
+    results = []
+    for t in ts:
+        idx = np.searchsorted(starts, t, side="right") - 1
+        if idx >= 0 and t < ends[idx]:
+            results.append(labels[idx])
+
+    return results
+
+
 def meet(hier_itvls, hier_labels, u, v, mode="deepest", compare_fn=np.equal):
     """
     Compute the meeting point for a list of given time pairs (u, v) and mode.
@@ -254,33 +279,42 @@ def pairwise_recall(
     return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
 
 
-def entropy(itvls, labels):
+def entropy(itvls, labels, check_overlap=False):
     """
     Compute the entropy of a set of intervals and their corresponding labels.
     Returns
         The entropy of the intervals and labels in bits.
     """
-    # Calculate total duration of all intervals
-    total_duration = float(sum(end - start for start, end in itvls))
-    if total_duration == 0:
-        return 0.0
+    # the implementation logic here assumes that the intervals are non-overlapping.
+    if check_overlap:
+        # If the intervals are sorted by start time, we can just compare consecutive intervals
+        # to check for overlaps.
+        sorted_itvls = sorted(itvls, key=lambda iv: iv[0])
+        for prev, curr in zip(sorted_itvls, sorted_itvls[1:]):
+            if prev[1] > curr[0]:
+                raise ValueError("Intervals overlap: {} and {}".format(prev, curr))
 
-    # Aggregate durations by label
-    label_durations = {}
-    for (start, end), label in zip(itvls, labels):
-        duration = end - start
-        if duration > 0:  # Ignore zero-duration intervals
-            label_durations[label] = label_durations.get(label, 0) + duration
+    # We get label and duration for each segment, aggrecate duration for each label,
+    # and compute entropy by assuming a uniform distribution over the union of all intervals provided.
+    seg_dur = np.diff(np.array(itvls), axis=1).flatten()
 
-    # return label_durations
-    # Calculate entropy using Shannon's formula: -Σ p_i * log2(p_i)
-    entropy_value = 0.0
-    for duration in label_durations.values():
-        p = duration / total_duration
-        if p > 0:  # Avoid log2(0)
-            entropy_value -= p * np.log2(p)
+    # Create a mapping from each label to a list of indices for segments with that label.
+    label_indices = {}
+    for idx, label in enumerate(labels):
+        # Convert numpy array to tuple if necessary for hashing
+        hashable_label = tuple(label) if isinstance(label, np.ndarray) else label
+        label_indices.setdefault(hashable_label, []).append(idx)
 
-    return entropy_value
+    # Compute the total duration for each unique label.
+    label_durs = np.array(
+        [seg_dur[indices].sum() for indices in label_indices.values()]
+    )
+
+    pi = label_durs[label_durs > 0]  # Avoid log(0)
+    pi_sum = seg_dur.sum()
+    # log(a / b) should be calculated as log(a) - log(b) for
+    # possible loss of precision
+    return -np.sum((pi / pi_sum) * (np.log(pi) - np.log(pi_sum)))
 
 
 def conditional_entropy(itvls, labels, condition_itvls, condition_labels):
