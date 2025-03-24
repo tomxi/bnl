@@ -5,31 +5,50 @@
 
 \section{Flat Segmentation Metrics}
 For evaluating the performance of flat segmentations, the community has adopted the boundary hit rate for evaluating boundary retrieval, and the pairwise clustering score and V-measure for evaluating the labeling of segments.
-The boundary hit rate metric already uses a frameless formulation, and therefore we focus our attention on the two metrics that focus on labeling
+The boundary hit rate metric already uses a frameless formulation, and therefore we focus our attention on the two metrics that focus on labeling.
+This above connecting text needs some work...
+The goal here is to move into definition of PFC and V-measure.
 
-\subsection{Pairwise Clustering}
+\subsection{Clustering Metrics}
+Introduced to the task of music segmentation by Levy and Sandler~\cite{levy2008structural}, the pairwise clustering metric is a standard metric for evaluating a clustering against a reference clustering for elements in a set.
+
 The task of producing a labeled segmentation can be seen as a partitioning a set into labeled clusters, where the set being partitioned is the time span the segmentation occupies.
-We can see this perspective clearly by following the notational framework set out by prior literature~\cite{DBLP:journals/tismir/NietoMWSSGM20,DBLP:journals/tismir/KinnairdM21}.
+The original conception of pairwise clustering was formulated with sets of discrete elements, which in the original current version adapted by the community is represented as labels sampled over time, with a frame size of 0.1 seconds.
+However, we can formulate this metric with sets consisted of continuous time spans.
 
+\subsection{Notation}
+We modify the notational framework set out by prior literature~\cite{DBLP:journals/tismir/NietoMWSSGM20,DBLP:journals/tismir/KinnairdM21} slightly to adapt to a continous time formulation of sets.
 
-For a piece of music with time span \(T = [t_0, t_1]\), a flat segmentation has a label mapping $S(t)$:
+For a piece of music with time span \(T = [t_0, t_1]\), a segmentation $S$ has a label mapping $L(t)$ that maps time points in $T$ to the set of unique labels $\gamma = \{y_1, y_2, \ldots\}$ that are used by the segmentation.
 \begin{equation}
-    S(t): T \to \{y_1, y_2, \ldots\}.
-    \label{eq:S}
+    L(t): T \to \gamma \label{eq:L}
 \end{equation}
 
-Introduced to the task of music segmentation by Levy and Sandler~\cite{levy2008structural}, the pairwise clustering metric is a standard metric for clustering that focuses on which pairs of elements are in the same partition.
 
-Formally, let's define the set of time point pairs that are labeled identically by $S$: 
-$$\mathcal{A}(S)= \{(u, v)|S(u)=S(v)\}$$
+% Notice that $L(t)$ is a piecewise constant function, and changes in $L(t)$ define boundaries in $S$.
+% The set of boundaries $\beta$ is a superset of the set of change points in $L$.
+% \begin{align*}
+%     \beta &:= \{b \in T\} \cup \{t_0, t_1\}, \quad \mbox{where}\\
+%     \beta &\supseteq \{b \in T | L(t) \neq L(t + \epsilon), \forall \epsilon > 0\}
+% \end{align*}
+
+
+
+\subsection{Pairwise Clustering}
+The pairwise clustering metric (PFC) is a measure of the agreement between two segmentations $S$ and $\hat{S}$.
+
+We denote the set of time pairs $(u, v)$ that are labeled identically by $S$: 
+$$\mathcal{A}(S)= \{(u, v)|L_S(u)=L_S(v)\}$$
 Pairwise frame clustering metrics are then defined as follows: 
 \begin{align*}
 \text{PFC}_R = \frac{|\mathcal{A}(S) \cap \mathcal{A}(\hat{S})|}{|\mathcal{A}(S)|}&, \quad
 \text{PFC}_P = \frac{|\mathcal{A}(S) \cap \mathcal{A}(\hat{S})|}{|\mathcal{A}(\hat{S})|} \\
 \text{PFC}_F = &\frac{2}{\frac1{\text{PFC}_R} + \frac1{\text{PFC}_P}}
 \end{align*}
-We can visualize the labels of a segmentation by plotting its Annotation Agreement Map (AAM) $A(u, v) = [(u, v) \in \mathcal{A}]_\mathbbm{1}$ as is done in figure~\ref{fig:flat_anno_meet}.
-Notice $|\mathcal{A}|$ represents the number of non zero entries in $A(u, v)$, and $|\mathcal{A}(S) \cap \mathcal{A}(\hat{S})|$ represents the number of pairs in the overlapping areas between $A(S)(u, v)$ and $A(\hat{S})(u, v)$.
+
+Notice $|\mathcal{A}|$ represents the non zero regions in $A(u, v)$, and $|\mathcal{A}(S) \cap \mathcal{A}(\hat{S})|$ represents the pairs in the overlapping areas between the sets.
+
+We plot a segmentation and its $\mathcal{A}(S)$.
 
 \begin{figure}
     \centering

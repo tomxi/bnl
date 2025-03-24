@@ -10,6 +10,7 @@ def common_boundaries(list_of_itvls):
     return np.array(sorted(bs))
 
 
+# Let's combine and optimize these two functions below later
 def labels_at_t(hier_itvls, hier_labels, t):
     """
     Get the labels at a specific time t for hierarchical intervals.
@@ -44,16 +45,17 @@ def label_at_ts(itvls, labels, ts):
     Returns:
         List of labels at each queried time point, empty list if no interval contains the time
     """
-    ts = np.atleast_1d(ts)
     starts = np.array([iv[0] for iv in itvls])
     ends = np.array([iv[1] for iv in itvls])
 
-    # Find containing intervals
-    results = []
-    for t in ts:
-        idx = np.searchsorted(starts, t, side="right") - 1
-        if idx >= 0 and t < ends[idx]:
-            results.append(labels[idx])
+    # Use vectorized operations to find labels at each time point
+    idx = np.vectorize(
+        lambda t: np.searchsorted(starts, t, side="right") - 1,
+        otypes=[np.int_],
+        signature="()->()",
+    )(ts)
+    mask = (idx >= 0) & (ts < ends[idx])
+    results = [labels[i] if m else None for i, m in zip(idx, mask)]
 
     return results
 
@@ -124,13 +126,15 @@ def relevance_hierarchy_at_t(hier_itvls, hier_labels, t, bs=None, meet_mode="dee
     """
     # merge list of boundaries into a single list and sort
     if bs is None:
-        bs = np.sort(np.unique(np.concatenate(hier_itvls)))
+        bs = common_boundaries(hier_itvls)
     # get the meet at time t, all_bs[:-1], thats the relevance of t against each segment.
 
     rel_val = np.vectorize(
         lambda u: float(
             meet(hier_itvls, hier_labels, t, u, meet_mode, compare_fn=np.equal)
-        )
+        ),
+        otypes=[np.float64],
+        signature="()->()",
     )(bs[:-1])
 
     return mir_eval.util.boundaries_to_intervals(bs), rel_val
@@ -167,7 +171,7 @@ def triplet_recall_at_t(
     float
         The recall at time t.
     """
-    common_bs = np.sort(np.unique(np.concatenate(ref_hier_itvls + est_hier_itvls)))
+    common_bs = common_boundaries(ref_hier_itvls + est_hier_itvls)
     min_t = common_bs[0]
     max_t = common_bs[-1]
 
@@ -200,8 +204,8 @@ def triplet_recall_at_t(
         )
     area_to_recall = np.sum(positions_to_recall * common_grid_area)
     area_recalled = np.sum(positions_recalled * common_grid_area)
-    max_area = ((max_t - min_t) ** 2) / 2.0
     if debug == 1:
+        max_area = ((max_t - min_t) ** 2) / 2.0
         return area_recalled / max_area, area_to_recall / max_area
     return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
 
@@ -215,7 +219,7 @@ def triplet_recall(
     transitive=True,
     debug=0,
 ):
-    common_bs = np.sort(np.unique(np.concatenate(ref_hier_itvls + est_hier_itvls)))
+    common_bs = common_boundaries(ref_hier_itvls + est_hier_itvls)
     per_segment_recall = np.vectorize(
         lambda t: triplet_recall_at_t(
             ref_hier_itvls,
@@ -266,15 +270,12 @@ def pairwise_recall(
         The recall at time t.
     """
     # Find the common boundaries
-    common_bs = np.sort(np.unique((list(ref_itvls) + list(est_itvls))))
+    common_bs = common_boundaries([ref_itvls, est_itvls])
 
     # Get the label at each common_bs
-    ref_labels = np.array(
-        [labels_at_t([ref_itvls], [ref_labels], t)[0] for t in common_bs[:-1]]
-    )
-    est_labels = np.array(
-        [labels_at_t([est_itvls], [est_labels], t)[0] for t in common_bs[:-1]]
-    )
+    # Get the label for each common boundary using label_at_ts
+    ref_labels = np.array(label_at_ts(ref_itvls, ref_labels, common_bs[:-1]))
+    est_labels = np.array(label_at_ts(est_itvls, est_labels, common_bs[:-1]))
 
     positions_to_recall = np.equal.outer(ref_labels, ref_labels).astype(float)
     positions_recalled = (
@@ -322,7 +323,7 @@ def entropy(itvls, labels, check_overlap=False):
     return -np.sum((pi / pi_sum) * (np.log(pi) - np.log(pi_sum)))
 
 
-def get_common_itvls(
+def make_common_itvls(
     itvls1,
     labels1,
     itvls2,
@@ -340,14 +341,14 @@ def get_common_itvls(
     common_itvls = mir_eval.util.boundaries_to_intervals(common_bs)
 
     # Find the label at each common boundary.
-    gridded_labels = np.array(label_at_ts(itvls1, labels1, common_bs[:-1]))
-    gridded_cond_labels = np.array(label_at_ts(itvls2, labels2, common_bs[:-1]))
-    return common_itvls, gridded_labels, gridded_cond_labels
+    gridded_labels1 = np.array(label_at_ts(itvls1, labels1, common_bs[:-1]))
+    gridded_labels2 = np.array(label_at_ts(itvls2, labels2, common_bs[:-1]))
+    return common_itvls, gridded_labels1, gridded_labels2
 
 
 def get_conditioned_entropies(itvls, labels, itvls_cond, labels_cond):
     # Get the common intervals and labels
-    common_itvls, gridded_labels, gridded_cond_labels = get_common_itvls(
+    common_itvls, gridded_labels, gridded_cond_labels = make_common_itvls(
         itvls, labels, itvls_cond, labels_cond
     )
     common_durs = np.diff(common_itvls, axis=1).flatten()
@@ -357,6 +358,7 @@ def get_conditioned_entropies(itvls, labels, itvls_cond, labels_cond):
     probabilities_of_condition = []
     labels_of_condition = []
     for cond_l in np.unique(labels_cond):
+        # Create a mask where the segments get the conditioned label
         segments_to_keep = gridded_cond_labels == cond_l
         sub_itvls = common_itvls[segments_to_keep]
         sub_labels = gridded_labels[segments_to_keep]
