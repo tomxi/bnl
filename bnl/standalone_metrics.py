@@ -2,6 +2,14 @@ import mir_eval
 import numpy as np
 
 
+def common_boundaries(list_of_itvls):
+    # Get the boundaries of both sets of intervals
+    bs = set()
+    for itvls in list_of_itvls:
+        bs = bs.union(set(mir_eval.util.intervals_to_boundaries(itvls)))
+    return np.array(sorted(bs))
+
+
 def labels_at_t(hier_itvls, hier_labels, t):
     """
     Get the labels at a specific time t for hierarchical intervals.
@@ -297,18 +305,15 @@ def entropy(itvls, labels, check_overlap=False):
     # We get label and duration for each segment, aggrecate duration for each label,
     # and compute entropy by assuming a uniform distribution over the union of all intervals provided.
     seg_dur = np.diff(np.array(itvls), axis=1).flatten()
+    pi_sum = seg_dur.sum()
+    if pi_sum == 0.0:
+        return 1.0
 
-    # Create a mapping from each label to a list of indices for segments with that label.
-    label_indices = {}
-    for idx, label in enumerate(labels):
-        # Convert numpy array to tuple if necessary for hashing
-        hashable_label = tuple(label) if isinstance(label, np.ndarray) else label
-        label_indices.setdefault(hashable_label, []).append(idx)
+    unique_labels, inverse_indices = np.unique(labels, return_inverse=True)
+    label_durs = np.zeros(len(unique_labels))
 
-    # Compute the total duration for each unique label.
-    label_durs = np.array(
-        [seg_dur[indices].sum() for indices in label_indices.values()]
-    )
+    for i, duration in enumerate(seg_dur):
+        label_durs[inverse_indices[i]] += duration
 
     pi = label_durs[label_durs > 0]  # Avoid log(0)
     pi_sum = seg_dur.sum()
@@ -317,67 +322,71 @@ def entropy(itvls, labels, check_overlap=False):
     return -np.sum((pi / pi_sum) * (np.log(pi) - np.log(pi_sum)))
 
 
-def conditional_entropy(itvls, labels, condition_itvls, condition_labels):
+def get_common_itvls(
+    itvls1,
+    labels1,
+    itvls2,
+    labels2,
+    # label_condition,
+):
+    """Label condition is a element of labels2,
+    we slice the itvls and labels to get a new sub segmentation
+    based on the conditioned on labels2 = label_condition.
     """
-    Compute the conditional entropy (in bits) of labels in "itvls" given the conditioning intervals.
 
-    Parameters
-    ----------
-    itvls : list
-        The intervals.
-    labels : list
-        The labels corresponding to the intervals.
-    condition_itvls : list
-        The conditioning intervals.
-    condition_labels : list
-        The labels corresponding to the conditioning intervals.
-
-    Returns
-    -------
-    float
-        The conditional entropy in bits.
-    """
+    # Strategy: build a new set of common_intervals, and labels of equal length, then do array indexing.
     # Merge boundaries and compute segment durations.
-    boundaries = np.concatenate(list(itvls) + list(condition_itvls))
-    common_bs = np.sort(np.unique(boundaries))
-    seg_dur = np.diff(common_bs)
-    total_duration = seg_dur.sum()
-    if total_duration <= 0:
-        return 0.0
+    common_bs = common_boundaries([itvls1, itvls2])
+    common_itvls = mir_eval.util.boundaries_to_intervals(common_bs)
 
-    # Obtain labels at each segment.
-    seg_labels = [labels_at_t([itvls], [labels], t)[0] for t in common_bs[:-1]]
-    cond_labels = [
-        labels_at_t([condition_itvls], [condition_labels], t)[0] for t in common_bs[:-1]
-    ]
+    # Find the label at each common boundary.
+    gridded_labels = np.array(label_at_ts(itvls1, labels1, common_bs[:-1]))
+    gridded_cond_labels = np.array(label_at_ts(itvls2, labels2, common_bs[:-1]))
+    return common_itvls, gridded_labels, gridded_cond_labels
 
-    # Compute conditional entropy.
-    entropy_value = 0.0
-    unique_cond = np.unique(cond_labels)
-    for c_val in unique_cond:
-        mask = np.array(cond_labels) == c_val
-        duration_c = seg_dur[mask].sum()
-        c_prob = duration_c / total_duration
-        if duration_c > 0:
-            # For segments with current condition, compute weighted probabilities over seg_labels.
-            labels_in_cond = np.array(seg_labels)[mask]
-            durations_in_cond = np.array(seg_dur)[mask]
-            unique_labels = np.unique(labels_in_cond)
-            # Sum durations for each label.
-            label_durations = np.array(
-                [
-                    durations_in_cond[labels_in_cond == lbl].sum()
-                    for lbl in unique_labels
-                ]
-            )
 
-            # Compute weighted probabilities.
-            probs = label_durations / duration_c
-            # Use only positive probabilities.
-            c_entropy = -np.sum(probs[probs > 0] * np.log2(probs[probs > 0]))
-            entropy_value += c_prob * c_entropy
+def get_conditioned_entropies(itvls, labels, itvls_cond, labels_cond):
+    # Get the common intervals and labels
+    common_itvls, gridded_labels, gridded_cond_labels = get_common_itvls(
+        itvls, labels, itvls_cond, labels_cond
+    )
+    common_durs = np.diff(common_itvls, axis=1).flatten()
 
-    return entropy_value
+    # Get entropy per condition and store them:
+    entropy_of_condition = []
+    probabilities_of_condition = []
+    labels_of_condition = []
+    for cond_l in np.unique(labels_cond):
+        segments_to_keep = gridded_cond_labels == cond_l
+        sub_itvls = common_itvls[segments_to_keep]
+        sub_labels = gridded_labels[segments_to_keep]
+        sub_durs = common_durs[segments_to_keep]
+
+        # Collect
+        labels_of_condition.append(cond_l)
+        entropy_of_condition.append(entropy(sub_itvls, sub_labels))
+        probabilities_of_condition.append(np.sum(sub_durs) / np.sum(common_durs))
+    return (
+        np.array(entropy_of_condition),
+        np.array(probabilities_of_condition),
+        np.array(labels_of_condition),
+    )
+
+
+def conditional_entropy(
+    itvls,
+    labels,
+    cond_itvls,
+    cond_labels,
+):
+    """
+    Compute the conditional entropy of a set of intervals given a condition.
+    """
+    # Get the common intervals and labels
+    entropy_per_label, prob_per_label, unique_labels = get_conditioned_entropies(
+        itvls, labels, cond_itvls, cond_labels
+    )
+    return entropy_per_label.dot(prob_per_label)
 
 
 def vmeasure(
@@ -483,7 +492,7 @@ def tmeasure(
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=1.0)
 
 
-def pair_clustering(
+def pairwise_clustering(
     ref_itvls,
     ref_labels,
     est_itvls,

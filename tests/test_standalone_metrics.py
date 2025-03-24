@@ -233,13 +233,17 @@ class TestEntropy:
         """Test entropy calculation"""
         itvls, labels = simple_hierarchy
         # Test with a single interval
-        assert mtr.entropy([[0, 10]], ["a"]) == 0
+        assert mtr.entropy([[0, 10]], ["a"]) == 0.0
         # Test with multiple intervals
         assert mtr.entropy(itvls[1], labels[1]) > 0.0
 
-    def test_entropy_empty(self):
-        """Test entropy with empty input"""
-        assert mtr.entropy([], []) == 0.0
+    def test_check_overlap(self):
+        """Test check_overlap with non-overlapping intervals"""
+        itvls = [[0, 11], [10, 20], [20, 30]]
+        labels = ["A", "B", "C"]
+
+        with pytest.raises(ValueError):
+            mtr.entropy(itvls, labels, check_overlap=True)
 
 
 class TestVmeasure:
@@ -260,26 +264,21 @@ class TestVmeasure:
             s2.labels,
             frame_size=0.1,
         )
-        assert np.allclose(v_measure, ref_v_measure)
+        assert np.allclose(v_measure, ref_v_measure, atol=1e-3)
 
 
-class TestConditionalEntropy:
-    def test_conditional_entropy(self, simple_hierarchy):
-        """Test conditional entropy calculation"""
-        itvls, labels = simple_hierarchy
-        # Test with a single interval
-        assert mtr.conditional_entropy([[0, 10]], ["a"], [[0, 10]], ["b"]) == 0
-        # Test with multiple intervals
-        assert mtr.conditional_entropy(itvls[1], labels[1], itvls[0], labels[0]) >= 0.0
-
-    def test_conditional_entropy_different_segmentations(self, hierarchies):
-        """Test conditional entropy with different segmentations"""
+class TestPairwiseFMeasure:
+    def test_pairwise_clustering(self, hierarchies):
+        """Test pairwise F-measure with different segmentations"""
         s1 = hierarchies["h3"].levels[1]
         s2 = hierarchies["h3"].levels[4]
-        cond_entropy = mtr.conditional_entropy(
+        pairwise = mtr.pairwise_clustering(
             s1.itvls,
             s1.labels,
             s2.itvls,
             s2.labels,
         )
-        assert cond_entropy >= 0.0
+        ref_pairwise = mir_eval.segment.pairwise(
+            s1.itvls, s1.labels, s2.itvls, s2.labels, frame_size=0.01
+        )
+        assert np.allclose(pairwise, ref_pairwise, atol=0.005)

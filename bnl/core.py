@@ -138,13 +138,28 @@ class S:
 
     def plot(self, ax=None, **kwargs):
         """Plot the segmentation. using viz.segment()"""
-        new_kwargs = dict(text=True, ytick="", time_ticks=True, figsize=(3.5, 0.5))
+        # Smallest segmnet to total duration ratio
+        # Get the smallest 3 segment durations
+
+        # find a good default width for the plot
+        average_seg_dur = np.mean(self.seg_dur)
+        atom_size = (average_seg_dur + np.min(self.seg_dur)) / 2.0
+        # Get the number of atoms in the segmentation
+        num_atoms = np.sum(self.seg_dur) / atom_size
+        default_width = min(max(3.5, num_atoms * 0.35), 12)
+
+        # Kwargs handling
+        new_kwargs = dict(
+            text=True, ytick="", time_ticks=True, figsize=(default_width, 0.5)
+        )
         new_kwargs.update(kwargs)
         if ax is None:
-            fig = plt.figure(figsize=new_kwargs["figsize"], constrained_layout=True)
+            fig = plt.figure(figsize=new_kwargs["figsize"])
             ax = fig.add_subplot(111)
 
         new_kwargs.pop("figsize")
+
+        # Plot the segments
         return viz.segment(self.itvls, self.labels, ax=ax, **new_kwargs)
 
     def unique_labeling(self):
@@ -152,15 +167,6 @@ class S:
         return S(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
     def meet(self, u, v, compare_fn=np.equal):
-        """Return whether labels at times u and v meet according to compare_fn.
-
-        Args:
-            u, v: Time points to compare labels
-            compare_fn: Comparison function (default: np.equal)
-
-        Returns:
-            bool: Result of comparison between labels at u and v
-        """
         return compare_fn(self.L(u), self.L(v))
 
     def expand(self, format="slm", always_include=False):
