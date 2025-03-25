@@ -1,5 +1,6 @@
 import mir_eval
 import numpy as np
+from scipy.interpolate import interp1d
 
 
 def common_boundaries(list_of_itvls):
@@ -10,54 +11,68 @@ def common_boundaries(list_of_itvls):
     return np.array(sorted(bs))
 
 
-# Let's combine and optimize these two functions below later
-def labels_at_t(hier_itvls, hier_labels, t):
+def encode_labels(labels):
     """
-    Get the labels at a specific time t for hierarchical intervals.
-    returns a list of labels at time t for each level.
-    """
-    # we ensure t is in the range of the intervals.
-    if len(hier_itvls) == 0:
-        return None
-    elif t < hier_itvls[0][0][0] or t > hier_itvls[0][-1][-1]:
-        return [None] * len(hier_labels)
-    elif t == hier_itvls[0][-1][-1]:
-        return [labels[-1] for labels in hier_labels]
-
-    seg_idx = []
-    # Get the labels at time t for each level using searchsorted
-    for itvls, labels in zip(hier_itvls, hier_labels):
-        # Get the index of the interval that contains t
-        start_times = [itvl[0] for itvl in itvls]
-        seg_idx.append(np.searchsorted(start_times, t, side="right") - 1)
-
-    return [labels[idx] for idx, labels in zip(seg_idx, hier_labels)]
-
-
-def label_at_ts(itvls, labels, ts):
-    """Get labels at multiple time points for flat (non-hierarchical) intervals.
+    Convert a list of string labels to integer labels with a reverse mapping.
 
     Parameters:
-        itvls: List of [start, end] intervals
-        labels: List of corresponding labels
-        ts: Time point(s) to query
+        labels (list/array of str): The input list of string labels.
 
     Returns:
-        List of labels at each queried time point, empty list if no interval contains the time
+        tuple: A tuple containing:
+            - int_labels (list of int): The list of integer labels.
+            - int_to_label (list): List of original labels indexed by their integer codes.
     """
-    starts = np.array([iv[0] for iv in itvls])
-    ends = np.array([iv[1] for iv in itvls])
+    unique_labels = []
+    int_labels = []
+    labels = np.atleast_1d(labels).flatten()
+    print(labels)
+    for label in labels:
+        if label not in unique_labels:
+            unique_labels.append(label)
+        int_labels.append(unique_labels.index(label))
+    print(np.array(int_labels, dtype=int))
+    return np.array(int_labels, dtype=int), unique_labels
 
-    # Use vectorized operations to find labels at each time point
-    idx = np.vectorize(
-        lambda t: np.searchsorted(starts, t, side="right") - 1,
-        otypes=[np.int_],
-        signature="()->()",
-    )(ts)
-    mask = (idx >= 0) & (ts < ends[idx])
-    results = [labels[i] if m else None for i, m in zip(idx, mask)]
 
-    return results
+def label_at_ts(itvls: np.ndarray, labels: np.ndarray, ts: np.ndarray, decode=True):
+    """
+    Label intervals at a specific timestamp.
+    Let's us interpolate object
+    """
+    # We need to convert list of labels to list of integers
+    lab_idx, lab_map = encode_labels(labels)
+    lab_idx = np.concatenate(
+        (lab_idx, [lab_idx[-1]])
+    )  # repeat the last label for the last boundary.
+    # Create interpolator that returns None outside the range
+    interpolator = interp1d(
+        mir_eval.util.intervals_to_boundaries(itvls), lab_idx, kind="previous"
+    )
+
+    # Apply interpolation
+    sampled_labels = interpolator(ts).astype(int)
+
+    # # Convert -1 values to None when decoding
+    sampled_labels = interpolator(ts).astype(int)
+    if not decode:
+        return sampled_labels
+    else:
+        return np.array([lab_map[i] if i != -1 else None for i in sampled_labels])
+
+
+def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray, decode=True):
+    """
+    get label at ts for all levels in a hierarchy
+    """
+    results = []
+    ts = np.atleast_1d(ts)
+    if ts.ndim > 1:
+        raise RuntimeError(f"{ts.shape} show be 1 d")
+    for itvls, labs in zip(hier_itvls, hier_labels):
+        result = label_at_ts(itvls, labs, ts, decode=decode)
+        results.append(result)
+    return np.array(results).T
 
 
 def meet(hier_itvls, hier_labels, u, v, mode="deepest", compare_fn=np.equal):
@@ -87,8 +102,9 @@ def meet(hier_itvls, hier_labels, u, v, mode="deepest", compare_fn=np.equal):
     # Strategy: build a num_pairs x num_level matrix, and record the meeting point
 
     # First get the labels for u and v at each level
-    u_labels = np.array(labels_at_t(hier_itvls, hier_labels, u))
-    v_labels = np.array(labels_at_t(hier_itvls, hier_labels, v))
+    u_labels, v_labels = labels_at_ts(
+        hier_itvls, hier_labels, np.array([u, v]), decode=False
+    )
 
     # Then compare them with the compare_fn
     lvl_meet = np.atleast_1d(np.vectorize(compare_fn)(u_labels, v_labels))
