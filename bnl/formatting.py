@@ -12,6 +12,9 @@ def multi2hier(anno) -> list:
         interval = [obs.time, obs.time + obs.duration]
         hier[lvl][0].append(interval)
         hier[lvl][1].append(label)
+
+    for i in range(n_lvl):
+        hier[i][0] = np.array(hier[i][0])
     return hier
 
 

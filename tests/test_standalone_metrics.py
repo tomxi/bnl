@@ -98,6 +98,7 @@ class TestRelevanceAtT:
             *simple_hierarchy, t, meet_mode=mode
         )
         assert np.allclose(rel_s.itvls, rel_itvls)
+
         assert np.allclose(rel_s.labels, rel_values)
 
 

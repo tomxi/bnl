@@ -33,7 +33,35 @@ def encode_labels(labels):
     return np.array(int_labels, dtype=int), unique_labels
 
 
-def label_at_ts(itvls: np.ndarray, labels: np.ndarray, ts: np.ndarray, decode=True):
+def label_at_ts(itvls, labels, ts):
+    """Get labels at multiple time points for flat (non-hierarchical) intervals.
+
+    Parameters:
+        itvls: List of [start, end] intervals
+        labels: List of corresponding labels
+        ts: Time point(s) to query
+
+    Returns:
+        List of labels at each queried time point, empty list if no interval contains the time
+    """
+    # Check ts are all within the range of the intervals
+    # if np.any(ts < itvls[0][0]) or np.any(ts > itvls[-1][-1]):
+    #     raise ValueError("Time points out of range of intervals.")
+
+    starts = np.array(itvls)[:, 0]
+    ts = np.atleast_1d(ts).flatten()
+    # Use vectorized operations to find labels at each time point
+    idx = np.vectorize(
+        lambda t: np.searchsorted(starts, t, side="right") - 1,
+        otypes=[np.int_],
+        signature="()->()",
+    )(ts)
+    return np.array([labels[i] for i in idx])
+
+
+def slow_label_at_ts(
+    itvls: np.ndarray, labels: np.ndarray, ts: np.ndarray, decode=True
+):
     """
     Label intervals at a specific timestamp.
     Let's us interpolate object
@@ -63,13 +91,13 @@ def label_at_ts(itvls: np.ndarray, labels: np.ndarray, ts: np.ndarray, decode=Tr
         )
 
 
-def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray, decode=True):
+def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray):
     """
     get label at ts for all levels in a hierarchy
     """
     results = []
     for itvls, labs in zip(hier_itvls, hier_labels):
-        result = label_at_ts(itvls, labs, ts, decode=decode)
+        result = label_at_ts(itvls, labs, ts)
         results.append(result)
     return np.array(results).T
 
@@ -101,16 +129,10 @@ def meet(hier_itvls, hier_labels, u, v, mode="deepest", compare_fn=np.equal):
     # Strategy: build a num_pairs x num_level matrix, and record the meeting point
 
     # First get the labels for u and v at each level
-    u_labels, v_labels = labels_at_ts(
-        hier_itvls, hier_labels, np.array([u, v]), decode=False
-    )
+    u_labels, v_labels = labels_at_ts(hier_itvls, hier_labels, np.array([u, v]))
 
     # Then compare them with the compare_fn
-    lvl_meet = np.atleast_1d(
-        np.vectorize(compare_fn, otypes=[np.bool_], signature="(), ()->()")(
-            u_labels, v_labels
-        )
-    )
+    lvl_meet = compare_fn(u_labels, v_labels)
 
     if mode == "deepest":
         # Find the idx of the Last True value or zero if all are False
