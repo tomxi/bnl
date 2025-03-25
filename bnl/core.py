@@ -24,7 +24,7 @@ class S:
         """Initialize the flat segmentation."""
 
         if labels is None:
-            labels = [itv for itv in itvls]
+            labels = list(range(len(itvls)))
         self.labels = labels
 
         # Build Lstar and T
@@ -199,7 +199,7 @@ class H:
                 level[-1][-1] = end_point
 
         if labels is None:
-            labels = [[itvl for itvl in layer_itvls] for layer_itvls in itvls]
+            labels = [None] * len(itvls)
 
         self.levels = [
             S(i, l, sr=sr, Bhat_bw=Bhat_bw, time_decimal=time_decimal)

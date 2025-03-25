@@ -25,13 +25,11 @@ def encode_labels(labels):
     """
     unique_labels = []
     int_labels = []
-    labels = np.atleast_1d(labels)
     for label in labels:
         label = str(label)
         if label not in unique_labels:
             unique_labels.append(label)
         int_labels.append(unique_labels.index(label))
-    print(np.array(int_labels, dtype=int))
     return np.array(int_labels, dtype=int), unique_labels
 
 
@@ -41,24 +39,28 @@ def label_at_ts(itvls: np.ndarray, labels: np.ndarray, ts: np.ndarray, decode=Tr
     Let's us interpolate object
     """
     # We need to convert list of labels to list of integers
+
+    bs = mir_eval.util.intervals_to_boundaries(itvls)
+    ts = np.atleast_1d(ts).flatten()
     lab_idx, lab_map = encode_labels(labels)
-    lab_idx = np.concatenate(
-        (lab_idx, [lab_idx[-1]])
-    )  # repeat the last label for the last boundary.
+    # repeat the last label for the last boundary.
+    lab_idx = np.concatenate((lab_idx, [lab_idx[-1]]))
+
     # Create interpolator that returns None outside the range
     interpolator = interp1d(
-        mir_eval.util.intervals_to_boundaries(itvls), lab_idx, kind="previous"
+        bs, lab_idx, kind="previous", bounds_error=False, fill_value=None
     )
 
     # Apply interpolation
-    sampled_labels = interpolator(ts).astype(int)
-
-    # # Convert -1 values to None when decoding
-    sampled_labels = interpolator(ts).astype(int)
     if not decode:
-        return sampled_labels
+        return interpolator(ts).astype(int)
     else:
-        return np.array([lab_map[i] if i != -1 else None for i in sampled_labels])
+        return np.array(
+            [
+                lab_map[i] if i is not None else None
+                for i in interpolator(ts).astype(int)
+            ]
+        )
 
 
 def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray, decode=True):
@@ -66,9 +68,6 @@ def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray, decode=Tru
     get label at ts for all levels in a hierarchy
     """
     results = []
-    ts = np.atleast_1d(ts)
-    if ts.ndim > 1:
-        raise RuntimeError(f"{ts.shape} show be 1 d")
     for itvls, labs in zip(hier_itvls, hier_labels):
         result = label_at_ts(itvls, labs, ts, decode=decode)
         results.append(result)
@@ -107,7 +106,11 @@ def meet(hier_itvls, hier_labels, u, v, mode="deepest", compare_fn=np.equal):
     )
 
     # Then compare them with the compare_fn
-    lvl_meet = np.atleast_1d(np.vectorize(compare_fn)(u_labels, v_labels))
+    lvl_meet = np.atleast_1d(
+        np.vectorize(compare_fn, otypes=[np.bool_], signature="(), ()->()")(
+            u_labels, v_labels
+        )
+    )
 
     if mode == "deepest":
         # Find the idx of the Last True value or zero if all are False
@@ -246,7 +249,9 @@ def triplet_recall(
             meet_mode=meet_mode,
             transitive=transitive,
             debug=debug,
-        )
+        ),
+        otypes=[np.float64],
+        signature="()->()",
     )(common_bs[:-1])
     seg_dur = np.diff(common_bs)
 
