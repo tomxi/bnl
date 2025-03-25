@@ -25,9 +25,9 @@ def encode_labels(labels):
     """
     unique_labels = []
     int_labels = []
-    labels = np.atleast_1d(labels).flatten()
-    print(labels)
+    labels = np.atleast_1d(labels)
     for label in labels:
+        label = str(label)
         if label not in unique_labels:
             unique_labels.append(label)
         int_labels.append(unique_labels.index(label))
