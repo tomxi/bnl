@@ -36,7 +36,7 @@ def label_style_dict(labels, boundary_color="white", **kwargs):
 
     Parameters
     ----------
-    labels : list
+    labels : nparray or list
         List of labels (can contain nested lists). Duplicate labels will be handled only once.
     **kwargs : dict
         Additional style properties to apply to all labels. These will override
@@ -55,17 +55,13 @@ def label_style_dict(labels, boundary_color="white", **kwargs):
     - If there are more than 80 unique labels, uses 'tab20' colormap with 15 hatch patterns.
     - Default styles include white edgecolor and linewidth of 1.
     """
-    labels = labels.copy()
-    # Get unique labels
-    # This is a bit of a hack to flatten the list of labels
-    unique_labels = []
-    while labels:
-        l = labels.pop()
-        if isinstance(l, list):
-            labels.extend(l)
-        elif l not in unique_labels:
-            unique_labels.append(l)
-    unique_labels.sort()
+    # flatten the labels list
+    try:
+        unique_labels = np.unique(labels)
+    except TypeError:
+        unique_labels = np.unique(np.concatenate(labels))
+    # sort the labels
+    unique_labels = sorted(unique_labels)
 
     # More hatch patterns for more labels
     hatchs = ["", "..", "O.", "*", "xx", "xxO", "\\O", "oo", "\\"]

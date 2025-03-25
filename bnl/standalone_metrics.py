@@ -500,11 +500,10 @@ def lmeasure(
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
+# make the labels again! THat's probably wher the bug was.
 def tmeasure(
     ref_itvls,
-    ref_labels,
     est_itvls,
-    est_labels,
     meet_mode="deepest",
     transitive=False,
 ):
