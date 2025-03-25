@@ -12,3 +12,6 @@ scripts/compare_implementation/*
 
 texts/main.*
 !texts/main.tex
+
+profile.out
+

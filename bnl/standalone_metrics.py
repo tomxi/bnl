@@ -33,35 +33,33 @@ def encode_labels(labels):
     return np.array(int_labels, dtype=int), unique_labels
 
 
-def label_at_ts(itvls, labels, ts):
-    """Get labels at multiple time points for flat (non-hierarchical) intervals.
+# def label_at_ts(itvls, labels, ts):
+#     """Get labels at multiple time points for flat (non-hierarchical) intervals.
 
-    Parameters:
-        itvls: List of [start, end] intervals
-        labels: List of corresponding labels
-        ts: Time point(s) to query
+#     Parameters:
+#         itvls: List of [start, end] intervals
+#         labels: List of corresponding labels
+#         ts: Time point(s) to query
 
-    Returns:
-        List of labels at each queried time point, empty list if no interval contains the time
-    """
-    # Check ts are all within the range of the intervals
-    # if np.any(ts < itvls[0][0]) or np.any(ts > itvls[-1][-1]):
-    #     raise ValueError("Time points out of range of intervals.")
+#     Returns:
+#         List of labels at each queried time point, empty list if no interval contains the time
+#     """
+#     # Check ts are all within the range of the intervals
+#     # if np.any(ts < itvls[0][0]) or np.any(ts > itvls[-1][-1]):
+#     #     raise ValueError("Time points out of range of intervals.")
 
-    starts = np.array(itvls)[:, 0]
-    ts = np.atleast_1d(ts).flatten()
-    # Use vectorized operations to find labels at each time point
-    idx = np.vectorize(
-        lambda t: np.searchsorted(starts, t, side="right") - 1,
-        otypes=[np.int_],
-        signature="()->()",
-    )(ts)
-    return np.array([labels[i] for i in idx])
+#     starts = np.array(itvls)[:, 0]
+#     ts = np.atleast_1d(ts).flatten()
+#     # Use vectorized operations to find labels at each time point
+#     idx = np.vectorize(
+#         lambda t: np.searchsorted(starts, t, side="right") - 1,
+#         otypes=[np.int_],
+#         signature="()->()",
+#     )(ts)
+#     return np.array([labels[i] for i in idx])
 
 
-def slow_label_at_ts(
-    itvls: np.ndarray, labels: np.ndarray, ts: np.ndarray, decode=True
-):
+def label_at_ts(itvls: np.ndarray, labels: np.ndarray, ts: np.ndarray, decode=True):
     """
     Label intervals at a specific timestamp.
     Let's us interpolate object
