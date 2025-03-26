@@ -4,12 +4,22 @@ from scipy.interpolate import interp1d
 
 
 def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
+    # adjust timespan of estimations relative to reference
+    ref_itvls, ref_labels, est_itvls, est_labels = _align_hier(
+        [ref_itvls], [ref_labels], [est_itvls], [est_labels]
+    )
+    # They are depth 1 hieraries right now, let's get them out of the list
+    ref_itvls = ref_itvls[0]
+    ref_labels = ref_labels[0]
+    est_itvls = est_itvls[0]
+    est_labels = est_labels[0]
+
     precision = 1.0 - conditional_entropy(
         est_itvls, est_labels, ref_itvls, ref_labels
-    ) / entropy(np.diff(est_itvls, axis=1).flatten(), est_labels)
+    ) / entropy(est_itvls, est_labels)
     recall = 1.0 - conditional_entropy(
         ref_itvls, ref_labels, est_itvls, est_labels
-    ) / entropy(np.diff(ref_itvls, axis=1).flatten(), ref_labels)
+    ) / entropy(ref_itvls, ref_labels)
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
@@ -71,7 +81,7 @@ def _get_common_grid_meet_matrices(
 ):
     # Strategy: cut up into common boundaries
     common_itvls, ref_labs, est_labs = _common_grid_itvls_labels(
-        ref_itvls, ref_labels, est_itvls, est_labels
+        *_align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
     )
     # get the meet matrix
     meet_ref = _meet(ref_labs, mono=mono)
@@ -228,3 +238,18 @@ def _label_at_ts(itvls, labels, ts):
     boundaries = mir_eval.util.intervals_to_boundaries(itvls)
     extended = np.array(labels + [labels[-1]])  # repeat last label for last boundary
     return extended[np.searchsorted(boundaries, np.atleast_1d(ts), side="right") - 1]
+
+
+def _align_hier(ref_itvls, ref_labels, est_itvls, est_labels):
+    # First, find the maximum length of the reference
+    _, t_end = mir_eval.hierarchy._hierarchy_bounds(ref_itvls)
+
+    # Pre-process the intervals to match the range of the reference,
+    # and start at 0
+    new_ref_itvls, new_ref_labels = mir_eval.hierarchy._align_intervals(
+        ref_itvls, ref_labels, t_min=0.0, t_max=None
+    )
+    new_est_itvls, new_est_labels = mir_eval.hierarchy._align_intervals(
+        est_itvls, est_labels, t_min=0.0, t_max=t_end
+    )
+    return new_ref_itvls, new_ref_labels, new_est_itvls, new_est_labels
