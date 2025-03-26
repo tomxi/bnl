@@ -56,12 +56,10 @@ def label_style_dict(labels, boundary_color="white", **kwargs):
     - Default styles include white edgecolor and linewidth of 1.
     """
     # flatten the labels list
-    try:
-        unique_labels = np.unique(labels)
-    except TypeError:
+    if type(labels) is list:
         unique_labels = np.unique(np.concatenate(labels))
-    # sort the labels
-    unique_labels = sorted(unique_labels)
+    else:
+        unique_labels = np.unique(labels)
 
     # More hatch patterns for more labels
     hatchs = ["", "..", "O.", "*", "xx", "xxO", "\\O", "oo", "\\"]

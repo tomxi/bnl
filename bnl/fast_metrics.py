@@ -151,18 +151,15 @@ def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
     return None
 
 
-def entropy(itvls, labels):
+def entropy(seg_dur, labels):
     """
     Compute the entropy of a segmentation
     """
     # We get label and duration for each segment, aggrecate duration for each label,
     # and compute entropy by assuming a uniform distribution over the union of all intervals provided.
-    seg_dur = np.diff(itvls, axis=1).flatten()
-    pi_sum = seg_dur.sum()
-    if pi_sum == 0.0:
-        return 1.0
-
     # accumulate duration for each unique label
+    seg_dur = np.array(seg_dur)
+    labels = np.array(labels)
     unique_labels, inverse_indices = np.unique(labels, return_inverse=True)
     label_durs = np.zeros(len(unique_labels))
     # iterate through segment and find the right label to add duration
@@ -181,16 +178,27 @@ def joint_entropy(itvls1, labels1, itvls2, labels2):
     common_itvls, lab1, lab2 = _common_grid_itvls_labels(
         [itvls1], [labels1], [itvls2], [labels2]
     )
-    # get the segment durations and areas
+
+    lab1 = np.array(lab1).flatten()
+    lab2 = np.array(lab2).flatten()
+    # using numpy broadcasting to get the label pairs
+    concurrent_label_pairs = np.char.add(lab1, lab2)
+
+    # get the segment durations and areas These are the joint probabilities of the labels
     seg_dur = np.diff(common_itvls, axis=1).flatten()
-    # THese are the joint probabilities of the labels
-    joint_prob = np.outer(seg_dur, seg_dur) / np.sum(seg_dur) ** 2
-    # These are the label pairs themselves
-    label_pairs = np.add.outer(lab1, lab2, casting="unsafe", dtype=str)
-    return joint_prob, label_pairs
+    return entropy(seg_dur, concurrent_label_pairs)
 
 
-def label_at_ts(itvls, labels, ts):
+def conditional_entropy(itvls, labels, cond_itvls, cond_labels):
+    """
+    H(S | S_cond) = H(S, S_cond) - H(S_cond)
+    """
+    joint_ent = joint_entropy(itvls, labels, cond_itvls, cond_labels)
+    cond_ent = entropy(np.diff(cond_itvls, axis=1).flatten(), cond_labels)
+    return joint_ent - cond_ent
+
+
+def _label_at_ts(itvls, labels, ts):
     """
     Label intervals at specific timestamps.
 
@@ -241,7 +249,7 @@ def label_at_ts(itvls, labels, ts):
     return np.array([label_map[i] for i in interp(ts).astype(int)])
 
 
-def faster_label_at_ts(itvls, labels, ts):
+def _faster_label_at_ts(itvls, labels, ts):
     """
     Assign labels to timestamps using interval boundaries and vectorized lookup.
 
