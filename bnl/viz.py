@@ -239,9 +239,10 @@ def create_fig(
 def plot_scatter_frame_vs_continuous(
     results,
     sel_dict={"output": "run_time"},
-    frame_sizes=[0.1, 0.25, 0.5, 1, 2],
+    frame_sizes=[0.1, 0.2, 0.5, 1, 2],
     ax=None,
     color_start_idx=0,  # New parameter to specify starting color index
+    log_scale=False,
     **scatter_kwargs,
 ):
     """
@@ -303,7 +304,7 @@ def plot_scatter_frame_vs_continuous(
     ax.grid(True)
 
     # Set the x and y axis limits, if max is over 2, then use log scale
-    if df_pivot.max().max() > 2:
+    if log_scale:
         ax.set_xscale("log")
         ax.set_yscale("log")
         min_v = df_pivot.min().min()

@@ -4,12 +4,22 @@ from scipy.interpolate import interp1d
 
 
 def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
+    # adjust timespan of estimations relative to reference
+    ref_itvls, ref_labels, est_itvls, est_labels = _align_hier(
+        [ref_itvls], [ref_labels], [est_itvls], [est_labels]
+    )
+    # They are depth 1 hieraries right now, let's get them out of the list
+    ref_itvls = ref_itvls[0]
+    ref_labels = ref_labels[0]
+    est_itvls = est_itvls[0]
+    est_labels = est_labels[0]
+
     precision = 1.0 - conditional_entropy(
         est_itvls, est_labels, ref_itvls, ref_labels
-    ) / entropy(np.diff(est_itvls, axis=1).flatten(), est_labels)
+    ) / entropy(est_itvls, est_labels)
     recall = 1.0 - conditional_entropy(
         ref_itvls, ref_labels, est_itvls, est_labels
-    ) / entropy(np.diff(ref_itvls, axis=1).flatten(), ref_labels)
+    ) / entropy(ref_itvls, ref_labels)
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
@@ -32,7 +42,7 @@ def pairwise(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
 def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False):
     # build common grid and meet mats first
     seg_dur, meet_ref, meet_est = _get_common_grid_meet_matrices(
-        ref_itvls, ref_labels, est_itvls, est_labels
+        ref_itvls, ref_labels, est_itvls, est_labels, mono=mono
     )
     recall = triplet_recall(meet_ref, meet_est, seg_dur)
     precision = triplet_recall(meet_est, meet_ref, seg_dur)
@@ -69,7 +79,7 @@ def _get_common_grid_meet_matrices(
 ):
     # Strategy: cut up into common boundaries
     common_itvls, ref_labs, est_labs = _common_grid_itvls_labels(
-        ref_itvls, ref_labels, est_itvls, est_labels
+        *_align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
     )
     # get the meet matrix
     meet_ref = _meet(ref_labs, mono=mono)
@@ -180,7 +190,7 @@ def entropy(seg_dur, labels):
     pi = label_durs[label_durs > 0]
     pi_sum = seg_dur.sum()
     if pi_sum == 0:
-        return np.nan
+        return 1.0
     # log(a / b) should be calculated as log(a) - log(b) for
     # possible loss of precision
     return -np.sum((pi / pi_sum) * (np.log(pi) - np.log(pi_sum)))
