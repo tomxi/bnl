@@ -1,137 +1,84 @@
-# So I want continuous version of L measure and T measure.
-
-# Let's start with the continuous version of the relevance curve given q and the structure matrix it induces:
-
-# To represent a contions relevance curve, we use the S object
-
-from . import S, H, utils, fio
-import xarray as xr
-import os
-from mir_eval.util import boundaries_to_intervals, f_measure
-from mir_eval import hierarchy as meh
+import mir_eval, itertools
 import numpy as np
-import time
-
-import warnings
-
-warnings.filterwarnings("ignore", category=UserWarning, module="mir_eval")
+from scipy import stats
+from scipy.sparse import coo_matrix
 
 
-def get_segment_relevance(hier: H, t: float, meet_mode="deepest"):
-    """
-    Get the relevance curve for a given query time point t in seconds.
-
-    Parameters
-    ----------
-    hier : Hierarchy
-        The hierarchical structure.
-    t : float
-        The query time point.
-    meet_mode : str
-        The meeting mode to use for relevance calculation.
-        Options are "deepest", "mono", or "mean".
-    Returns
-    -------
-    S
-        The relevance curve as an S segment object.
-    """
-    ts = (hier.beta[:-1] + hier.beta[1:]) / 2.0
-    relevance = [hier.meet(t, m, mode=meet_mode) for m in ts]
-    # We return a segmentation with all the boundaries from the hierarchy
-    # and store the relevance value as the label.
-    return S(boundaries_to_intervals(hier.beta), relevance)
-
-
-def recall_at_t(
-    h_ref: H,
-    h_est: H,
-    t: float,
-    meet_mode: str = "deepest",
-    transitive: bool = True,
-    debug=0,  # 0 for no debug, 1 for debug, 2 for debug with mats
-):
-    """
-    Compute recall at time t for a reference and estimated hierarchy.
-
-    Parameters
-    ----------
-    h_ref : Hierarchy
-        The reference hierarchy.
-    h_est : Hierarchy
-        The estimated hierarchy.
-    t : float
-        The time at which to compute recall.
-
-    Returns
-    -------
-    float
-        The recall at time t.
-    """
-    s_ref = get_segment_relevance(h_ref, t, meet_mode=meet_mode)
-    s_est = get_segment_relevance(h_est, t, meet_mode=meet_mode)
-    # get beta (set of boundaries) from both s_ref and s_est.
-    # Between these boundaries things are piecewise constant.
-    common_bs = sorted(list(set(s_ref.beta).union(s_est.beta)))
-    min_t = min(common_bs)
-    max_t = max(common_bs)
-
-    if transitive:
-        compare_fn = np.greater
-    else:
-        # They have to be greater by exactly 1
-        compare_fn = np.frompyfunc(lambda x, y: int(x) - int(y) == 1, 2, 1)
-
-    # S.A returns all segment pair comparison with compare_fn.
-    # When compare_fn is np.equal, S.A is the meet matrix: SSM between two list of segment labels.
-    # We use np.greater here to get the orientation of the triplets
-    positions_to_recall = s_ref.A(bs=common_bs, compare_fn=compare_fn)
-    # Anything greater is recalled, even when transitive
-    positions_recalled = (
-        s_est.A(bs=common_bs, compare_fn=np.greater) * positions_to_recall
+def pairwise(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
+    common_itvls, ref_labs, est_labs = make_common_itvls(
+        *align_hier([ref_itvls], [ref_labels], [est_itvls], [est_labels])
     )
+    # Get the segment durations
+    seg_dur = np.diff(common_itvls, axis=1).flatten()
+    meet_ref = _meet(ref_labs)
+    meet_est = _meet(est_labs)
+    meet_both = meet_ref * meet_est
 
-    # Calculate the area of the grid made by segment boundaries
-    common_grid_area = utils.bs2grid_area(common_bs)
+    seg_area = np.outer(seg_dur, seg_dur)
+    ref_area = np.sum(meet_ref * seg_area)
+    est_area = np.sum(meet_est * seg_area)
+    intersetion_area = np.sum(meet_both * seg_area)
 
-    if debug == 2:
-        return dict(
-            iota=positions_to_recall,
-            alpha=positions_recalled,
-            bs=common_bs,
-            grid_area=common_grid_area,
+    precision = intersetion_area / est_area
+    recall = intersetion_area / ref_area
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
+
+
+def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
+    ## Make common grid
+    common_itvls, ref_labs, est_labs = make_common_itvls(
+        *align_hier([ref_itvls], [ref_labels], [est_itvls], [est_labels])
+    )
+    # Get the segment durations
+    seg_dur = np.diff(common_itvls, axis=1).flatten()
+
+    # Get the contingency matrix and normalize
+    contingency, _, _ = _weighted_contingency(ref_labs, est_labs, seg_dur)
+    contingency = contingency / np.sum(seg_dur)
+
+    # Compute the marginals
+    p_est = contingency.sum(axis=0)
+    p_ref = contingency.sum(axis=1)
+
+    # H(true | prediction) = sum_j P[estimated = j] *
+    # sum_i P[true = i | estimated = j] log P[true = i | estimated = j]
+    # entropy sums over axis=0, which is true labels
+
+    true_given_est = p_est.dot(stats.entropy(contingency, base=2))
+    pred_given_ref = p_ref.dot(stats.entropy(contingency.T, base=2))
+
+    # Normalize conditional entropy by marginal entropy
+    z_ref = stats.entropy(p_ref, base=2)
+    z_est = stats.entropy(p_est, base=2)
+    r = 1.0 - true_given_est / z_ref
+    p = 1.0 - pred_given_ref / z_est
+    return p, r, mir_eval.util.f_measure(p, r, beta=beta)
+
+
+def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False):
+    # build common grid and meet mats first
+    common_itvls, ref_labs, est_labs = make_common_itvls(
+        *align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
+    )
+    seg_dur = np.diff(common_itvls, axis=1).flatten()
+    meet_ref = _meet(ref_labs, mono=mono)
+    meet_est = _meet(est_labs, mono=mono)
+
+    recall = triplet_recall(meet_ref, meet_est, seg_dur)
+    precision = triplet_recall(meet_est, meet_ref, seg_dur)
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
+
+
+def triplet_recall(meet_ref, meet_est, seg_dur):
+    per_segment_recall = []
+    for seg_idx in range(len(seg_dur)):
+        # get per segment recall
+        per_segment_recall.append(
+            _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_dur)
         )
-    area_to_recall = np.sum(positions_to_recall * common_grid_area)
-    area_recalled = np.sum(positions_recalled * common_grid_area)
-    max_area = np.sum(common_grid_area) / 2.0
-    if debug == 1:
-        return area_recalled / max_area, area_to_recall / max_area
-    return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
 
-
-def recall(
-    h_ref: H,
-    h_est: H,
-    meet_mode: str = "deepest",
-    transitive: bool = True,
-):
-    common_bs = np.array(sorted(list(set(h_ref.beta).union(h_est.beta))))
-    common_ts = (common_bs[:-1] + common_bs[1:]) / 2.0
-
-    per_segment_recall = np.array(
-        [
-            recall_at_t(
-                h_ref,
-                h_est,
-                t,
-                meet_mode=meet_mode,
-                transitive=transitive,
-            )
-            for t in common_ts
-        ]
-    )
-    seg_dur = np.diff(common_bs)
-
-    # if per_segment_recall is nan, ignore segment in calculation
+    per_segment_recall = np.array(per_segment_recall)
+    # normalize by duration.
     valid_seg = ~np.isnan(per_segment_recall)
     if np.sum(seg_dur[valid_seg]) == 0:
         return 0.0
@@ -141,185 +88,233 @@ def recall(
         )
 
 
-def precision(
-    h_ref: H,
-    h_est: H,
-    meet_mode: str = "deepest",
-    transitive: bool = True,
-):
-    return recall(h_est, h_ref, meet_mode=meet_mode, transitive=transitive)
-
-
-def lmeasure(h_ref: H, h_est: H, meet_mode: str = "deepest", beta=1.0):
-    p = precision(h_ref, h_est, meet_mode=meet_mode, transitive=True)
-    r = recall(h_ref, h_est, meet_mode=meet_mode, transitive=True)
-    f = f_measure(p, r, beta=beta)
-    return (p, r, f)
-
-
-def tmeasure(h_ref: H, h_est: H, meet_mode: str = "deepest", transitive=True, beta=1.0):
+def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray):
     """
-    Compute the T-measure for a reference and estimated hierarchy.
+    get label at ts for all levels in a hierarchy
+    """
+    results = []
+    for itvls, labs in zip(hier_itvls, hier_labels):
+        result = _label_at_ts(itvls, labs, ts)
+        results.append(result)
+    return results
 
+
+def make_common_itvls(
+    hier_itvls1,
+    hier_labels1,
+    hier_itvls2,
+    hier_labels2,
+):
+    """Label condition is a element of labels2,
+    we slice the itvls and labels to get a new sub segmentation
+    based on the conditioned on labels2 = label_condition.
+    """
+    # Strategy: build a new set of common_intervals, and labels of equal length, then do array indexing.
+    # Merge boundaries and compute segment durations.
+    common_bs = _common_boundaries(hier_itvls1 + hier_itvls2)
+    common_itvls = mir_eval.util.boundaries_to_intervals(common_bs)
+
+    # Find the label at each common boundary.
+    gridded_labels1 = labels_at_ts(hier_itvls1, hier_labels1, common_bs[:-1])
+    gridded_labels2 = labels_at_ts(hier_itvls2, hier_labels2, common_bs[:-1])
+    return common_itvls, gridded_labels1, gridded_labels2
+
+
+def _meet(gridded_hier_labels, compare_func=np.equal, mono=False):
+    """
+    Compute the meet matrix for a hierarchy of labels.
+    hier_labels.shape = (depth, n_seg). output shape = (n_seg, n_seg)
+    compare_func needs to support numpy broadcasting.
+    """
+    hier_labels = np.array(gridded_hier_labels)
+    # Using broadcasting to compute the outer comparison for each level.
+    meet_per_level = compare_func(hier_labels[:, :, None], hier_labels[:, None, :])
+    max_depth = meet_per_level.shape[0]
+
+    # Create an array representing the level numbers (starting from 1)
+    level_indices = np.arange(1, max_depth + 1)[:, None, None]
+    if not mono:
+        # Deepest level where the labels meet
+        depths = np.max(meet_per_level * level_indices, axis=0)
+    else:
+        # Shallowest level where the labels stops meeting
+        depths = max_depth - np.max(
+            ~meet_per_level * np.flip(level_indices, axis=0), axis=0
+        )
+
+    return depths.astype(int)
+
+
+# def _get_common_grid_meet_matrices(
+#     ref_itvls, ref_labels, est_itvls, est_labels, mono=False
+# ):
+#     # Strategy: cut up into common boundaries
+#     common_itvls, ref_labs, est_labs = _common_grid_itvls_labels(
+#         *_align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
+#     )
+#     # get the meet matrix
+#     meet_ref = _meet(ref_labs, mono=mono)
+#     meet_est = _meet(est_labs, mono=mono)
+#     common_seg_dur = np.diff(common_itvls, axis=1).flatten()
+#     return common_seg_dur, meet_ref, meet_est
+
+
+def _common_boundaries(list_of_itvls):
+    # Get the boundaries of both sets of intervals
+    bs = set()
+    for itvls in list_of_itvls:
+        bs = bs.union(set(mir_eval.util.intervals_to_boundaries(itvls)))
+    return np.array(sorted(bs))
+
+
+def _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_dur, transitive=True):
+    # given a segment idx, their relevance against each other segment.
+    ref_rel_againt_seg_i = meet_ref[seg_idx, :]
+    est_rel_againt_seg_i = meet_est[seg_idx, :]
+
+    # use count inversions to get normalizer and number of inversions
+    inversions, normalizer = _compare_segment_rankings(
+        ref_rel_againt_seg_i,
+        est_rel_againt_seg_i,
+        wr=seg_dur,
+        we=seg_dur,
+        transitive=transitive,
+    )
+    return 1.0 - inversions / normalizer if normalizer > 0 else np.nan
+
+
+def _label_at_ts(itvls, labels, ts):
+    """
+    Assign labels to timestamps using interval boundaries
     Parameters
     ----------
-    h_ref : Hierarchy
-        The reference hierarchy.
-    h_est : Hierarchy
-        The estimated hierarchy.
-    meet_mode : str
-        The meeting mode to use for relevance calculation.
-        Options are "deepest", "mono", or "mean".
+    itvls : np.ndarray
+        An array of shape (n, 2) representing intervals.
+    labels : list
+        A list of labels corresponding to each interval.
+    ts : array-like
+        Timestamps to be labeled.
 
     Returns
     -------
-    float
-        The T-measure.
+    np.ndarray
+        An array of labels corresponding to each timestamp in ts.
     """
-    # Get the meet matrices for both hierarchies
-    h_ref = h_ref.unique_labeling()
-    h_est = h_est.unique_labeling()
-    p = precision(h_ref, h_est, meet_mode=meet_mode, transitive=transitive)
-    r = recall(h_ref, h_est, meet_mode=meet_mode, transitive=transitive)
-    f = f_measure(p, r, beta=beta)
-    return (p, r, f)
+    boundaries = mir_eval.util.intervals_to_boundaries(itvls)
+    extended = np.array(labels + [labels[-1]])  # repeat last label for last boundary
+    return extended[np.searchsorted(boundaries, np.atleast_1d(ts), side="right") - 1]
 
 
-def align_hier(h_ref: H, h_est: H):
+def _count_weighted_inversions(a, wa, b, wb):
+    """
+    Count weighted inversions between two arrays.
+    An inversion is any pair (i, j) with a[i] >= b[j],
+    contributing wa[i] * wb[j] to the sum.
+    """
+    ua, inv_a = np.unique(a, return_inverse=True)
+    wa_sum = np.bincount(inv_a, weights=wa)
+    ub, inv_b = np.unique(b, return_inverse=True)
+    wb_sum = np.bincount(inv_b, weights=wb)
+
+    inversions = 0.0
+    i = j = 0
+    while i < len(ua) and j < len(ub):
+        if ua[i] < ub[j]:
+            i += 1
+        else:
+            inversions += np.sum(wa_sum[i:]) * wb_sum[j]
+            j += 1
+    return inversions
+
+
+def _compare_segment_rankings(ref, est, wr=None, we=None, transitive=False):
+    """
+    Compute weighted ranking disagreements between two lists.
+
+    Parameters
+    ----------
+    ref : np.ndarray, shape=(n,)
+        Reference ranked list.
+    est : np.ndarray, shape=(n,)
+        Estimated ranked list.
+    wr : np.ndarray, shape=(n,), optional
+        Weights for ref (default: ones).
+    we : np.ndarray, shape=(n,), optional
+        Weights for est (default: ones).
+    transitive : bool, optional
+        If True, compare all pairs of distinct ref levels;
+        if False, compare only adjacent levels.
+
+    Returns
+    -------
+    inversions : float
+        Weighted inversion count: sum_{(i,j) in pairs} [inversions between est slices].
+    normalizer : float
+        Total weighted number of pairs considered.
+    """
+    n = len(ref)
+    if wr is None:
+        wr = np.ones(n)
+    if we is None:
+        we = np.ones(n)
+
+    idx = np.argsort(ref)
+    ref_s, est_s = ref[idx], est[idx]
+    wr_s, we_s = wr[idx], we[idx]
+
+    levels, pos = np.unique(ref_s, return_index=True)
+    pos = list(pos) + [len(ref_s)]
+
+    groups = {
+        lvl: slice(start, end) for lvl, start, end in zip(levels, pos[:-1], pos[1:])
+    }
+    ref_map = {lvl: np.sum(wr_s[groups[lvl]]) for lvl in levels}
+
+    if transitive:
+        level_pairs = itertools.combinations(levels, 2)
+    else:
+        level_pairs = [(levels[i], levels[i + 1]) for i in range(len(levels) - 1)]
+
+    # Create two independent iterators over level_pairs.
+    level_pairs, level_pairs_copy = itertools.tee(level_pairs)
+    normalizer = float(sum(ref_map[i] * ref_map[j] for i, j in level_pairs))
+    if normalizer == 0:
+        return 0, 0.0
+
+    inversions = sum(
+        _count_weighted_inversions(
+            est_s[groups[l1]], we_s[groups[l1]], est_s[groups[l2]], we_s[groups[l2]]
+        )
+        for l1, l2 in level_pairs_copy
+    )
+    return inversions, float(normalizer)
+
+
+def _weighted_contingency(ref_labels, est_labels, durations):
+    """
+    Build a weighted contingency matrix.
+    Each cell (i,j) sums the durations for frames with ref label i and est label j.
+    """
+    ref_classes, ref_idx = np.unique(ref_labels, return_inverse=True)
+    est_classes, est_idx = np.unique(est_labels, return_inverse=True)
+    contingency = coo_matrix(
+        (durations, (ref_idx, est_idx)),
+        shape=(len(ref_classes), len(est_classes)),
+        dtype=np.float64,
+    ).toarray()
+    return contingency, ref_classes, est_classes
+
+
+def align_hier(ref_itvls, ref_labels, est_itvls, est_labels):
     # First, find the maximum length of the reference
-    _, t_end = meh._hierarchy_bounds(h_ref.itvls)
+    _, t_end = mir_eval.hierarchy._hierarchy_bounds(ref_itvls)
 
     # Pre-process the intervals to match the range of the reference,
     # and start at 0
-    new_h_ref = H(
-        *meh._align_intervals(h_ref.itvls, h_ref.labels, t_min=0.0, t_max=None)
+    new_ref_itvls, new_ref_labels = mir_eval.hierarchy._align_intervals(
+        ref_itvls, ref_labels, t_min=0.0, t_max=None
     )
-    new_h_est = H(
-        *meh._align_intervals(h_est.itvls, h_est.labels, t_min=0.0, t_max=t_end)
+    new_est_itvls, new_est_labels = mir_eval.hierarchy._align_intervals(
+        est_itvls, est_labels, t_min=0.0, t_max=t_end
     )
-    return new_h_ref, new_h_est
-
-
-def evaluate(h_ref, h_est, **kwargs):
-    """
-    Evaluate the precision, recall, and F-measure between two hierarchies.
-    """
-    h_ref, h_est = align_hier(h_ref, h_est)
-    return lmeasure(h_ref, h_est, **kwargs)
-
-
-def time_lmeasure(ref, est, frame_size=0):
-    """
-    Measure the time taken to compute the lmeasure metric using both implementations.
-
-    Parameters:
-    - ref: Reference hierarchy
-    - est: Estimated hierarchy
-    - frame_size: frame_size for the metric calculation. 0 will use my implementation
-
-    Returns:
-    - Time taken for each implementation
-    """
-    # Pad and align the hierarchies
-    ref, est = align_hier(ref, est)
-    # Measure time for different implementation with frame size or not
-    start_time = time.time()
-    if frame_size == 0:
-        results = lmeasure(ref, est)
-    else:
-        results = meh.lmeasure(
-            ref.itvls, ref.labels, est.itvls, est.labels, frame_size=frame_size
-        )
-    run_time = time.time() - start_time
-    return run_time, results
-
-
-def time_salami_track(tid):
-    hiers = fio.salami_ref_hiers(tid=tid)
-    if len(hiers) < 2:
-        return
-
-    fname = f"./compare_implementation/{tid}.nc"
-    if os.path.exists(fname):
-        return
-    test_frame_size = [0, 0.1, 0.25, 0.5, 1, 2]
-    da_coords = dict(frame_size=test_frame_size, output=["run_time", "lp", "lr", "lm"])
-    # Create a dataarray for this track's results
-    result_da = xr.DataArray(dims=da_coords.keys(), coords=da_coords)
-
-    # Get the two hierarchies
-    ref = hiers[0]
-    est = hiers[1]
-
-    for frame_size in test_frame_size:
-        # Measure time for both implementations
-        run_time, results = time_lmeasure(ref, est, frame_size=frame_size)
-        result_da.loc[dict(frame_size=frame_size)] = [run_time, *results]
-
-    # save the results
-    result_da.to_netcdf(fname)
-    return result_da
-
-
-# Modified from mir_eval.hierarchy
-def gauc_t(meet_mat_ref, meet_mat_est, transitive=True, window=None):
-    """
-    Compute ranking recall and normalizer for each query position.
-
-    Parameters:
-    -----------
-    meet_mat_ref : scipy.sparse matrix
-        Reference meet matrix
-    meet_mat_est : scipy.sparse matrix
-        Estimated meet matrix
-    transitive : bool
-        If True, then transitive comparisons are counted, meaning that
-        ``(q, i)`` and ``(q, j)`` can differ by any number of levels.
-        If False, then ``(q, i)`` and ``(q, j)`` can differ by exactly one
-        level.
-    window : number or None
-        The maximum number of frames to consider for each query.
-        If `None`, then all frames are considered.
-
-    Returns:
-    --------
-    q_ranking_inversions : numpy.ndarray
-        Ranking inversions for each query position
-    q_ranking_normalizer : numpy.ndarray
-        Normalizer for each query position
-    """
-    # Make sure we have the right number of frames
-    if meet_mat_ref.shape != meet_mat_est.shape:
-        raise ValueError(
-            "Estimated and reference hierarchies " "must have the same shape."
-        )
-
-    # How many frames?
-    n = meet_mat_ref.shape[0]
-
-    # By default, the window covers the entire track
-    if window is None:
-        window = n
-
-    q_ranking_normalizer = np.zeros(n)
-    q_ranking_inversions = np.zeros(n)
-    q_ranking_allpairs = np.zeros(n)
-
-    for query in range(n):
-        # Get the window around the query
-        win_slice = slice(max(0, query - window), min(n, query + window))
-        ref_window = meet_mat_ref[query, win_slice].toarray().ravel()
-        est_window = meet_mat_est[query, win_slice].toarray().ravel()
-        # get the query'th row
-        q_window_ref = np.delete(ref_window, query)
-        q_window_est = np.delete(est_window, query)
-        # count ranking violations
-        inversions, normalizer = meh._compare_frame_rankings(
-            q_window_ref, q_window_est, transitive=transitive
-        )
-        q_ranking_inversions[query] = inversions
-        q_ranking_normalizer[query] = normalizer
-        # n choice 2 is the total number of pairs
-        q_ranking_allpairs[query] = len(q_window_ref) * (len(q_window_est) - 1) / 2
-
-    return q_ranking_inversions, q_ranking_normalizer, q_ranking_allpairs
+    return new_ref_itvls, new_ref_labels, new_est_itvls, new_est_labels
