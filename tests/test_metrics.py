@@ -12,11 +12,13 @@ def test_lmeasure_alignment(tid="1437", atol=1e-2, frame_size=0.5):
     est = fio.adobe_hiers(tid)
     refs = fio.salami_ref_hiers(tid)
     for ref in refs:
-        hr, he = mtr.align_hier(ref, est)
-        mir_eval_result = meh.lmeasure(
-            hr.itvls, hr.labels, he.itvls, he.labels, frame_size=frame_size
+        ref_itvls, ref_labels, est_itvls, est_labels = mtr.align_hier(
+            ref.itvls, ref.labels, est.itvls, est.labels
         )
-        bnl_result = mtr.lmeasure(hr, he)
+        mir_eval_result = meh.lmeasure(
+            ref_itvls, ref_labels, est_itvls, est_labels, frame_size=frame_size
+        )
+        bnl_result = mtr.lmeasure(ref_itvls, ref_labels, est_itvls, est_labels)
         diff = np.array(mir_eval_result) - np.array(bnl_result)
 
         print(f"Track {tid} L-measure Difference (fs={frame_size}):")

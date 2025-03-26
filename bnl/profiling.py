@@ -1,4 +1,4 @@
-from . import fio, fmtr
+from . import fio, mtr
 import xarray as xr
 import os, time, mir_eval, warnings
 import numpy as np
@@ -49,19 +49,15 @@ def time_salami_track(tid, out_dir="./new_compare/"):
 def time_metric(ref, est, frame_size=0):
     if frame_size == 0:
         start_time = time.time()
-        lme = fmtr.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)
+        lme = mtr.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)
         lme_time = time.time() - start_time
 
         start_time = time.time()
-        pfc = fmtr.pairwise(
-            ref.itvls[-1], ref.labels[-1], est.itvls[-1], est.labels[-1]
-        )
+        pfc = mtr.pairwise(ref.itvls[-1], ref.labels[-1], est.itvls[-1], est.labels[-1])
         pfc_time = time.time() - start_time
 
         start_time = time.time()
-        vme = fmtr.vmeasure(
-            ref.itvls[-1], ref.labels[-1], est.itvls[-1], est.labels[-1]
-        )
+        vme = mtr.vmeasure(ref.itvls[-1], ref.labels[-1], est.itvls[-1], est.labels[-1])
         vme_time = time.time() - start_time
     else:
         start_time = time.time()
