@@ -1,4 +1,4 @@
-import mir_eval
+import mir_eval, itertools
 import numpy as np
 from scipy.interpolate import interp1d
 
@@ -34,10 +34,8 @@ def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False)
     seg_dur, meet_ref, meet_est = _get_common_grid_meet_matrices(
         ref_itvls, ref_labels, est_itvls, est_labels
     )
-    seg_area = np.outer(seg_dur, seg_dur)
-
-    recall = triplet_recall(meet_ref, meet_est, seg_area, seg_dur)
-    precision = triplet_recall(meet_est, meet_ref, seg_area, seg_dur)
+    recall = triplet_recall(meet_ref, meet_est, seg_dur)
+    precision = triplet_recall(meet_est, meet_ref, seg_dur)
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
@@ -109,12 +107,12 @@ def _common_boundaries(list_of_itvls):
     return np.array(sorted(bs))
 
 
-def triplet_recall(meet_ref, meet_est, seg_area, seg_dur):
+def triplet_recall(meet_ref, meet_est, seg_dur):
     per_segment_recall = []
     for seg_idx in range(len(seg_dur)):
         # get per segment recall
         per_segment_recall.append(
-            _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_area)
+            _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_dur)
         )
 
     per_segment_recall = np.array(per_segment_recall)
@@ -128,7 +126,23 @@ def triplet_recall(meet_ref, meet_est, seg_area, seg_dur):
         )
 
 
-def _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_area):
+def _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_dur, transitive=True):
+    # given a segment idx, their relevance against each other segment.
+    ref_rel_againt_seg_i = meet_ref[seg_idx, :]
+    est_rel_againt_seg_i = meet_est[seg_idx, :]
+
+    # use count inversions to get normalizer and number of inversions
+    inversions, normalizer = _compare_segment_rankings(
+        ref_rel_againt_seg_i,
+        est_rel_againt_seg_i,
+        wr=seg_dur,
+        we=seg_dur,
+        transitive=transitive,
+    )
+    return 1.0 - inversions / normalizer if normalizer > 0 else np.nan
+
+
+def _old_segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_area):
     # given a segment idx, their relevance against each other segment.
     ref_rel_againt_seg_i = meet_ref[seg_idx, :]
     est_rel_againt_seg_i = meet_est[seg_idx, :]
@@ -228,3 +242,88 @@ def _label_at_ts(itvls, labels, ts):
     boundaries = mir_eval.util.intervals_to_boundaries(itvls)
     extended = np.array(labels + [labels[-1]])  # repeat last label for last boundary
     return extended[np.searchsorted(boundaries, np.atleast_1d(ts), side="right") - 1]
+
+
+def _count_weighted_inversions(a, wa, b, wb):
+    """
+    Count weighted inversions between two arrays.
+    An inversion is any pair (i, j) with a[i] >= b[j],
+    contributing wa[i] * wb[j] to the sum.
+    """
+    ua, inv_a = np.unique(a, return_inverse=True)
+    wa_sum = np.bincount(inv_a, weights=wa)
+    ub, inv_b = np.unique(b, return_inverse=True)
+    wb_sum = np.bincount(inv_b, weights=wb)
+
+    inversions = 0.0
+    i = j = 0
+    while i < len(ua) and j < len(ub):
+        if ua[i] < ub[j]:
+            i += 1
+        else:
+            inversions += np.sum(wa_sum[i:]) * wb_sum[j]
+            j += 1
+    return inversions
+
+
+def _compare_segment_rankings(ref, est, wr=None, we=None, transitive=False):
+    """
+    Compute weighted ranking disagreements between two lists.
+
+    Parameters
+    ----------
+    ref : np.ndarray, shape=(n,)
+        Reference ranked list.
+    est : np.ndarray, shape=(n,)
+        Estimated ranked list.
+    wr : np.ndarray, shape=(n,), optional
+        Weights for ref (default: ones).
+    we : np.ndarray, shape=(n,), optional
+        Weights for est (default: ones).
+    transitive : bool, optional
+        If True, compare all pairs of distinct ref levels;
+        if False, compare only adjacent levels.
+
+    Returns
+    -------
+    inversions : float
+        Weighted inversion count: sum_{(i,j) in pairs} [inversions between est slices].
+    normalizer : float
+        Total weighted number of pairs considered.
+    """
+    n = len(ref)
+    if wr is None:
+        wr = np.ones(n)
+    if we is None:
+        we = np.ones(n)
+
+    idx = np.argsort(ref)
+    ref_s, est_s = ref[idx], est[idx]
+    wr_s, we_s = wr[idx], we[idx]
+
+    levels, pos = np.unique(ref_s, return_index=True)
+    pos = list(pos) + [len(ref_s)]
+
+    groups = {
+        lvl: slice(start, end) for lvl, start, end in zip(levels, pos[:-1], pos[1:])
+    }
+    ref_map = {lvl: np.sum(wr_s[groups[lvl]]) for lvl in levels}
+
+    if transitive:
+        level_pairs = itertools.combinations(levels, 2)
+    else:
+        level_pairs = [(levels[i], levels[i + 1]) for i in range(len(levels) - 1)]
+
+    # Create two independent iterators over level_pairs.
+    level_pairs, level_pairs_copy = itertools.tee(level_pairs)
+    normalizer = float(sum(ref_map[i] * ref_map[j] for i, j in level_pairs))
+    if normalizer == 0:
+        return 0, 0.0
+
+    inversions = sum(
+        _count_weighted_inversions(
+            est_s[groups[l1]], we_s[groups[l1]], est_s[groups[l2]], we_s[groups[l2]]
+        )
+        for l1, l2 in level_pairs_copy
+    )
+    return inversions, float(normalizer)
