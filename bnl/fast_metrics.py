@@ -42,7 +42,7 @@ def pairwise(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
 def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False):
     # build common grid and meet mats first
     seg_dur, meet_ref, meet_est = _get_common_grid_meet_matrices(
-        ref_itvls, ref_labels, est_itvls, est_labels
+        ref_itvls, ref_labels, est_itvls, est_labels, mono=mono
     )
     seg_area = np.outer(seg_dur, seg_dur)
 
