@@ -3,23 +3,81 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 
-def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray):
-    """
-    get label at ts for all levels in a hierarchy
-    """
-    results = []
-    for itvls, labs in zip(hier_itvls, hier_labels):
-        result = _label_at_ts(itvls, labs, ts)
-        results.append(result)
-    return results
+def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
+    precision = 1.0 - conditional_entropy(
+        est_itvls, est_labels, ref_itvls, ref_labels
+    ) / entropy(np.diff(est_itvls, axis=1).flatten(), est_labels)
+    recall = 1.0 - conditional_entropy(
+        ref_itvls, ref_labels, est_itvls, est_labels
+    ) / entropy(np.diff(ref_itvls, axis=1).flatten(), ref_labels)
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
-def _common_boundaries(list_of_itvls):
-    # Get the boundaries of both sets of intervals
-    bs = set()
-    for itvls in list_of_itvls:
-        bs = bs.union(set(mir_eval.util.intervals_to_boundaries(itvls)))
-    return np.array(sorted(bs))
+def pairwise(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
+    seg_dur, meet_ref, meet_est = _get_common_grid_meet_matrices(
+        [ref_itvls], [ref_labels], [est_itvls], [est_labels]
+    )
+    meet_both = meet_ref * meet_est
+
+    seg_area = np.outer(seg_dur, seg_dur)
+    ref_area = np.sum(meet_ref * seg_area)
+    est_area = np.sum(meet_est * seg_area)
+    intersetion_area = np.sum(meet_both * seg_area)
+
+    precision = intersetion_area / est_area
+    recall = intersetion_area / ref_area
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
+
+
+def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False):
+    # build common grid and meet mats first
+    seg_dur, meet_ref, meet_est = _get_common_grid_meet_matrices(
+        ref_itvls, ref_labels, est_itvls, est_labels
+    )
+    seg_area = np.outer(seg_dur, seg_dur)
+
+    recall = triplet_recall(meet_ref, meet_est, seg_area, seg_dur)
+    precision = triplet_recall(meet_est, meet_ref, seg_area, seg_dur)
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
+
+
+def _meet(gridded_hier_labels, compare_func=np.equal, mono=False):
+    """
+    Compute the meet matrix for a hierarchy of labels.
+    hier_labels.shape = (depth, n_seg). output shape = (n_seg, n_seg)
+    compare_func needs to support numpy broadcasting.
+    """
+    hier_labels = np.array(gridded_hier_labels)
+    # Using broadcasting to compute the outer comparison for each level.
+    meet_per_level = compare_func(hier_labels[:, :, None], hier_labels[:, None, :])
+    max_depth = meet_per_level.shape[0]
+
+    # Create an array representing the level numbers (starting from 1)
+    level_indices = np.arange(1, max_depth + 1)[:, None, None]
+    if not mono:
+        # Deepest level where the labels meet
+        depths = np.max(meet_per_level * level_indices, axis=0)
+    else:
+        # Shallowest level where the labels stops meeting
+        depths = max_depth - np.max(
+            ~meet_per_level * np.flip(level_indices, axis=0), axis=0
+        )
+
+    return depths.astype(int)
+
+
+def _get_common_grid_meet_matrices(
+    ref_itvls, ref_labels, est_itvls, est_labels, mono=False
+):
+    # Strategy: cut up into common boundaries
+    common_itvls, ref_labs, est_labs = _common_grid_itvls_labels(
+        ref_itvls, ref_labels, est_itvls, est_labels
+    )
+    # get the meet matrix
+    meet_ref = _meet(ref_labs, mono=mono)
+    meet_est = _meet(est_labs, mono=mono)
+    common_seg_dur = np.diff(common_itvls, axis=1).flatten()
+    return common_seg_dur, meet_ref, meet_est
 
 
 def _common_grid_itvls_labels(
@@ -43,53 +101,15 @@ def _common_grid_itvls_labels(
     return common_itvls, gridded_labels1, gridded_labels2
 
 
-def _meet(gridded_hier_labels, compare_func=np.equal, mono=False):
-    """
-    Compute the meet matrix for a hierarchy of labels.
-    hier_labels.shape = (depth, n_seg).
-    """
-    # Convert input to a NumPy array.
-    hier_labels = np.array(gridded_hier_labels)
-    # CHATGPT suggested this
-    # Using broadcasting to compute the outer comparison for each level.
-    # hier_labels has shape (depth, n_seg) and the operation below yields
-    # an array of shape (depth, n_seg, n_seg) with the pairwise comparisons.
-    meet_per_level = compare_func(hier_labels[:, :, None], hier_labels[:, None, :])
-    max_depth = meet_per_level.shape[0]
-
-    # Create an array representing the level numbers (starting from 1)
-    level_indices = np.arange(1, max_depth + 1)[:, None, None]
-    if not mono:
-        # Where meet_per_level is False, multiply by 0; where True, multiply by level number
-        # Then take the maximum along the depth axis
-        depths = np.max(meet_per_level * level_indices, axis=0)
-    else:
-        # find first level that's False.
-        # look from the bottom up and use the same logic as above, changing True to False, shallow to deep.
-        depths = max_depth - np.max(
-            ~meet_per_level * np.flip(level_indices, axis=0), axis=0
-        )
-
-    return depths.astype(int)
+def _common_boundaries(list_of_itvls):
+    # Get the boundaries of both sets of intervals
+    bs = set()
+    for itvls in list_of_itvls:
+        bs = bs.union(set(mir_eval.util.intervals_to_boundaries(itvls)))
+    return np.array(sorted(bs))
 
 
-def _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_area):
-    # given a segment idx, their relevance against each other segment.
-    ref_rel_againt_seg_i = meet_ref[seg_idx, :]
-    est_rel_againt_seg_i = meet_est[seg_idx, :]
-
-    pairs_to_recall = _meet([ref_rel_againt_seg_i], compare_func=np.greater)
-    pairs_recalled = (
-        _meet([est_rel_againt_seg_i], compare_func=np.greater) * pairs_to_recall
-    )
-
-    area_to_recall = np.sum(pairs_to_recall * seg_area)
-    area_recalled = np.sum(pairs_recalled * seg_area)
-
-    return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
-
-
-def _triplet_recall(meet_ref, meet_est, seg_area, seg_dur):
+def triplet_recall(meet_ref, meet_est, seg_area, seg_dur):
     per_segment_recall = []
     for seg_idx in range(len(seg_dur)):
         # get per segment recall
@@ -108,47 +128,20 @@ def _triplet_recall(meet_ref, meet_est, seg_area, seg_dur):
         )
 
 
-def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False):
-    # build common grid and meet mats first
-    common_itvls, ref_labels, est_labels = _common_grid_itvls_labels(
-        ref_itvls, ref_labels, est_itvls, est_labels
+def _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_area):
+    # given a segment idx, their relevance against each other segment.
+    ref_rel_againt_seg_i = meet_ref[seg_idx, :]
+    est_rel_againt_seg_i = meet_est[seg_idx, :]
+
+    pairs_to_recall = _meet([ref_rel_againt_seg_i], compare_func=np.greater)
+    pairs_recalled = (
+        _meet([est_rel_againt_seg_i], compare_func=np.greater) * pairs_to_recall
     )
 
-    # make meet matrices once
-    meet_ref = _meet(ref_labels, mono=mono)
-    meet_est = _meet(est_labels, mono=mono)
-    seg_dur = np.diff(common_itvls, axis=1).flatten()
-    seg_area = np.outer(seg_dur, seg_dur)
+    area_to_recall = np.sum(pairs_to_recall * seg_area)
+    area_recalled = np.sum(pairs_recalled * seg_area)
 
-    recall = _triplet_recall(meet_ref, meet_est, seg_area, seg_dur)
-    precision = _triplet_recall(meet_est, meet_ref, seg_area, seg_dur)
-    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
-
-
-def pairwise(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
-    # Strategy: cut up into common boundaries
-    common_itvls, ref_labs, est_labs = _common_grid_itvls_labels(
-        [ref_itvls], [ref_labels], [est_itvls], [est_labels]
-    )
-    # get the segment durations and areas
-    seg_dur = np.diff(common_itvls, axis=1).flatten()
-    seg_area = np.outer(seg_dur, seg_dur)
-    # get the meet matrix
-    meet_ref = _meet(ref_labs)
-    meet_est = _meet(est_labs)
-    meet_both = meet_ref * meet_est
-
-    ref_area = np.sum(meet_ref * seg_area)
-    est_area = np.sum(meet_est * seg_area)
-    intersetion_area = np.sum(meet_both * seg_area)
-    precision = intersetion_area / est_area if est_area > 0 else np.nan
-    recall = intersetion_area / ref_area if ref_area > 0 else np.nan
-    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
-
-
-def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
-
-    return None
+    return area_recalled / area_to_recall if area_to_recall > 0 else np.nan
 
 
 def entropy(seg_dur, labels):
@@ -160,6 +153,9 @@ def entropy(seg_dur, labels):
     # accumulate duration for each unique label
     seg_dur = np.array(seg_dur)
     labels = np.array(labels)
+    # check if the user provided mir_eval style flat itvls instead, in that case, get the duration
+    if seg_dur.ndim == 2 and seg_dur.shape[1] == 2:
+        seg_dur = np.diff(seg_dur, axis=1).flatten()
     unique_labels, inverse_indices = np.unique(labels, return_inverse=True)
     label_durs = np.zeros(len(unique_labels))
     # iterate through segment and find the right label to add duration
@@ -169,6 +165,8 @@ def entropy(seg_dur, labels):
     # get ride of zero duration labels
     pi = label_durs[label_durs > 0]
     pi_sum = seg_dur.sum()
+    if pi_sum == 0:
+        return np.nan
     # log(a / b) should be calculated as log(a) - log(b) for
     # possible loss of precision
     return -np.sum((pi / pi_sum) * (np.log(pi) - np.log(pi_sum)))
@@ -198,58 +196,18 @@ def conditional_entropy(itvls, labels, cond_itvls, cond_labels):
     return joint_ent - cond_ent
 
 
+def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray):
+    """
+    get label at ts for all levels in a hierarchy
+    """
+    results = []
+    for itvls, labs in zip(hier_itvls, hier_labels):
+        result = _label_at_ts(itvls, labs, ts)
+        results.append(result)
+    return results
+
+
 def _label_at_ts(itvls, labels, ts):
-    """
-    Label intervals at specific timestamps.
-
-    This helper converts string labels to integer codes, interpolates these codes
-    over interval boundaries, and optionally decodes the integer labels back to the original strings.
-
-    Parameters:
-        itvls (np.ndarray): An array of intervals (shape: [n, 2]).
-        labels (list/array of str): The labels for each interval.
-        ts (np.ndarray): Timestamps at which to evaluate the labels.
-        decode (bool, optional): If True, returns the original labels; otherwise, returns integer codes.
-                                   Defaults to True.
-
-    Returns:
-        np.ndarray: An array of labels (either original or integer-coded) corresponding to each timestamp in ts.
-    """
-
-    # Helper: encode string labels to integers with a reverse mapping.
-    def _encode_labels(lbls):
-        unique = []
-        codes = []
-        for lbl in lbls:
-            lbl = str(lbl)
-            if lbl not in unique:
-                unique.append(lbl)
-            codes.append(unique.index(lbl))
-        return np.array(codes, dtype=int), unique
-
-    # Convert intervals to boundaries and flatten timestamps.
-    boundaries = mir_eval.util.intervals_to_boundaries(itvls)
-    ts = np.atleast_1d(ts).flatten()
-
-    # Encode labels to integer codes.
-    int_labels, label_map = _encode_labels(labels)
-    # Append the last label to cover the final boundary.
-    int_labels = np.concatenate((int_labels, [int_labels[-1]]))
-
-    interp = interp1d(
-        boundaries,
-        int_labels,
-        kind="previous",
-        bounds_error=True,
-        assume_sorted=True,
-        copy=False,
-    )
-
-    # Return decoded labels
-    return np.array([label_map[i] for i in interp(ts).astype(int)])
-
-
-def _faster_label_at_ts(itvls, labels, ts):
     """
     Assign labels to timestamps using interval boundaries and vectorized lookup.
 

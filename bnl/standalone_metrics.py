@@ -547,3 +547,54 @@ def pairwise_clustering(
     recall = pairwise_recall(ref_itvls, ref_labels, est_itvls, est_labels)
     precision = pairwise_recall(est_itvls, est_labels, ref_itvls, ref_labels)
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
+
+
+def _old_label_at_ts(itvls, labels, ts):
+    """
+    Label intervals at specific timestamps.
+
+    This helper converts string labels to integer codes, interpolates these codes
+    over interval boundaries, and optionally decodes the integer labels back to the original strings.
+
+    Parameters:
+        itvls (np.ndarray): An array of intervals (shape: [n, 2]).
+        labels (list/array of str): The labels for each interval.
+        ts (np.ndarray): Timestamps at which to evaluate the labels.
+        decode (bool, optional): If True, returns the original labels; otherwise, returns integer codes.
+                                   Defaults to True.
+
+    Returns:
+        np.ndarray: An array of labels (either original or integer-coded) corresponding to each timestamp in ts.
+    """
+
+    # Helper: encode string labels to integers with a reverse mapping.
+    def _encode_labels(lbls):
+        unique = []
+        codes = []
+        for lbl in lbls:
+            lbl = str(lbl)
+            if lbl not in unique:
+                unique.append(lbl)
+            codes.append(unique.index(lbl))
+        return np.array(codes, dtype=int), unique
+
+    # Convert intervals to boundaries and flatten timestamps.
+    boundaries = mir_eval.util.intervals_to_boundaries(itvls)
+    ts = np.atleast_1d(ts).flatten()
+
+    # Encode labels to integer codes.
+    int_labels, label_map = _encode_labels(labels)
+    # Append the last label to cover the final boundary.
+    int_labels = np.concatenate((int_labels, [int_labels[-1]]))
+
+    interp = interp1d(
+        boundaries,
+        int_labels,
+        kind="previous",
+        bounds_error=True,
+        assume_sorted=True,
+        copy=False,
+    )
+
+    # Return decoded labels
+    return np.array([label_map[i] for i in interp(ts).astype(int)])
