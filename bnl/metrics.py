@@ -258,6 +258,7 @@ def time_salami_track(tid):
 
     # save the results
     result_da.to_netcdf(fname)
+    return result_da
 
 
 # Modified from mir_eval.hierarchy

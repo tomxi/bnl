@@ -176,7 +176,7 @@ def entropy(seg_dur, labels):
     pi = label_durs[label_durs > 0]
     pi_sum = seg_dur.sum()
     if pi_sum == 0:
-        return np.nan
+        return 1.0
     # log(a / b) should be calculated as log(a) - log(b) for
     # possible loss of precision
     return -np.sum((pi / pi_sum) * (np.log(pi) - np.log(pi_sum)))
