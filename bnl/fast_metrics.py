@@ -1,26 +1,35 @@
 import mir_eval, itertools
 import numpy as np
 from scipy.interpolate import interp1d
+from scipy import stats
 
 
-def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
-    # adjust timespan of estimations relative to reference
-    ref_itvls, ref_labels, est_itvls, est_labels = _align_hier(
-        [ref_itvls], [ref_labels], [est_itvls], [est_labels]
-    )
-    # They are depth 1 hieraries right now, let's get them out of the list
-    ref_itvls = ref_itvls[0]
-    ref_labels = ref_labels[0]
-    est_itvls = est_itvls[0]
-    est_labels = est_labels[0]
+# def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
+#     # adjust timespan of estimations relative to reference
+#     ref_itvls, ref_labels, est_itvls, est_labels = _align_hier(
+#         [ref_itvls], [ref_labels], [est_itvls], [est_labels]
+#     )
+#     # They are depth 1 hieraries right now, let's get them out of the list
+#     ref_itvls = ref_itvls[0]
+#     ref_labels = ref_labels[0]
+#     est_itvls = est_itvls[0]
+#     est_labels = est_labels[0]
 
-    precision = 1.0 - conditional_entropy(
-        est_itvls, est_labels, ref_itvls, ref_labels
-    ) / entropy(est_itvls, est_labels)
-    recall = 1.0 - conditional_entropy(
-        ref_itvls, ref_labels, est_itvls, est_labels
-    ) / entropy(ref_itvls, ref_labels)
-    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
+#     # Compute entropy using the estimated segmentation durations.
+#     common_itvls, est_labs, _ = _common_grid_itvls_labels(
+#         [est_itvls], [est_labels], [ref_itvls], [ref_labels]
+#     )
+#     seg_dur = np.diff(common_itvls, axis=1).flatten()
+#     total = seg_dur.sum()
+#     # Convert durations to a probability distribution.
+#     seg_p = seg_dur / total if total > 0 else seg_dur
+#     precision = 1.0 - conditional_entropy(
+#         est_itvls, est_labels, ref_itvls, ref_labels
+#     ) / entropy(est_itvls, est_labels)
+#     recall = 1.0 - conditional_entropy(
+#         ref_itvls, ref_labels, est_itvls, est_labels
+#     ) / entropy(ref_itvls, ref_labels)
+#     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
 def pairwise(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
@@ -196,28 +205,28 @@ def entropy(seg_dur, labels):
     return -np.sum((pi / pi_sum) * (np.log(pi) - np.log(pi_sum)))
 
 
-def joint_entropy(itvls1, labels1, itvls2, labels2):
-    common_itvls, lab1, lab2 = _common_grid_itvls_labels(
-        [itvls1], [labels1], [itvls2], [labels2]
-    )
+# def joint_entropy(itvls1, labels1, itvls2, labels2):
+#     common_itvls, lab1, lab2 = _common_grid_itvls_labels(
+#         [itvls1], [labels1], [itvls2], [labels2]
+#     )
 
-    lab1 = np.array(lab1).flatten()
-    lab2 = np.array(lab2).flatten()
-    # using numpy broadcasting to get the label pairs
-    concurrent_label_pairs = np.char.add(lab1, lab2)
+#     lab1 = np.array(lab1).flatten()
+#     lab2 = np.array(lab2).flatten()
+#     # using numpy broadcasting to get the label pairs
+#     concurrent_label_pairs = np.char.add(lab1, lab2)
 
-    # get the segment durations and areas These are the joint probabilities of the labels
-    seg_dur = np.diff(common_itvls, axis=1).flatten()
-    return entropy(seg_dur, concurrent_label_pairs)
+#     # get the segment durations and areas These are the joint probabilities of the labels
+#     seg_dur = np.diff(common_itvls, axis=1).flatten()
+#     return entropy(seg_dur, concurrent_label_pairs)
 
 
-def conditional_entropy(itvls, labels, cond_itvls, cond_labels):
-    """
-    H(S | S_cond) = H(S, S_cond) - H(S_cond)
-    """
-    joint_ent = joint_entropy(itvls, labels, cond_itvls, cond_labels)
-    cond_ent = entropy(np.diff(cond_itvls, axis=1).flatten(), cond_labels)
-    return joint_ent - cond_ent
+# def conditional_entropy(itvls, labels, cond_itvls, cond_labels):
+#     """
+#     H(S | S_cond) = H(S, S_cond) - H(S_cond)
+#     """
+#     joint_ent = joint_entropy(itvls, labels, cond_itvls, cond_labels)
+#     cond_ent = entropy(np.diff(cond_itvls, axis=1).flatten(), cond_labels)
+#     return joint_ent - cond_ent
 
 
 def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray):
@@ -337,3 +346,68 @@ def _compare_segment_rankings(ref, est, wr=None, we=None, transitive=False):
         for l1, l2 in level_pairs_copy
     )
     return inversions, float(normalizer)
+
+
+from scipy.sparse import coo_matrix
+from scipy import stats
+
+
+def _weighted_contingency(ref_labels, est_labels, durations):
+    """
+    Build a weighted contingency matrix.
+    Each cell (i,j) sums the durations for frames with ref label i and est label j.
+    """
+    ref_classes, ref_idx = np.unique(ref_labels, return_inverse=True)
+    est_classes, est_idx = np.unique(est_labels, return_inverse=True)
+    contingency = coo_matrix(
+        (durations, (ref_idx, est_idx)),
+        shape=(len(ref_classes), len(est_classes)),
+        dtype=np.float64,
+    ).toarray()
+    return contingency, ref_classes, est_classes
+
+
+def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels):
+    ## Make common grid
+    common_itvls, ref_labs, est_labs = _common_grid_itvls_labels(
+        [ref_itvls], [ref_labels], [est_itvls], [est_labels]
+    )
+    # Get the segment durations
+    seg_dur = np.diff(common_itvls, axis=1).flatten()
+
+    # Get the contingency matrix and normalize
+    contingency, _, _ = _weighted_contingency(ref_labs, est_labs, seg_dur)
+    contingency = contingency / np.sum(seg_dur)
+
+    # Compute the marginals
+    p_est = contingency.sum(axis=0)
+    p_ref = contingency.sum(axis=1)
+
+    # H(true | prediction) = sum_j P[estimated = j] *
+    # sum_i P[true = i | estimated = j] log P[true = i | estimated = j]
+    # entropy sums over axis=0, which is true labels
+
+    true_given_est = p_est.dot(stats.entropy(contingency, base=2))
+    pred_given_ref = p_ref.dot(stats.entropy(contingency.T, base=2))
+
+    # Normalize conditional entropy by marginal entropy
+    z_ref = stats.entropy(p_ref, base=2)
+    z_est = stats.entropy(p_est, base=2)
+    r = 1.0 - true_given_est / z_ref
+    p = 1.0 - pred_given_ref / z_est
+    return p, r, mir_eval.util.f_measure(p, r, beta=1.0)
+
+
+def _align_hier(ref_itvls, ref_labels, est_itvls, est_labels):
+    # First, find the maximum length of the reference
+    _, t_end = mir_eval.hierarchy._hierarchy_bounds(ref_itvls)
+
+    # Pre-process the intervals to match the range of the reference,
+    # and start at 0
+    new_ref_itvls, new_ref_labels = mir_eval.hierarchy._align_intervals(
+        ref_itvls, ref_labels, t_min=0.0, t_max=None
+    )
+    new_est_itvls, new_est_labels = mir_eval.hierarchy._align_intervals(
+        est_itvls, est_labels, t_min=0.0, t_max=t_end
+    )
+    return new_ref_itvls, new_ref_labels, new_est_itvls, new_est_labels
