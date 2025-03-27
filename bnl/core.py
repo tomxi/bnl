@@ -199,7 +199,9 @@ class H:
                 level[-1][-1] = end_point
 
         if labels is None:
-            labels = [None] * len(itvls)
+            labels = [[str(s) for s in itvl[:, 0]] for itvl in itvls]
+        # make labels list of arrays
+        labels = [np.asarray(lvl_labs) for lvl_labs in labels]
 
         self.levels = [
             S(i, l, sr=sr, Bhat_bw=Bhat_bw, time_decimal=time_decimal)
@@ -383,7 +385,7 @@ class H:
 
     def decode_B(
         self,
-        depth=4,
+        depth=None,
         pre_max=0.8,
         post_max=0.8,
         pre_avg=0.3,
@@ -413,6 +415,8 @@ class H:
         boundaries = np.unique(np.concatenate(([0, len(novelty) - 1], boundaries)))
 
         # Convert boundaries to hierarchical intervals
+        if depth is None:
+            depth = self.d
         intervals = utils.cluster_boundaries(boundaries, novelty, self.ticks, depth)
 
         return H(intervals, sr=self.sr, Bhat_bw=self.Bhat_bw)
@@ -458,11 +462,9 @@ class H:
                 # Get rid of boundaries in the child level within min_seg_dur of any parent boundaries
                 if min_seg_dur:
                     child_bounds = set(
-                        [
-                            b
-                            for b in child_bounds
-                            if all(abs(b - pb) > min_seg_dur for pb in parent_bounds)
-                        ]
+                        b
+                        for b in child_bounds
+                        if all(abs(b - pb) > min_seg_dur for pb in parent_bounds)
                     )
                 new_child_bounds = sorted(list(set(parent_bounds).union(child_bounds)))
                 new_child_itvls = boundaries_to_intervals(new_child_bounds)

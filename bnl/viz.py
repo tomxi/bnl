@@ -55,8 +55,11 @@ def label_style_dict(labels, boundary_color="white", **kwargs):
     - If there are more than 80 unique labels, uses 'tab20' colormap with 15 hatch patterns.
     - Default styles include white edgecolor and linewidth of 1.
     """
-    # flatten the labels list
-    unique_labels = np.unique(np.asarray(labels))
+    # Find unique elements in labels. Labels can be list of arrays, list of labels, or a single array
+    unique_labels = np.unique(
+        np.concatenate([np.atleast_1d(np.asarray(l)) for l in labels])
+    )
+    # This modification ensures that even a single label is treated as a 1-dimensional array.
 
     # More hatch patterns for more labels
     hatchs = ["", "..", "O.", "*", "xx", "xxO", "\\O", "oo", "\\"]

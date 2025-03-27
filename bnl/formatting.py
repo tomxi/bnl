@@ -39,7 +39,7 @@ def hier2mireval(hier) -> tuple:
         intervals.append(itv)
         labels.append(lbl)
 
-    return intervals, labels
+    return [col for col in zip(*hier)]
 
 
 def mireval2hier(itvls: list, labels: list) -> list:
