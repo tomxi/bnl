@@ -1,4 +1,4 @@
-from . import fio, fmtr
+from . import fio, fmtr, mtr
 import xarray as xr
 import os, time, mir_eval, warnings
 import numpy as np
@@ -90,3 +90,61 @@ def time_metric(ref, est, frame_size=0):
     return dict(
         lmeasure=[lme_time, *lme], pairwise=[pfc_time, *pfc], vmeasure=[vme_time, *vme]
     )
+
+
+def time_depth_sweep(tid, frame_size=0.2, cache_dir="./depth_sweep", retime=False):
+
+    # Check if already timed
+    os.makedirs(cache_dir, exist_ok=True)
+    output_filepath = os.path.join(cache_dir, f"{tid}.nc")
+    if os.path.exists(output_filepath) and not retime:
+        print(f"Already timed {tid}.")
+        return xr.load_dataarray(output_filepath)
+
+    adobe_hier = fio.adobe_hiers(tid=str(tid))
+    salami_hier = fio.salami_ref_hiers(tid=str(tid))[0]
+    ref, est = mtr.align_hier(salami_hier, adobe_hier)
+    # Save the results to xarray
+    result_da = xr.DataArray(
+        dims=["level", "tid", "version", "output"],
+        coords={
+            "level": range(est.d),
+            "tid": [tid],
+            "version": ["mir_eval", "my"],
+            "output": ["run_time", "lp", "lr", "lf"],
+        },
+    )
+
+    for d in range(est.d):
+        start_time = time.time()
+        mylp, mylr, mylm = fmtr.lmeasure(
+            ref.itvls, ref.labels, est.itvls[: d + 1], est.labels[: d + 1]
+        )
+        my_run_time = time.time() - start_time
+        result_da.loc[dict(level=d, tid=tid, version="my")] = [
+            my_run_time,
+            mylp,
+            mylr,
+            mylm,
+        ]
+
+        start_time = time.time()
+        melp, melr, melm = mir_eval.hierarchy.lmeasure(
+            ref.itvls,
+            ref.labels,
+            est.itvls[: d + 1],
+            est.labels[: d + 1],
+            frame_size=frame_size,
+        )
+        me_run_time = time.time() - start_time
+        result_da.loc[dict(level=d, tid=tid, version="mir_eval")] = [
+            me_run_time,
+            melp,
+            melr,
+            melm,
+        ]
+
+    # Save the results to a NetCDF file
+    result_da.to_netcdf(output_filepath)
+    print(f"Timed {tid} and saved to {output_filepath}.")
+    return result_da
