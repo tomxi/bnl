@@ -199,7 +199,7 @@ def cluster_boundaries(boundaries, novelty, ticks, depth, boundary_time_decimal=
     Returns:
         list: List of interval arrays, one per hierarchical level
     """
-    # Determine depth based on unique boundary salience
+    # cap the depth based on unique boundary salience.. cuz we need at least 1 boundary per level
     depth = min(depth, len(np.unique(novelty[boundaries])))
 
     # Quantize boundary salience via KMeans
