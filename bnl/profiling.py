@@ -172,9 +172,7 @@ def time_single_anno(tid, frame_size=0.2, cache_dir="./single_anno", retime=Fals
     )
 
     start_time = time.time()
-    mtr.lmeasure(
-        ref.itvls, ref.labels, est.itvls, est.labels
-    )
+    mtr.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)
     my_run_time = time.time() - start_time
     result_da.loc[dict(tid=tid, version="my")] = my_run_time
 
@@ -187,7 +185,7 @@ def time_single_anno(tid, frame_size=0.2, cache_dir="./single_anno", retime=Fals
         frame_size=0.1,
     )
     me_run_time = time.time() - start_time
-    result_da.loc[dicttid=tid, version="mir_eval")] = [
+    result_da.loc[dict(tid=tid, version="mir_eval")] = [
         me_run_time,
         melp,
         melr,

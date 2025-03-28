@@ -39,18 +39,18 @@ def plot_column(hier, q_fraq=0.3, axs=None):
     q = int(q_fraq * (len(ts) - 1))
     q2 = int((1 - q_fraq) * (len(ts) - 1))
 
-    if axs is None:
-        _, axs = viz.create_fig(
-            w_ratios=[1],
-            h_ratios=[0.8] * hier.d + [12, 3, 12, 12, 3, 12],
-            figsize=(4, 16),
-            h_gaps=[0.001] * (hier.d - 1) + [0.5] * 6,
-        )
+    # if axs is None:
+    #     _, axs = viz.create_fig(
+    #         w_ratios=[1],
+    #         h_ratios=[0.8] * hier.d + [12, 3, 12,],
+    #         figsize=(4, 16),
+    #         h_gaps=[0.001] * (hier.d - 1) + [0.5] * 3,
+    #     )
     axs = np.asarray(axs).flatten()
 
     # Let's figure out if we need to turn off some axis.
     # This is going to leave the first rows empty for short hierarchies.
-    num_rows = hier.d + 6
+    num_rows = hier.d + 3
     empty_rows = len(axs) - num_rows
     # turn off empty row axis and adjust y for title
     y = 1.0
@@ -59,68 +59,42 @@ def plot_column(hier, q_fraq=0.3, axs=None):
         y -= 1
     # Let's plot the hierarchy
     hier.plot(axs=axs[empty_rows : empty_rows + hier.d])
-    axs[0].set_title("Hierarchical Segmentation", y=y)
+    axs[0].set_title("Hierarchy", y=y)
 
+    next_row = empty_rows + hier.d
     # Now plot the meet matrix on axs[hier.d+1]
     meet = hierarchy._meet(hier.itvls, hier.labels, frame_size=1.0 / hier.sr).toarray()
-    viz.sq(meet, hier.ticks, ax=axs[hier.d], cmap="gray_r")
-    axs[hier.d].set_title("Meet matrix")
+    viz.sq(meet, hier.ticks, ax=axs[next_row], cmap="gray_r")
+    axs[next_row].set_title("Meet")
     # add crosshair at q
-    axs[hier.d].vlines(
-        ts[q], ts[0], ts[-1], colors="r", linestyles="dashed", label="Query Frame"
+    axs[next_row].vlines(
+        ts[q], ts[0], ts[-1], colors="r", linestyles="dashed", label="Query time"
     )
-    axs[hier.d].hlines(ts[q], ts[0], ts[-1], colors="r", linestyles="dashed")
-    axs[hier.d].legend()
+    axs[next_row].hlines(ts[q], ts[0], ts[-1], colors="r", linestyles="dashed")
+    axs[next_row].legend()
 
     # Plot relevance at q on axs[-2]
-    axs[hier.d + 1].sharex(axs[hier.d])
+    axs[next_row + 1].sharex(axs[next_row])
     q_rel = meet[q]
-    axs[hier.d + 1].plot(ts, q_rel, color="k")
-    axs[hier.d + 1].vlines(
-        ts[q], 0, max(q_rel), colors="r", linestyles="dashed", label="Query Frame"
+    axs[next_row + 1].plot(ts, q_rel, color="k")
+    axs[next_row + 1].vlines(
+        ts[q], 0, max(q_rel), colors="r", linestyles="dashed", label="Query time"
     )
-    axs[hier.d + 1].set(title="Relevance to q", xlabel="Time (s)", ylabel="Relevance")
-    axs[hier.d + 1].legend()
+    axs[next_row + 1].set(
+        title="Relevance to t", xlabel="Time (s)", ylabel="Meet Depth"
+    )
+    axs[next_row + 1].legend()
 
-    # Relevant pairs u, v for frame q on axs[hier.d + 3]
+    # Relevant pairs u, v for frame q on axs[next_row + 3]
     u_more_relevant_mat = np.greater.outer(q_rel, q_rel)
     v_more_relevant_mat = np.less.outer(q_rel, q_rel)
     combined_mat = u_more_relevant_mat.astype(int) - v_more_relevant_mat.astype(int)
-    viz.sq(combined_mat, hier.ticks, ax=axs[hier.d + 2])
-    axs[hier.d + 2].set(
-        title="Relevant Pairs (u, v)", xlabel="Frame u", ylabel="Frame v"
+    viz.sq(combined_mat, hier.ticks, ax=axs[next_row + 2], cmap="PiYG_r")
+    axs[next_row + 2].set(
+        title="Relevant Pairs (u, v)", xlabel="time u", ylabel="time v"
     )
-
-    ######################
-    # Different point of p
-    # viz.sq(meet, hier.ticks, ax=axs[hier.d + 4], cmap="gray_r")
-    # axs[hier.d + 3].set_title("Meet matrix")
-    # # add crosshair at q2
-    # axs[hier.d + 3].vlines(
-    #     ts[q2], ts[0], ts[-1], colors="r", linestyles="dashed", label="Query Frame"
-    # )
-    # axs[hier.d + 3].hlines(ts[q2], ts[0], ts[-1], colors="r", linestyles="dashed")
-    # axs[hier.d + 3].legend()
-
-    # # Plot relevance at q on axs[-2]
-    # axs[hier.d + 4].sharex(axs[hier.d])
-    # q_rel = meet[q2]
-    # axs[hier.d + 4].plot(ts, q_rel, color="k")
-    # axs[hier.d + 4].vlines(
-    #     ts[q2], 0, max(q_rel), colors="r", linestyles="dashed", label="Query Frame"
-    # )
-    # axs[hier.d + 4].set(title="Relevance to q", xlabel="Time (s)", ylabel="Relevance")
-    # axs[hier.d + 4].legend()
-
-    # Relevant pairs u, v for frame q on axs[hier.d + 3]
-    u_more_relevant_mat = np.greater.outer(q_rel, q_rel)
-    v_more_relevant_mat = np.less.outer(q_rel, q_rel)
-    combined_mat = u_more_relevant_mat.astype(int) - v_more_relevant_mat.astype(int)
-    viz.sq(combined_mat, hier.ticks, ax=axs[-1])
-    axs[-1].set(title="Relevant Pairs (u, v)", xlabel="Frame u", ylabel="Frame v")
-
     fig = axs[0].get_figure()
-    return fig, axs
+    return fig, axs, u_more_relevant_mat
 
 
 if __name__ == "__main__":
@@ -131,11 +105,26 @@ if __name__ == "__main__":
     max_d = max(h1.d, h2.d)
     fig, axs = viz.create_fig(
         w_ratios=[1, 1],
-        h_ratios=[0.8] * max_d + [10, 2, 10, 10, 2, 10],
-        figsize=(7, 15),
-        h_gaps=[0.001] * (max_d - 1) + [0.001] * 6,
+        h_ratios=[1] * max_d + [10, 2, 10, 10],
+        figsize=(7.5, 15),
+        h_gaps=[0.001] * (max_d - 1) + [0.001] * 4,
     )
 
-    fig, _ = plot_column(h1, axs=axs[:, 0])
-    fig, _ = plot_column(h2, axs=axs[:, 1])
-    fig.savefig("scripts/figs/fig3.pdf", transparent=True)
+    fig, _, r_sig_pairs = plot_column(h1, axs=axs[:-1, 0])
+    fig, _, e_sig_pairs = plot_column(h2, axs=axs[:-1, 1])
+
+    intersect_pairs = (r_sig_pairs * e_sig_pairs).astype(int)
+    false_negative_pairs = -intersect_pairs + r_sig_pairs.astype(int)
+    false_positive_pairs = -intersect_pairs + e_sig_pairs.astype(int)
+
+    axs[0, 0].set_title("Reference Hierarchy")
+    axs[0, 1].set_title("Estimated Hierarchy")
+    axs[-1, 0].set_title("False Negatives / Recall")
+    viz.sq(intersect_pairs - false_negative_pairs, h1.ticks, ax=axs[-1, 0])
+    axs[-1, 0].set(xlabel="time u", ylabel="time v")
+    axs[-1, 1].set_title("False Positives / Precision")
+    viz.sq(intersect_pairs - false_positive_pairs, h2.ticks, ax=axs[-1, 1])
+    axs[-1, 1].set(xlabel="time u", ylabel="time v")
+
+    # now compute the intersection of the two hierarchies relevant pair
+    fig.savefig("scripts/explain_triplet.pdf", transparent=True)
