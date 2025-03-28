@@ -50,8 +50,8 @@ def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
     # Normalize conditional entropy by marginal entropy
     z_ref = stats.entropy(p_ref, base=2)
     z_est = stats.entropy(p_est, base=2)
-    r = 1.0 - true_given_est / z_ref
-    p = 1.0 - pred_given_ref / z_est
+    r = (1.0 - true_given_est / z_ref) if z_ref > 0 else 0
+    p = (1.0 - pred_given_ref / z_est) if z_est > 0 else 0
     return p, r, mir_eval.util.f_measure(p, r, beta=beta)
 
 
@@ -185,14 +185,15 @@ def _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_dur, transitive=Tru
 
 def _label_at_ts(itvls, labels, ts):
     """
-    Assign labels to timestamps using interval boundaries
+    Assign labels to timestamps using interval boundaries.
+
     Parameters
     ----------
     itvls : np.ndarray
         An array of shape (n, 2) representing intervals.
-    labels : list
-        A list of labels corresponding to each interval.
-    ts : array-like
+    labels : array_like
+        An array-like object of labels corresponding to each interval.
+    ts : array_like
         Timestamps to be labeled.
 
     Returns
@@ -201,7 +202,8 @@ def _label_at_ts(itvls, labels, ts):
         An array of labels corresponding to each timestamp in ts.
     """
     boundaries = mir_eval.util.intervals_to_boundaries(itvls)
-    extended = np.array(labels + [labels[-1]])  # repeat last label for last boundary
+    labels = np.asarray(labels)
+    extended = np.concatenate([labels, [labels[-1]]])  # Extend last label
     return extended[np.searchsorted(boundaries, np.atleast_1d(ts), side="right") - 1]
 
 

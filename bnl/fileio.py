@@ -1,7 +1,7 @@
 import os, jams, json
 from . import multi2H, fmt, H
 
-ROOT_DATA_DIR = "/Users/xi/data/"
+ROOT_DATA_DIR = os.path.expanduser("~/data/")
 
 
 def salami_ref_hiers(tid, salami_jams_dir="salami-jams/"):

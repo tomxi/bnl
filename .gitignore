@@ -10,9 +10,11 @@ scripts/figs/*
 scripts/out/*
 scripts/compare_implementation/*
 scripts/new_compare/*
+scripts/new_faster_compare/*
 
 texts/main.*
 !texts/main.tex
 
 profile.out
 
+scripts/depth_sweep/*
