@@ -146,12 +146,12 @@ def time_depth_sweep(tid, frame_size=0.2, cache_dir="./depth_sweep", retime=Fals
     return output_filepath
 
 
-def time_single_anno(tid, frame_size=0.2, cache_dir="./single_anno", retime=False):
-    salami_hier = list(fio.salami_ref_hiers(tid=str(tid)).values())
-    if len(salami_hier) > 1:
+def time_single_anno(tid, frame_size=0.1, cache_dir="./single_anno", retime=False):
+    salami_hiers = list(fio.salami_ref_hiers(tid=str(tid)).values())
+    if len(salami_hiers) > 1:
         # print(f"Track {tid} has multiple hierarchies, skipping.")
-        return None
-    salami_hier = salami_hier[0]
+        return
+    salami_hier = salami_hiers[0]
 
     # Check if already timed
     os.makedirs(cache_dir, exist_ok=True)
@@ -160,9 +160,12 @@ def time_single_anno(tid, frame_size=0.2, cache_dir="./single_anno", retime=Fals
         print(f"Already timed {tid}.")
         return output_filepath
 
-    adobe_hier = list(fio.adobe_hiers(tid=str(tid)).values())[0]
-    ref, est = mtr.align_hier(salami_hier, adobe_hier)
-    # Save the results to xarray
+    adobe_hier = list(fio.salami_adobe_hiers(tid=str(tid)).values())[0]
+    ref_itvls, ref_labels, est_itvls, est_labels = mtr.align_hier(
+        salami_hier.itvls, salami_hier.labels, adobe_hier.itvls, adobe_hier.labels
+    )
+
+    # Build the xarray for results
     result_da = xr.DataArray(
         dims=["tid", "version"],
         coords={
@@ -172,25 +175,16 @@ def time_single_anno(tid, frame_size=0.2, cache_dir="./single_anno", retime=Fals
     )
 
     start_time = time.time()
-    mtr.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)
+    mtr.lmeasure(ref_itvls, ref_labels, est_itvls, est_labels)
     my_run_time = time.time() - start_time
     result_da.loc[dict(tid=tid, version="my")] = my_run_time
 
     start_time = time.time()
     mir_eval.hierarchy.lmeasure(
-        ref.itvls,
-        ref.labels,
-        est.itvls,
-        est.labels,
-        frame_size=0.1,
+        ref_itvls, ref_labels, est_itvls, est_labels, frame_size=frame_size
     )
     me_run_time = time.time() - start_time
-    result_da.loc[dict(tid=tid, version="mir_eval")] = [
-        me_run_time,
-        melp,
-        melr,
-        melm,
-    ]
+    result_da.loc[dict(tid=tid, version="mir_eval")] = me_run_time
 
     # Save the results to a NetCDF file
     result_da.to_netcdf(output_filepath)

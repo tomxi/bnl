@@ -8,10 +8,7 @@ __pycache__
 scripts/figs/*
 .DS_Store
 scripts/out/*
-scripts/compare_implementation/*
-scripts/new_compare/*
-scripts/new_faster_compare/*
-
+scripts/*/*.nc
 texts/main.*
 !texts/main.tex
 

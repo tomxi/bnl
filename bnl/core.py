@@ -201,7 +201,7 @@ class H:
         if labels is None:
             labels = [[str(s) for s in itvl[:, 0]] for itvl in itvls]
         # make labels list of arrays
-        labels = [np.asarray(lvl_labs) for lvl_labs in labels]
+        # labels = [np.asarray(lvl_labs) for lvl_labs in labels]
 
         self.levels = [
             S(i, l, sr=sr, Bhat_bw=Bhat_bw, time_decimal=time_decimal)
