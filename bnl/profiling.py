@@ -144,3 +144,57 @@ def time_depth_sweep(tid, frame_size=0.2, cache_dir="./depth_sweep", retime=Fals
     result_da.to_netcdf(output_filepath)
     print(f"Timed {tid} and saved to {output_filepath}.")
     return output_filepath
+
+
+def time_single_anno(tid, frame_size=0.2, cache_dir="./single_anno", retime=False):
+    salami_hier = list(fio.salami_ref_hiers(tid=str(tid)).values())
+    if len(salami_hier) > 1:
+        # print(f"Track {tid} has multiple hierarchies, skipping.")
+        return None
+    salami_hier = salami_hier[0]
+
+    # Check if already timed
+    os.makedirs(cache_dir, exist_ok=True)
+    output_filepath = os.path.join(cache_dir, f"{tid}.nc")
+    if os.path.exists(output_filepath) and not retime:
+        print(f"Already timed {tid}.")
+        return output_filepath
+
+    adobe_hier = list(fio.adobe_hiers(tid=str(tid)).values())[0]
+    ref, est = mtr.align_hier(salami_hier, adobe_hier)
+    # Save the results to xarray
+    result_da = xr.DataArray(
+        dims=["tid", "version"],
+        coords={
+            "tid": [str(tid)],
+            "version": ["mir_eval", "my"],
+        },
+    )
+
+    start_time = time.time()
+    mtr.lmeasure(
+        ref.itvls, ref.labels, est.itvls, est.labels
+    )
+    my_run_time = time.time() - start_time
+    result_da.loc[dict(tid=tid, version="my")] = my_run_time
+
+    start_time = time.time()
+    mir_eval.hierarchy.lmeasure(
+        ref.itvls,
+        ref.labels,
+        est.itvls,
+        est.labels,
+        frame_size=0.1,
+    )
+    me_run_time = time.time() - start_time
+    result_da.loc[dicttid=tid, version="mir_eval")] = [
+        me_run_time,
+        melp,
+        melr,
+        melm,
+    ]
+
+    # Save the results to a NetCDF file
+    result_da.to_netcdf(output_filepath)
+    print(f"Timed {tid} and saved to {output_filepath}.")
+    return output_filepath
