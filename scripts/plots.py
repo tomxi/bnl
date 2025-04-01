@@ -51,7 +51,7 @@ def plot_column(hier, q_fraq=0.3, axs=None):
         axs[i].axis("off")
         y -= 1
     # Let's plot the hierarchy
-    hier.plot(axs=axs[empty_rows : empty_rows + hier.d], text=False)
+    hier.plot(axs=axs[empty_rows : empty_rows + hier.d], text=False, time_ticks=False)
     axs[0].set_title("Hierarchy", y=y)
 
     next_row = empty_rows + hier.d
@@ -97,8 +97,8 @@ if __name__ == "__main__":
     max_d = max(h1.d, h2.d)
     fig, axs = viz.create_fig(
         w_ratios=[1, 1],
-        h_ratios=[1] * max_d + [10, 3, 10, 10],
-        figsize=(5.5, 11),
+        h_ratios=[0.5] * max_d + [10, 2.5, 10, 10],
+        figsize=(5, 9),
         h_gaps=[0.001] * (max_d - 1) + [0.001] * 4,
     )
 

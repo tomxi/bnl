@@ -322,6 +322,7 @@ class H:
         text=True,
         legend=False,  #
         legend_offset=0.2,
+        time_ticks=True,
         **create_fig_kwargs,
     ):
         """Plot the hierarchical segmentation."""
@@ -359,7 +360,11 @@ class H:
                     style_map=style_map,
                 )
         self.levels[-1].plot(
-            ax=axs[-1], ytick=self.d, time_ticks=True, text=text, style_map=style_map
+            ax=axs[-1],
+            ytick=self.d,
+            time_ticks=time_ticks,
+            text=text,
+            style_map=style_map,
         )
         # Set legend
         if legend:
