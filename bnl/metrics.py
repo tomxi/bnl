@@ -5,30 +5,33 @@ from scipy.sparse import coo_matrix
 
 
 def pairwise(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
-    common_itvls, ref_labs, est_labs = make_common_itvls(
-        *align_hier([ref_itvls], [ref_labels], [est_itvls], [est_labels])
-    )
-    # Get the segment durations
+    # make sure est the same lenght as ref
+    aligned_hiers = align_hier([ref_itvls], [ref_labels], [est_itvls], [est_labels])
+    # Make common grid
+    common_itvls, ref_labs, est_labs = make_common_itvls(*aligned_hiers)
+
+    # Get the segment durations and use as weights
     seg_dur = np.diff(common_itvls, axis=1).flatten()
+    # Build label agreement maps (meet matrix)
     meet_ref = _meet(ref_labs)
     meet_est = _meet(est_labs)
     meet_both = meet_ref * meet_est
 
-    seg_area = np.outer(seg_dur, seg_dur)
-    ref_area = np.sum(meet_ref * seg_area)
-    est_area = np.sum(meet_est * seg_area)
-    intersetion_area = np.sum(meet_both * seg_area)
+    seg_pair_size = np.outer(seg_dur, seg_dur)
+    ref_sig_pair_size = np.sum(meet_ref * seg_pair_size)
+    est_sig_pair_size = np.sum(meet_est * seg_pair_size)
+    intersection_size = np.sum(meet_both * seg_pair_size)
 
-    precision = intersetion_area / est_area
-    recall = intersetion_area / ref_area
+    precision = intersection_size / est_sig_pair_size
+    recall = intersection_size / ref_sig_pair_size
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
 def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
-    ## Make common grid
-    common_itvls, ref_labs, est_labs = make_common_itvls(
-        *align_hier([ref_itvls], [ref_labels], [est_itvls], [est_labels])
-    )
+    # make sure est the same lenght as ref
+    aligned_hiers = align_hier([ref_itvls], [ref_labels], [est_itvls], [est_labels])
+    # Make common grid
+    common_itvls, ref_labs, est_labs = make_common_itvls(*aligned_hiers)
     # Get the segment durations
     seg_dur = np.diff(common_itvls, axis=1).flatten()
 
@@ -56,10 +59,10 @@ def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
 
 
 def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False):
-    # build common grid and meet mats first
-    common_itvls, ref_labs, est_labs = make_common_itvls(
-        *align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
-    )
+    # make sure est the same lenght as ref
+    aligned_hiers = align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
+    # Make common grid
+    common_itvls, ref_labs, est_labs = make_common_itvls(*aligned_hiers)
     seg_dur = np.diff(common_itvls, axis=1).flatten()
     meet_ref = _meet(ref_labs, mono=mono)
     meet_est = _meet(est_labs, mono=mono)
@@ -145,20 +148,6 @@ def _meet(gridded_hier_labels, compare_func=np.equal, mono=False):
     return depths.astype(int)
 
 
-# def _get_common_grid_meet_matrices(
-#     ref_itvls, ref_labels, est_itvls, est_labels, mono=False
-# ):
-#     # Strategy: cut up into common boundaries
-#     common_itvls, ref_labs, est_labs = _common_grid_itvls_labels(
-#         *_align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
-#     )
-#     # get the meet matrix
-#     meet_ref = _meet(ref_labs, mono=mono)
-#     meet_est = _meet(est_labs, mono=mono)
-#     common_seg_dur = np.diff(common_itvls, axis=1).flatten()
-#     return common_seg_dur, meet_ref, meet_est
-
-
 def _common_boundaries(list_of_itvls):
     # Get the boundaries of both sets of intervals
     bs = set()
@@ -176,7 +165,7 @@ def _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_dur, transitive=Tru
     inversions, normalizer = _compare_segment_rankings(
         ref_rel_againt_seg_i,
         est_rel_againt_seg_i,
-        wr=seg_dur,
+        ref_w=seg_dur,
         we=seg_dur,
         transitive=transitive,
     )
@@ -229,7 +218,7 @@ def _count_weighted_inversions(a, wa, b, wb):
     return inversions
 
 
-def _compare_segment_rankings(ref, est, wr=None, we=None, transitive=False):
+def _compare_segment_rankings(ref, est, ref_w=None, est_w=None, transitive=False):
     """
     Compute weighted ranking disagreements between two lists.
 
@@ -239,7 +228,7 @@ def _compare_segment_rankings(ref, est, wr=None, we=None, transitive=False):
         Reference ranked list.
     est : np.ndarray, shape=(n,)
         Estimated ranked list.
-    wr : np.ndarray, shape=(n,), optional
+    ref_w : np.ndarray, shape=(n,), optional
         Weights for ref (default: ones).
     we : np.ndarray, shape=(n,), optional
         Weights for est (default: ones).
@@ -255,22 +244,25 @@ def _compare_segment_rankings(ref, est, wr=None, we=None, transitive=False):
         Total weighted number of pairs considered.
     """
     n = len(ref)
-    if wr is None:
-        wr = np.ones(n)
-    if we is None:
-        we = np.ones(n)
+    if ref_w is None:
+        ref_w = np.ones(n)
+    if est_w is None:
+        est_w = np.ones(n)
 
+    # The algo starts by sorting everything by ref's values for easy inversion counting.
     idx = np.argsort(ref)
-    ref_s, est_s = ref[idx], est[idx]
-    wr_s, we_s = wr[idx], we[idx]
+    ref, est = ref[idx], est[idx]
+    ref_w, est_w = ref_w[idx], est_w[idx]
 
-    levels, pos = np.unique(ref_s, return_index=True)
-    pos = list(pos) + [len(ref_s)]
+    # Get the unique levels of values and their positions in the sorted array
+    levels, pos = np.unique(ref, return_index=True)
+    pos = list(pos) + [len(ref)]
 
-    groups = {
+    # For each group of segments that has the same level/label value, we get the summed weights.
+    level_groups = {
         lvl: slice(start, end) for lvl, start, end in zip(levels, pos[:-1], pos[1:])
     }
-    ref_map = {lvl: np.sum(wr_s[groups[lvl]]) for lvl in levels}
+    ref_level_weights = {lvl: np.sum(ref_w[level_groups[lvl]]) for lvl in levels}
 
     if transitive:
         level_pairs = itertools.combinations(levels, 2)
@@ -278,16 +270,22 @@ def _compare_segment_rankings(ref, est, wr=None, we=None, transitive=False):
         level_pairs = [(levels[i], levels[i + 1]) for i in range(len(levels) - 1)]
 
     # Create two independent iterators over level_pairs.
-    level_pairs, level_pairs_copy = itertools.tee(level_pairs)
-    normalizer = float(sum(ref_map[i] * ref_map[j] for i, j in level_pairs))
+    level_pairs, level_pairs_counts = itertools.tee(level_pairs)
+    normalizer = float(
+        sum(ref_level_weights[i] * ref_level_weights[j] for i, j in level_pairs_counts)
+    )
     if normalizer == 0:
-        return 0, 0.0
+        return 0.0, 0.0
 
+    # We already sorted by ref array, so we count inversions now.
     inversions = sum(
         _count_weighted_inversions(
-            est_s[groups[l1]], we_s[groups[l1]], est_s[groups[l2]], we_s[groups[l2]]
+            est[level_groups[l1]],
+            est_w[level_groups[l1]],
+            est[level_groups[l2]],
+            est_w[level_groups[l2]],
         )
-        for l1, l2 in level_pairs_copy
+        for l1, l2 in level_pairs
     )
     return inversions, float(normalizer)
 
