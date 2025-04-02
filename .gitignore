@@ -15,3 +15,4 @@ texts/main.*
 profile.out
 
 scripts/depth_sweep/*
+scripts/.ipynb_checkpoints

@@ -337,7 +337,7 @@ class H:
         if axs is None:
             _, axs = viz.create_fig(**fig_kw)
             # flatten nested list of axes
-            axs = axs.flatten()
+            axs = np.array(axs).flatten()
 
         # Check len(axs) and self.d is the same
         if len(axs) < self.d:
@@ -398,8 +398,18 @@ class H:
         delta=1e-3,
         wait=1,
         level_weights=None,
+        sr=None,
+        bw=None,
     ):
         """Return a hierarchical segmentation with monotonic boundaries, with the specified number of levels."""
+        # decode_b needs sr and bw.
+        if sr is not None:
+            self.update_sr(sr)
+        if bw is not None:
+            self.update_bw(bw)
+        if self.sr is None or self.Bhat_bw is None:
+            raise ValueError("sr and bw must be set for decode_B")
+
         # Normalize the novelty curve
         novelty = self.Bhat(ts=self.ticks, weights=level_weights)
         novelty /= novelty.max() + 1e-10
