@@ -1,5 +1,6 @@
 import jams
 import numpy as np
+from collections import defaultdict
 
 
 def multi2hier(anno) -> list:
@@ -100,3 +101,22 @@ def multi2openseg(multi_anno, layer=-1):
 
 def openseg2mirevalflat(openseg_anno):
     return multi2mirevalflat(openseg2multi([openseg_anno]))
+
+
+# def bs_dict2itvls(bs_dict):
+#     # group the bs_dict keys by distinct values
+#     # and sort them by the values
+#     bs_by_sal = defaultdict(list)
+#     max_sal = max(bs_dict.values())
+#     for b, sal in bs_dict.items():
+#         bs_by_sal[sal].append(b)
+
+#     # sort by keys:
+#     sals, bs_lists = sorted(bs_by_sal.items())
+
+#     bs_per_lvl = []
+#     for sal in range(max_sal):
+#         bs_per_lvl.append()
+#     for key, value in bs_by_sal.items():
+#         itvls.append([key, key + value])
+#     return itvls

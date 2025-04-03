@@ -72,6 +72,13 @@ def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False)
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
+def bmeasure(ref_itvls, est_itvls, beta=1.0, trim=False):
+    # # make sure est the same lenght as ref
+    # aligned_hiers = align_hier(ref_itvls, None, est_itvls, None)
+
+    # return p, r, mir_eval.util.f_measure(p, r, beta=beta)
+
+
 def triplet_recall(meet_ref, meet_est, seg_dur):
     per_segment_recall = []
     for seg_idx in range(len(seg_dur)):

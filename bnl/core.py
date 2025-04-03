@@ -80,21 +80,6 @@ class S:
 
         self.ticks = np.arange(n_frames + 1) * frame_size + self.T0
 
-    def L(self, x):
-        """Return the label for a given time x."""
-        if not (self.T0 <= x <= self.T):
-            raise IndexError(
-                f"RANGE: {x} outside the range of this segmentation {self.T0, self.T}!"
-            )
-        elif x == self.T:
-            # The last boundary at T doesn't have a lstar mapping...
-            # it's the same label as the previous boundary i.e. beta[-2]
-            return self.Lstar[self.beta[-2]]
-
-        # Find the index of the rightmost boundary less than x
-        idx = np.searchsorted(self.beta, x, side="right") - 1
-        return self.Lstar[self.beta[idx]]
-
     def B(self, x):
         """Return whether x is a boundary with integers 1/0"""
         return int(x in self.beta or (x == self.T0) or (x == self.T))
@@ -120,8 +105,8 @@ class S:
             bs = self.beta
         bs = np.array(sorted(set(bs)))
         ts = (bs[1:] + bs[:-1]) / 2  # Sample label from mid-points of each frame
-        labels = np.array([self.L(t) for t in ts])
-        return compare_fn.outer(labels, labels).astype(float)
+        labels_arr = np.array([self(t) for t in ts])
+        return compare_fn.outer(labels_arr, labels_arr).astype(int)
 
     def Ahat(self, bs=None, compare_fn=np.equal):
         """Return the label agreement matrix.
@@ -166,9 +151,6 @@ class S:
         """Return a new S with default labeling."""
         return S(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
-    def meet(self, u, v, compare_fn=np.equal):
-        return compare_fn(self.L(u), self.L(v))
-
     def expand(self, format="slm", always_include=False):
         """Expand the segmentation into a hierarchical format."""
         # Convert to hierarchical format using the specified format
@@ -179,6 +161,17 @@ class S:
             )
         ]
         return levels2H(expanded_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
+
+    def __call__(self, x):
+        if not (self.T0 <= x <= self.T):
+            raise IndexError(
+                f"RANGE: {x} outside the range of this segmentation {self.T0, self.T}!"
+            )
+        elif x == self.T:
+            return self.Lstar[self.beta[-2]]
+
+        idx = np.searchsorted(self.beta, x, side="right") - 1
+        return self.Lstar[self.beta[idx]]
 
 
 class H:
@@ -454,15 +447,11 @@ class H:
         # Decode labels
         return self.decode_L(new_H.itvls, min_k=min_k)
 
-    def force_mono_B(self, min_seg_dur=0):
+    def force_mono_B(self, absorb_window=0):
         """Force monotonic boundaries across levels.
         If a boundary is present in a parent level, it has to appear in a child level.
-        If there were boundaries in the child level within min_seg_dur of the new created boundaries, get rid of them.
+        If there were boundaries in the child level within absorb_window of the new created boundaries, get rid of them.
         """
-        ## check if boundaries are monotonic already
-        if self.has_mono_B():
-            return self
-
         ## Start from the first level and work down
         new_levels = []
         for level in self.levels:
@@ -474,17 +463,17 @@ class H:
             if set(parent_bounds).issubset(child_bounds):
                 new_levels.append(level)
             else:
-                # Get rid of boundaries in the child level within min_seg_dur of any parent boundaries
-                if min_seg_dur:
+                # Get rid of boundaries in the child level within absorb_window of any parent boundaries
+                if absorb_window:
                     child_bounds = set(
                         b
                         for b in child_bounds
-                        if all(abs(b - pb) > min_seg_dur for pb in parent_bounds)
+                        if all(abs(b - pb) > absorb_window for pb in parent_bounds)
                     )
                 new_child_bounds = sorted(list(set(parent_bounds).union(child_bounds)))
                 new_child_itvls = boundaries_to_intervals(new_child_bounds)
                 # new_child_temp_labels = [level.L(b) for b in new_child_bounds[:-1]]
-                # New Strategy: for each segment, look for max overlap in the old segment.
+                # New labeling Strategy: for each segment, look for max overlap in the old segment.
                 new_child_labels = [
                     utils.best_matching_label(query_itvl, level.itvls, level.labels)
                     for query_itvl in new_child_itvls
@@ -492,14 +481,12 @@ class H:
                 new_levels.append(S(new_child_itvls, new_child_labels))
         return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
-    def force_mono_L(self, min_seg_dur=0):
+    def force_mono_L(self, absorb_window=0):
         """Force monotonic labels across levels.
         We do this by prepending parent labels to child labels.
         """
         ## First check boundary monotonicity, and force it if necessary
-        self_mono_B = (
-            self if self.has_mono_B() else self.force_mono_B(min_seg_dur=min_seg_dur)
-        )
+        self_mono_B = self.force_mono_B(absorb_window=absorb_window)
 
         ## Now we check label monotonicity
         if self_mono_B.has_mono_L():
@@ -512,7 +499,7 @@ class H:
             # Prepend parent labels to child labels for each segment in the child
             parent_level = new_levels[-1]
             new_child_labels = [
-                parent_level.L(b) + "." + level.L(b) for b in level.beta[:-1]
+                parent_level(b) + "." + level(b) for b in level.beta[:-1]
             ]
             new_levels.append(S(level.itvls, new_child_labels))
         return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
@@ -544,28 +531,6 @@ class H:
         """Return a new H with default labeling."""
         return H(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
-    def meet(self, u, v, mode="deepest"):
-        # mode can be 'deepest', 'mono', 'mean'.
-        # Get the meet value per level
-        lvl_meet = np.array([lvl.meet(u, v) for lvl in self.levels])
-        # Handle edge cases
-        if not np.any(lvl_meet):
-            return 0
-        elif np.all(lvl_meet):
-            return self.d
-
-        # switch on mode
-        if mode == "deepest":
-            # Find the idx of the Last True value or zero if all are False
-            return len(lvl_meet) - np.argmax(lvl_meet[::-1]) if lvl_meet.any() else 0
-        elif mode == "mono":
-            # Find the idx of the first False value, len(lvl_meet) if all are True
-            return np.argmax(lvl_meet == False) if not lvl_meet.all() else len(lvl_meet)
-        elif mode == "mean":
-            return np.mean(lvl_meet)
-        else:
-            raise ValueError(f"Unknown mode: {mode}")
-
     def expand(self, format="slm", always_include=False):
         """Expand the hierarchy annotations using the specified format.
 
@@ -583,6 +548,9 @@ class H:
             expanded_levels.extend(expanded.levels)
 
         return levels2H(expanded_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
+
+    def __call__(self, x):
+        return [l(x) for l in self.levels]
 
 
 def levels2H(levels, sr=None, Bhat_bw=None):
