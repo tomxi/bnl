@@ -1,4 +1,4 @@
-import mir_eval, itertools
+import mir_eval, itertools, collections
 import numpy as np
 from scipy import stats
 from scipy.sparse import coo_matrix
@@ -72,13 +72,6 @@ def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False)
     return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
-def bmeasure(ref_itvls, est_itvls, beta=1.0, trim=False):
-    # # make sure est the same lenght as ref
-    # aligned_hiers = align_hier(ref_itvls, None, est_itvls, None)
-
-    # return p, r, mir_eval.util.f_measure(p, r, beta=beta)
-
-
 def triplet_recall(meet_ref, meet_est, seg_dur):
     per_segment_recall = []
     for seg_idx in range(len(seg_dur)):
@@ -96,6 +89,90 @@ def triplet_recall(meet_ref, meet_est, seg_dur):
         return np.sum(per_segment_recall[valid_seg] * seg_dur[valid_seg]) / np.sum(
             seg_dur[valid_seg]
         )
+
+
+# def bmeasure(ref_itvls, est_itvls, beta=1.0, trim=False):
+# # make sure est the same lenght as ref
+# aligned_hiers = align_hier(ref_itvls, None, est_itvls, None)
+
+# return p, r, mir_eval.util.f_measure(p, r, beta=beta)
+
+
+def boundary_counts(hier_itvls: list, trim=True):
+    """
+    Compute the boundary counts for a hierarchy of intervals.
+
+    """
+    # Get the boundaries of the intervals
+    bs_counts = collections.Counter()
+    for itvls in hier_itvls:
+        new_bs = mir_eval.util.intervals_to_boundaries(itvls)
+        if trim:
+            new_bs = new_bs[1:-1]
+        bs_counts.update(new_bs)
+    return bs_counts
+
+
+def query_salience(bs_sals: dict, query_bs: np.ndarray, match_tolerance_window=0.5):
+    """
+    Query the salience of a rated boundary.
+    bs_sals: dict of rated boundaries
+    query_bs: numpy array of query boundaries
+
+    returns: a numpy array of salience.
+    """
+    bs = np.asarray(list(bs_sals.keys()))
+    hits = mir_eval.util.match_events(query_bs, bs, window=match_tolerance_window)
+
+    # q, b are match indices
+    queried_sal = np.zeros(len(query_bs))
+    for q_idx, b_idx in hits:
+        queried_sal[q_idx] = bs_sals[bs[b_idx]]
+    return queried_sal
+
+
+def rated_bs_recall(ref_sal: np.ndarray, est_sal: np.ndarray):
+    # Any pairs involving a zero salience are ignored, this is to have a control on the included pairs.
+    # get where both saliences are non zero
+    valid_mask = (ref_sal > 0) * (est_sal > 0)
+    hit_recall = (
+        np.count_nonzero(valid_mask) / len(ref_sal) if len(ref_sal) > 0 else 1.0
+    )
+
+    inversions, valid_pairs = mir_eval.hierarchy._compare_frame_rankings(
+        ref_sal[valid_mask],
+        est_sal[valid_mask],
+        transitive=True,
+    )
+    rank_recall = (
+        (valid_pairs - inversions) / valid_pairs if valid_pairs > 0 else np.nan
+    )
+
+    return hit_recall, rank_recall
+
+
+def bmeasure(ref_itvls, est_itvls, window=0.5, beta=1.0, trim=True):
+    ref_bs_sal = boundary_counts(ref_itvls, trim=trim)
+    est_bs_sal = boundary_counts(est_itvls, trim=trim)
+    ref_sal = np.array(list(ref_bs_sal.values()))
+    est_sal = np.array(list(est_bs_sal.values()))
+
+    # Get the salience at the other annotation's boundaries
+    est_sal_at_ref_bs = query_salience(
+        est_bs_sal, np.array(list(ref_bs_sal.keys())), match_tolerance_window=window
+    )
+    ref_sal_at_est_bs = query_salience(
+        ref_bs_sal, np.array(list(est_bs_sal.keys())), match_tolerance_window=window
+    )
+
+    # Compute the recall and precision
+    hit_r, rank_r = rated_bs_recall(ref_sal, est_sal_at_ref_bs)
+    hit_p, rank_p = rated_bs_recall(est_sal, ref_sal_at_est_bs)
+
+    # we use the harmonic mean of the rank and hit measure to get the bmeasure.
+    recall = hit_r if rank_r is np.nan else mir_eval.util.f_measure(hit_r, rank_r)
+    precision = hit_p if rank_p is np.nan else mir_eval.util.f_measure(hit_p, rank_p)
+    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
 
 def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray):
