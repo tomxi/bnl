@@ -258,12 +258,12 @@ class H:
         bs = np.array(sorted(bs))
         return sum(level.A(bs=bs, compare_fn=compare_fn) for level in self.levels)
 
-    def B(self):
-        """Return the boundary count across all levels."""
-        rated_boundaries = dict()
-        for b in self.beta:
-            rated_boundaries[b] = sum(seg.B(b) for seg in self.levels)
-        return rated_boundaries
+    def B(self, t):
+        """Return the boundary salience by finding the coarsest level that a boundary appears in."""
+        for k in range(self.d):
+            if self.levels[k].B(t):
+                return self.d - k
+        return 0
 
     def Astar(self, bs=None):
         """Return the deepest level where labels are identical.
