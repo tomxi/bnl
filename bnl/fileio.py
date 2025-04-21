@@ -33,7 +33,6 @@ def salami_adobe_hiers(
     tid,
     result_dir="ISMIR21-Segmentations/SALAMI/",
 ):
-
     filename = f"{tid}.mp3.msdclasscsnmagic.json"
 
     options = ["def_mu_0.1_gamma_0.1", "def_mu_0.5_gamma_0.5", "def_mu_0.1_gamma_0.9"]

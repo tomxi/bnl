@@ -14,7 +14,7 @@ from .formatting import (
 from .external import expand_hierarchy, reindex
 from . import viz, utils
 
-__all__ = ["S", "H", "multi2H", "levels2H", "flat2S"]
+__all__ = ["S", "H", "multi2H", "levels2H", "flat2S", "sal2H"]
 
 
 class S:
@@ -579,4 +579,4 @@ def sal2H(bs_sal, sr=None, Bhat_bw=None):
     for level in range(total_levels, 0, -1):  # Iterate from most to least salient
         level_boundaries = [b for b in bs_sal if bs_sal[b] >= level]
         boundaries_by_level.append(boundaries_to_intervals(sorted(level_boundaries)))
-    return H(boundaries_by_level, sr=sr, Bhat_bw=Bhat_bw)
+    return H(boundaries_by_level, sr=sr, Bhat_bw=Bhat_bw).prune_identical_levels()

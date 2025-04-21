@@ -103,7 +103,7 @@ def boundary_counts(hier_itvls: list, trim=True):
         if trim:
             new_bs = new_bs[1:-1]
         bs_counts.update(new_bs)
-    return bs_counts
+    return dict(sorted(bs_counts.items()))
 
 
 def query_salience(bs_sals: dict, query_bs: np.ndarray, match_tolerance_window=0.5):
@@ -140,7 +140,7 @@ def rated_bs_recall(ref_sal: np.ndarray, est_sal: np.ndarray):
     rank_recall = (
         (valid_pairs - inversions) / valid_pairs if valid_pairs > 0 else np.nan
     )
-
+    print("valid_pairs, inversions:", valid_pairs, inversions)
     return hit_recall, rank_recall
 
 
@@ -254,7 +254,7 @@ def _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_dur, transitive=Tru
         ref_rel_againt_seg_i,
         est_rel_againt_seg_i,
         ref_w=seg_dur,
-        we=seg_dur,
+        est_w=seg_dur,
         transitive=transitive,
     )
     return 1.0 - inversions / normalizer if normalizer > 0 else np.nan
