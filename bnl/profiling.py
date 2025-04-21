@@ -1,6 +1,6 @@
 from . import fio, mtr
 import xarray as xr
-import os, time, mir_eval, warnings
+import os, time, mir_eval, warnings, json
 import numpy as np
 
 
@@ -190,3 +190,53 @@ def time_single_anno(tid, frame_size=0.1, cache_dir="./single_anno", retime=Fals
     result_da.to_netcdf(output_filepath)
     print(f"Timed {tid} and saved to {output_filepath}.")
     return output_filepath
+
+
+def compare_boundary_metrics(tid, cache_dir="./boundary_metrics", recompute=False):
+    salami_hiers = list(fio.salami_ref_hiers(tid=str(tid)).values())
+    if len(salami_hiers) <= 1:
+        # print(f"Track {tid} has multiple hierarchies, skipping.")
+        return
+
+    # Check if already computed
+    os.makedirs(cache_dir, exist_ok=True)
+    output_filepath = os.path.join(cache_dir, f"b_{tid}.nc")
+    if os.path.exists(output_filepath) and not recompute:
+        print(f"Already computed {tid}.")
+        return xr.open_dataarray(output_filepath)
+
+    adobe_hier = next(iter(fio.salami_adobe_hiers(tid=str(tid)).values()))
+
+    # compute and save results
+    result_coords = dict(
+        tid=[tid],
+        anno_id=[0, 1],
+        component=["cap", "ref", "est"],
+        event=["beta", "pair", "T"],
+        window=[0.5, 3],
+    )
+    result_da = xr.DataArray(dims=result_coords.keys(), coords=result_coords)
+    for anno_id, ref in enumerate(salami_hiers):
+        ref = ref.unique_labeling()
+        est = adobe_hier.unique_labeling()
+        ref_itvls, ref_labels, est_itvls, est_labels = mtr.align_hier(
+            ref.itvls, ref.labels, est.itvls, est.labels
+        )
+        for window in result_coords["window"]:
+            # Compute the components
+            b_scores = mtr.bmeasure(ref_itvls, est_itvls, trim=False, window=window)
+            result_da.loc[
+                dict(window=window, anno_id=anno_id, tid=tid, event="beta")
+            ] = [b_scores["mu"], b_scores["ref_beta"], b_scores["est_beta"]]
+            result_da.loc[
+                dict(window=window, anno_id=anno_id, tid=tid, event="pair")
+            ] = [b_scores["pairs_cap"], b_scores["ref_pairs"], b_scores["est_pairs"]]
+            result_da.loc[dict(window=window, anno_id=anno_id, tid=tid, event="T")] = [
+                b_scores["T_mu"],
+                b_scores["T_ref_beta"],
+                b_scores["T_est_beta"],
+            ]
+
+    # Save to NetCDF
+    result_da.to_netcdf(output_filepath)
+    return result_da

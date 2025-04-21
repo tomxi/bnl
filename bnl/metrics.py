@@ -58,40 +58,54 @@ def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
     return p, r, mir_eval.util.f_measure(p, r, beta=beta)
 
 
-def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, mono=False):
+def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels):
     # make sure est the same lenght as ref
     aligned_hiers = align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
     # Make common grid
     common_itvls, ref_labs, est_labs = make_common_itvls(*aligned_hiers)
+
+    dur_sq = (common_itvls[-1, -1] - common_itvls[0, 0]) ** 2
     seg_dur = np.diff(common_itvls, axis=1).flatten()
-    meet_ref = _meet(ref_labs, mono=mono)
-    meet_est = _meet(est_labs, mono=mono)
+    ref_meet = _meet(ref_labs)
+    est_meet = _meet(est_labs)
+    triplet_caps, ref_triplets = _segment_triplet_components(
+        ref_meet, est_meet, seg_dur, transitive=True
+    )
+    _, est_triplets = _segment_triplet_components(
+        est_meet, ref_meet, seg_dur, transitive=True
+    )
+    weight = seg_dur / np.sum(seg_dur)
+    return (
+        triplet_caps * weight / dur_sq,
+        ref_triplets / dur_sq,
+        est_triplets / dur_sq,
+    )
 
-    recall = triplet_recall(meet_ref, meet_est, seg_dur)
-    precision = triplet_recall(meet_est, meet_ref, seg_dur)
-    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
 
-
-def triplet_recall(meet_ref, meet_est, seg_dur):
-    per_segment_recall = []
+def _segment_triplet_components(meet_ref, meet_est, seg_dur, transitive=True):
+    # Get out two list: weighted intersection and total of ref and est
+    # given a segment idx, their relevance against each other segment.
+    intersections = []
+    normalizers = []
     for seg_idx in range(len(seg_dur)):
-        # get per segment recall
-        per_segment_recall.append(
-            _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_dur)
+        ref_rel_against_seg_i = meet_ref[seg_idx, :]
+        est_rel_against_seg_i = meet_est[seg_idx, :]
+
+        # use count inversions to get normalizer and number of inversions
+        inversions, normalizer = _compare_segment_rankings(
+            ref_rel_against_seg_i,
+            est_rel_against_seg_i,
+            ref_w=seg_dur,
+            est_w=seg_dur,
+            transitive=transitive,
         )
+        intersections.append(normalizer - inversions)
+        normalizers.append(normalizer)
 
-    per_segment_recall = np.array(per_segment_recall)
-    # normalize by duration.
-    valid_seg = ~np.isnan(per_segment_recall)
-    if np.sum(seg_dur[valid_seg]) == 0:
-        return 0.0
-    else:
-        return np.sum(per_segment_recall[valid_seg] * seg_dur[valid_seg]) / np.sum(
-            seg_dur[valid_seg]
-        )
+    return np.array(intersections), np.array(normalizers)
 
 
-def boundary_counts(hier_itvls: list, trim=True):
+def boundary_counts(hier_itvls: list, trim=False):
     """
     Compute the boundary counts for a hierarchy of intervals.
 
@@ -114,7 +128,7 @@ def query_salience(bs_sals: dict, query_bs: np.ndarray, match_tolerance_window=0
 
     returns: a numpy array of salience.
     """
-    bs = np.asarray(list(bs_sals.keys()))
+    bs = np.asarray(sorted(bs_sals.keys()))
     hits = mir_eval.util.match_events(query_bs, bs, window=match_tolerance_window)
 
     # q, b are match indices
@@ -124,27 +138,24 @@ def query_salience(bs_sals: dict, query_bs: np.ndarray, match_tolerance_window=0
     return queried_sal
 
 
-def rated_bs_recall(ref_sal: np.ndarray, est_sal: np.ndarray):
+def rated_bs_components(ref_sal: np.ndarray, est_sal_at_ref_bs: np.ndarray):
     # Any pairs involving a zero salience are ignored, this is to have a control on the included pairs.
     # get where both saliences are non zero
-    valid_mask = (ref_sal > 0) * (est_sal > 0)
-    hit_recall = (
-        np.count_nonzero(valid_mask) / len(ref_sal) if len(ref_sal) > 0 else 1.0
-    )
-
+    out = dict()
+    valid_mask = (ref_sal > 0) * (est_sal_at_ref_bs > 0)
     inversions, valid_pairs = mir_eval.hierarchy._compare_frame_rankings(
         ref_sal[valid_mask],
-        est_sal[valid_mask],
+        est_sal_at_ref_bs[valid_mask],
         transitive=True,
     )
-    rank_recall = (
-        (valid_pairs - inversions) / valid_pairs if valid_pairs > 0 else np.nan
-    )
-    print("valid_pairs, inversions:", valid_pairs, inversions)
-    return hit_recall, rank_recall
+    out["mu"] = np.count_nonzero(valid_mask)
+    out["beta"] = len(ref_sal)
+    out["pairs_cap"] = int(valid_pairs - inversions)
+    out["pairs"] = int(valid_pairs)
+    return out
 
 
-def bmeasure(ref_itvls, est_itvls, window=0.5, beta=1.0, trim=True):
+def bmeasure(ref_itvls, est_itvls, window=0.5, trim=False):
     ref_bs_sal = boundary_counts(ref_itvls, trim=trim)
     est_bs_sal = boundary_counts(est_itvls, trim=trim)
     ref_sal = np.array(list(ref_bs_sal.values()))
@@ -158,24 +169,16 @@ def bmeasure(ref_itvls, est_itvls, window=0.5, beta=1.0, trim=True):
         ref_bs_sal, np.array(list(est_bs_sal.keys())), match_tolerance_window=window
     )
 
-    # Compute the recall and precision
-    result = dict()
-    hit_r, rank_r = rated_bs_recall(ref_sal, est_sal_at_ref_bs)
-    hit_p, rank_p = rated_bs_recall(est_sal, ref_sal_at_est_bs)
-    result["hr_recall"] = hit_r
-    result["sr_recall"] = rank_r
-    result["hr_prec"] = hit_p
-    result["sr_prec"] = rank_p
-
-    # we use the harmonic mean of the rank and hit measure to get the bmeasure.
-    result["b_recall"] = (
-        hit_r if rank_r is np.nan else mir_eval.util.f_measure(hit_r, rank_r)
-    )
-    result["b_prec"] = (
-        hit_p if rank_p is np.nan else mir_eval.util.f_measure(hit_p, rank_p)
-    )
-    return result, mir_eval.util.f_measure(
-        result["b_prec"], result["b_recall"], beta=beta
+    # Compute the components and precision
+    ref_comp = rated_bs_components(ref_sal, est_sal_at_ref_bs)
+    est_comp = rated_bs_components(est_sal, ref_sal_at_est_bs)
+    return dict(
+        mu=ref_comp["mu"],
+        ref_beta=ref_comp["beta"],
+        est_beta=est_comp["beta"],
+        pairs_cap=ref_comp["pairs_cap"],
+        ref_pairs=ref_comp["pairs"],
+        est_pairs=est_comp["pairs"],
     )
 
 
@@ -244,22 +247,6 @@ def _common_boundaries(list_of_itvls):
     return np.array(sorted(bs))
 
 
-def _segment_triplet_recall(meet_ref, meet_est, seg_idx, seg_dur, transitive=True):
-    # given a segment idx, their relevance against each other segment.
-    ref_rel_againt_seg_i = meet_ref[seg_idx, :]
-    est_rel_againt_seg_i = meet_est[seg_idx, :]
-
-    # use count inversions to get normalizer and number of inversions
-    inversions, normalizer = _compare_segment_rankings(
-        ref_rel_againt_seg_i,
-        est_rel_againt_seg_i,
-        ref_w=seg_dur,
-        est_w=seg_dur,
-        transitive=transitive,
-    )
-    return 1.0 - inversions / normalizer if normalizer > 0 else np.nan
-
-
 def _label_at_ts(itvls, labels, ts):
     """
     Assign labels to timestamps using interval boundaries.
@@ -296,7 +283,8 @@ def _count_weighted_inversions(a, wa, b, wb):
     wb_sum = np.bincount(inv_b, weights=wb)
 
     inversions = 0.0
-    i = j = 0
+    i = 0
+    j = 0
     while i < len(ua) and j < len(ub):
         if ua[i] < ub[j]:
             i += 1
@@ -306,7 +294,7 @@ def _count_weighted_inversions(a, wa, b, wb):
     return inversions
 
 
-def _compare_segment_rankings(ref, est, ref_w=None, est_w=None, transitive=False):
+def _compare_segment_rankings(ref, est, ref_w=None, est_w=None, transitive=True):
     """
     Compute weighted ranking disagreements between two lists.
 
@@ -318,7 +306,7 @@ def _compare_segment_rankings(ref, est, ref_w=None, est_w=None, transitive=False
         Estimated ranked list.
     ref_w : np.ndarray, shape=(n,), optional
         Weights for ref (default: ones).
-    we : np.ndarray, shape=(n,), optional
+    est_w : np.ndarray, shape=(n,), optional
         Weights for est (default: ones).
     transitive : bool, optional
         If True, compare all pairs of distinct ref levels;
