@@ -570,3 +570,13 @@ def flat2S(anno, sr=None, Bhat_bw=None):
     """Convert flat annotations to hierarchical format."""
     segment = openseg2mirevalflat(anno)
     return S(*segment, sr=sr, Bhat_bw=Bhat_bw)
+
+
+def sal2H(bs_sal, sr=None, Bhat_bw=None):
+    """Convert salience dictionary to hierarchical format."""
+    boundaries_by_level = []
+    total_levels = max(bs_sal.values())
+    for level in range(total_levels, 0, -1):  # Iterate from most to least salient
+        level_boundaries = [b for b in bs_sal if bs_sal[b] >= level]
+        boundaries_by_level.append(boundaries_to_intervals(sorted(level_boundaries)))
+    return H(boundaries_by_level, sr=sr, Bhat_bw=Bhat_bw)

@@ -91,13 +91,6 @@ def triplet_recall(meet_ref, meet_est, seg_dur):
         )
 
 
-# def bmeasure(ref_itvls, est_itvls, beta=1.0, trim=False):
-# # make sure est the same lenght as ref
-# aligned_hiers = align_hier(ref_itvls, None, est_itvls, None)
-
-# return p, r, mir_eval.util.f_measure(p, r, beta=beta)
-
-
 def boundary_counts(hier_itvls: list, trim=True):
     """
     Compute the boundary counts for a hierarchy of intervals.
@@ -166,13 +159,24 @@ def bmeasure(ref_itvls, est_itvls, window=0.5, beta=1.0, trim=True):
     )
 
     # Compute the recall and precision
+    result = dict()
     hit_r, rank_r = rated_bs_recall(ref_sal, est_sal_at_ref_bs)
     hit_p, rank_p = rated_bs_recall(est_sal, ref_sal_at_est_bs)
+    result["hr_recall"] = hit_r
+    result["sr_recall"] = rank_r
+    result["hr_prec"] = hit_p
+    result["sr_prec"] = rank_p
 
     # we use the harmonic mean of the rank and hit measure to get the bmeasure.
-    recall = hit_r if rank_r is np.nan else mir_eval.util.f_measure(hit_r, rank_r)
-    precision = hit_p if rank_p is np.nan else mir_eval.util.f_measure(hit_p, rank_p)
-    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
+    result["b_recall"] = (
+        hit_r if rank_r is np.nan else mir_eval.util.f_measure(hit_r, rank_r)
+    )
+    result["b_prec"] = (
+        hit_p if rank_p is np.nan else mir_eval.util.f_measure(hit_p, rank_p)
+    )
+    return result, mir_eval.util.f_measure(
+        result["b_prec"], result["b_recall"], beta=beta
+    )
 
 
 def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray):
