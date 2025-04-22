@@ -2,6 +2,8 @@ import mir_eval, itertools, collections
 import numpy as np
 from scipy import stats
 from scipy.sparse import coo_matrix
+import pandas as pd
+from mir_eval.util import f_measure
 
 
 def pairwise(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
@@ -24,7 +26,7 @@ def pairwise(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
 
     precision = intersection_size / est_sig_pair_size
     recall = intersection_size / ref_sig_pair_size
-    return precision, recall, mir_eval.util.f_measure(precision, recall, beta=beta)
+    return precision, recall, f_measure(precision, recall, beta=beta)
 
 
 def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
@@ -55,10 +57,10 @@ def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
     z_est = stats.entropy(p_est, base=2)
     r = (1.0 - true_given_est / z_ref) if z_ref > 0 else 0
     p = (1.0 - pred_given_ref / z_est) if z_est > 0 else 0
-    return p, r, mir_eval.util.f_measure(p, r, beta=beta)
+    return p, r, f_measure(p, r, beta=beta)
 
 
-def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels):
+def lmeasure_components(ref_itvls, ref_labels, est_itvls, est_labels):
     # make sure est the same lenght as ref
     aligned_hiers = align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
     # Make common grid
@@ -74,12 +76,25 @@ def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels):
     _, est_triplets = _segment_triplet_components(
         est_meet, ref_meet, seg_dur, transitive=True
     )
-    weight = seg_dur / np.sum(seg_dur)
+    seg_weights = seg_dur / np.sum(seg_dur)
     return (
-        triplet_caps * weight / dur_sq,
+        triplet_caps / dur_sq,
         ref_triplets / dur_sq,
         est_triplets / dur_sq,
+        seg_weights,
     )
+
+
+def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
+    triplet_caps, ref_triplets, est_triplets, seg_weights = lmeasure_components(
+        ref_itvls, ref_labels, est_itvls, est_labels
+    )
+    # Compute the precision and recall
+    seg_precision = triplet_caps / est_triplets
+    seg_recall = triplet_caps / ref_triplets
+    precision = np.sum(seg_precision * seg_weights)
+    recall = np.sum(seg_recall * seg_weights)
+    return precision, recall, f_measure(precision, recall, beta=beta)
 
 
 def _segment_triplet_components(meet_ref, meet_est, seg_dur, transitive=True):
@@ -155,7 +170,7 @@ def rated_bs_components(ref_sal: np.ndarray, est_sal_at_ref_bs: np.ndarray):
     return out
 
 
-def bmeasure(ref_itvls, est_itvls, window=0.5, trim=False):
+def bmeasure_components(ref_itvls, est_itvls, window=0.5, trim=False):
     ref_bs_sal = boundary_counts(ref_itvls, trim=trim)
     est_bs_sal = boundary_counts(est_itvls, trim=trim)
     ref_sal = np.array(list(ref_bs_sal.values()))
@@ -172,14 +187,35 @@ def bmeasure(ref_itvls, est_itvls, window=0.5, trim=False):
     # Compute the components and precision
     ref_comp = rated_bs_components(ref_sal, est_sal_at_ref_bs)
     est_comp = rated_bs_components(est_sal, ref_sal_at_est_bs)
-    return dict(
-        mu=ref_comp["mu"],
-        ref_beta=ref_comp["beta"],
-        est_beta=est_comp["beta"],
-        pairs_cap=ref_comp["pairs_cap"],
-        ref_pairs=ref_comp["pairs"],
-        est_pairs=est_comp["pairs"],
-    )
+    data = {
+        "cap": [ref_comp["mu"], ref_comp["pairs_cap"]],
+        "est": [est_comp["beta"], est_comp["pairs"]],
+        "ref": [ref_comp["beta"], ref_comp["pairs"]],
+    }
+    return pd.DataFrame(data, index=["beta", "pi"])
+
+
+def bmeasure(ref_itvls, est_itvls, window=0.5, trim=False, beta=1.0):
+    b_comp = bmeasure_components(ref_itvls, est_itvls, window=window, trim=trim)
+    print(b_comp)
+    # Make a table for HR SR precision and recall, and their harmonic means.
+    # Simplify repeated divisions by vectorizing precision and recall calculations
+    prec = b_comp["cap"].div(b_comp["est"]).where(b_comp["est"] > 0, np.nan)
+    rec = b_comp["cap"].div(b_comp["ref"]).where(b_comp["ref"] > 0, np.nan)
+
+    hr_score = f_measure(prec.loc["beta"], rec.loc["beta"], beta=beta)
+    sr_score = f_measure(prec.loc["pi"], rec.loc["pi"], beta=beta)
+    b_score = f_measure(hr_score, sr_score, beta=beta)
+    b_precision = f_measure(prec.loc["beta"], prec.loc["pi"], beta=beta)
+    b_recall = f_measure(rec.loc["beta"], rec.loc["pi"], beta=beta)
+
+    data = {
+        "prec": [prec.loc["beta"], prec.loc["pi"], b_precision],
+        "recall": [rec.loc["beta"], rec.loc["pi"], b_recall],
+        "f1": [hr_score, sr_score, b_score],
+    }
+
+    return pd.DataFrame(data, index=["hr", "sr", "b"])
 
 
 def labels_at_ts(hier_itvls: list, hier_labels: list, ts: np.ndarray):
