@@ -241,3 +241,42 @@ def compare_boundary_metrics(tid, cache_dir="./boundary_metrics", recompute=Fals
     # Save to NetCDF
     result_da.to_netcdf(output_filepath)
     return result_da
+
+
+def compare_bmetrics_on_refs(tid, cache_dir="./ref_boundary_metrics", recompute=False):
+    salami_hiers = list(fio.salami_ref_hiers(tid=str(tid)).values())
+    if len(salami_hiers) <= 1:
+        # print(f"Track {tid} has multiple hierarchies, skipping.")
+        return
+
+    # Check if already computed
+    os.makedirs(cache_dir, exist_ok=True)
+    output_filepath = os.path.join(cache_dir, f"{tid}.nc")
+    if os.path.exists(output_filepath) and not recompute:
+        # print(f"Already computed {tid}.")
+        return xr.open_dataarray(output_filepath)
+
+    result_coords = dict(
+        tid=[tid],
+        perf=["p", "r", "f"],
+        metric=["hr", "sr", "b", "t"],
+        window=["0.5", "3"],
+    )
+    result_da = xr.DataArray(dims=result_coords.keys(), coords=result_coords)
+
+    ref = salami_hiers[0].unique_labeling()
+    est = salami_hiers[1].unique_labeling()
+    for window in result_coords["window"]:
+        # Compute the components
+        score_df = mtr.bmeasure(ref.itvls, est.itvls, trim=False, window=float(window))
+        score_df.loc["t"] = mtr.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)
+        result_da.loc[
+            dict(
+                window=window,
+                tid=tid,
+            )
+        ] = score_df.T
+
+    # Save to NetCDF
+    result_da.to_netcdf(output_filepath)
+    return result_da
