@@ -200,42 +200,43 @@ def compare_boundary_metrics(tid, cache_dir="./boundary_metrics", recompute=Fals
 
     # Check if already computed
     os.makedirs(cache_dir, exist_ok=True)
-    output_filepath = os.path.join(cache_dir, f"b_{tid}.nc")
+    output_filepath = os.path.join(cache_dir, f"{tid}.nc")
     if os.path.exists(output_filepath) and not recompute:
         print(f"Already computed {tid}.")
         return xr.open_dataarray(output_filepath)
 
-    adobe_hier = next(iter(fio.salami_adobe_hiers(tid=str(tid)).values()))
+    adobe_hiers = fio.salami_adobe_hiers(tid=str(tid))
 
     # compute and save results
     result_coords = dict(
         tid=[tid],
         anno_id=[0, 1],
-        component=["cap", "ref", "est"],
-        event=["beta", "pair", "T"],
-        window=[0.5, 3],
+        est_id=list(adobe_hiers.keys()),
+        perf=["p", "r", "f"],
+        metric=["hr", "sr", "b", "t"],
+        window=["0.5", "3"],
     )
     result_da = xr.DataArray(dims=result_coords.keys(), coords=result_coords)
+
     for anno_id, ref in enumerate(salami_hiers):
-        ref = ref.unique_labeling()
-        est = adobe_hier.unique_labeling()
-        ref_itvls, ref_labels, est_itvls, est_labels = mtr.align_hier(
-            ref.itvls, ref.labels, est.itvls, est.labels
-        )
-        for window in result_coords["window"]:
-            # Compute the components
-            b_scores = mtr.bmeasure(ref_itvls, est_itvls, trim=False, window=window)
-            result_da.loc[
-                dict(window=window, anno_id=anno_id, tid=tid, event="beta")
-            ] = [b_scores["mu"], b_scores["ref_beta"], b_scores["est_beta"]]
-            result_da.loc[
-                dict(window=window, anno_id=anno_id, tid=tid, event="pair")
-            ] = [b_scores["pairs_cap"], b_scores["ref_pairs"], b_scores["est_pairs"]]
-            result_da.loc[dict(window=window, anno_id=anno_id, tid=tid, event="T")] = [
-                b_scores["T_mu"],
-                b_scores["T_ref_beta"],
-                b_scores["T_est_beta"],
-            ]
+        for est_id, est in adobe_hiers.items():
+            ref = ref.unique_labeling()
+            est = est.unique_labeling()
+            for window in result_coords["window"]:
+                # Compute the components
+                score_df = mtr.bmeasure(
+                    ref.itvls, est.itvls, trim=False, window=float(window)
+                )
+                score_df.loc["t"] = mtr.lmeasure(
+                    ref.itvls, ref.labels, est.itvls, est.labels
+                )
+                result_da.loc[
+                    dict(
+                        anno_id=anno_id,
+                        est_id=est_id,
+                        window=window,
+                    )
+                ] = score_df.T
 
     # Save to NetCDF
     result_da.to_netcdf(output_filepath)
