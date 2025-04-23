@@ -60,40 +60,56 @@ def vmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
     return p, r, f_measure(p, r, beta=beta)
 
 
-def lmeasure_components(ref_itvls, ref_labels, est_itvls, est_labels):
-    # make sure est the same lenght as ref
-    aligned_hiers = align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
-    # Make common grid
-    common_itvls, ref_labs, est_labs = make_common_itvls(*aligned_hiers)
+def triplet_components(ref_itvls, ref_labels, est_itvls, est_labels, transitive=True):
+    # align hierarchies and build common grid
+    aligned = align_hier(ref_itvls, ref_labels, est_itvls, est_labels)
+    common_itvls, ref_labs, est_labs = make_common_itvls(*aligned)
 
-    dur_sq = (common_itvls[-1, -1] - common_itvls[0, 0]) ** 2
+    # segment durations
     seg_dur = np.diff(common_itvls, axis=1).flatten()
+    dur_sq = np.sum(seg_dur) ** 2
+
+    # meet matrices
     ref_meet = _meet(ref_labs)
     est_meet = _meet(est_labs)
-    triplet_caps, ref_triplets = _segment_triplet_components(
-        ref_meet, est_meet, seg_dur, transitive=True
+
+    # triplet counts per segment
+    triplet_cap, triplet_ref = _segment_triplet_components(
+        ref_meet, est_meet, seg_dur, transitive=transitive
     )
-    _, est_triplets = _segment_triplet_components(
-        est_meet, ref_meet, seg_dur, transitive=True
+    _, triplet_est = _segment_triplet_components(
+        est_meet, ref_meet, seg_dur, transitive=transitive
     )
-    seg_weights = seg_dur / np.sum(seg_dur)
-    return (
-        triplet_caps / dur_sq,
-        ref_triplets / dur_sq,
-        est_triplets / dur_sq,
-        seg_weights,
+
+    # assemble dataframe
+    return pd.DataFrame(
+        {
+            "dur": seg_dur,
+            "cap": triplet_cap / dur_sq,
+            "ref": triplet_ref / dur_sq,
+            "est": triplet_est / dur_sq,
+        }
     )
 
 
-def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0):
-    triplet_caps, ref_triplets, est_triplets, seg_weights = lmeasure_components(
-        ref_itvls, ref_labels, est_itvls, est_labels
+def lmeasure(ref_itvls, ref_labels, est_itvls, est_labels, beta=1.0, transitive=True):
+    # Now lmeasure_components returns a DataFrame with columns: dur, cap, ref, est
+    t_comp = triplet_components(
+        ref_itvls, ref_labels, est_itvls, est_labels, transitive=transitive
     )
-    # Compute the precision and recall
-    seg_precision = triplet_caps / est_triplets
-    seg_recall = triplet_caps / ref_triplets
-    precision = np.sum(seg_precision * seg_weights)
-    recall = np.sum(seg_recall * seg_weights)
+
+    # segment durations and normalized weights
+    durations = t_comp["dur"]
+    weights = durations / durations.sum()
+
+    # per‐segment precision & recall
+    seg_precision = t_comp["cap"] / t_comp["est"]
+    seg_recall = t_comp["cap"] / t_comp["ref"]
+
+    # weighted-average precision & recall
+    precision = seg_precision.dot(weights)
+    recall = seg_recall.dot(weights)
+
     return precision, recall, f_measure(precision, recall, beta=beta)
 
 
@@ -197,7 +213,6 @@ def bmeasure_components(ref_itvls, est_itvls, window=0.5, trim=False):
 
 def bmeasure(ref_itvls, est_itvls, window=0.5, trim=False, beta=1.0):
     b_comp = bmeasure_components(ref_itvls, est_itvls, window=window, trim=trim)
-    print(b_comp)
     # Make a table for HR SR precision and recall, and their harmonic means.
     # Simplify repeated divisions by vectorizing precision and recall calculations
     prec = b_comp["cap"].div(b_comp["est"]).where(b_comp["est"] > 0, np.nan)
