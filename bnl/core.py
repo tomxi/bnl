@@ -427,7 +427,7 @@ class H:
             depth = self.d
         intervals = utils.cluster_boundaries(boundaries, novelty, self.ticks, depth)
 
-        return H(intervals, sr=self.sr, Bhat_bw=self.Bhat_bw)
+        return intervals
 
     def decode_L(self, itvls, min_k=2):
         """decode labels from the coarsest to most fine, using increasing k from eigen-gap."""
@@ -443,9 +443,9 @@ class H:
     def decode(self, depth=4, min_k=2, **kwargs):
         """Decode the hierarchical segmentation."""
         # Decode boundaries
-        new_H = self.decode_B(depth=depth, **kwargs)
+        new_itvls = self.decode_B(depth=depth, **kwargs)
         # Decode labels
-        return self.decode_L(new_H.itvls, min_k=min_k)
+        return self.decode_L(new_itvls, min_k=min_k)
 
     def force_mono_B(self, absorb_window=0):
         """Force monotonic boundaries across levels.
