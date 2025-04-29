@@ -16,3 +16,4 @@ profile.out
 
 scripts/depth_sweep/*
 scripts/.ipynb_checkpoints
+bmeasure_exp/ref_boundary_metrics
