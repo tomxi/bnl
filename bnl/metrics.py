@@ -220,9 +220,15 @@ def bmeasure(ref_itvls, est_itvls, window=0.5, trim=False, beta=1.0):
 
     hr_score = f_measure(prec.loc["beta"], rec.loc["beta"], beta=beta)
     sr_score = f_measure(prec.loc["pi"], rec.loc["pi"], beta=beta)
-    b_score = f_measure(hr_score, sr_score, beta=beta)
-    b_precision = f_measure(prec.loc["beta"], prec.loc["pi"], beta=beta)
-    b_recall = f_measure(rec.loc["beta"], rec.loc["pi"], beta=beta)
+    
+    if np.isnan(sr_score):
+        b_precision = prec.loc["beta"]
+        b_recall = rec.loc["beta"]
+    else:
+        b_precision = f_measure(prec.loc["beta"], prec.loc["pi"])
+        b_recall = f_measure(rec.loc["beta"], rec.loc["pi"])
+
+    b_score = f_measure(b_precision, b_recall, beta=beta)
 
     data = {
         "prec": [prec.loc["beta"], prec.loc["pi"], b_precision],
