@@ -2,6 +2,7 @@ from . import fio, mtr
 import xarray as xr
 import os, time, mir_eval, warnings, json
 import numpy as np
+import pandas as pd
 
 
 # warnings.filterwarnings("ignore", category=UserWarning, module="mir_eval")
@@ -280,3 +281,65 @@ def compare_bmetrics_on_refs(tid, cache_dir="./ref_boundary_metrics", recompute=
     # Save to NetCDF
     result_da.to_netcdf(output_filepath)
     return result_da
+
+
+def compare_bmetrics_on_ests(tid, cache_dir="./est_boundary_metrics", recompute=False):
+    refs, ests = fio.salami_annos(tid=str(tid))
+
+    # Check if already computed
+    os.makedirs(cache_dir, exist_ok=True)
+    output_filepath = os.path.join(cache_dir, f"{tid}.nc")
+    if os.path.exists(output_filepath) and not recompute:
+        # print(f"Already computed {tid}.")
+        return xr.open_dataarray(output_filepath)
+
+    result_coords = dict(
+        tid=[tid],
+        perf=["p", "r", "f"],
+        metric=["hr", "sr", "b", "t"],
+        window=["0.5", "3"],
+        mono_casting=["naive", "absorb", "bsc"],
+        depth=["default", "3"],
+    )
+    result_da = xr.DataArray(dims=result_coords.keys(), coords=result_coords)
+
+    ref = refs[0].unique_labeling()
+    est = ests[1].unique_labeling()
+    for window in result_coords["window"]:
+        # Compute the components
+        score_df = mtr.bmeasure(ref.itvls, est.itvls, trim=False, window=float(window))
+        score_df.loc["t"] = mtr.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)
+        result_da.loc[
+            dict(
+                window=window,
+                tid=tid,
+                mono_casting="absorb",
+                depth="default",
+            )
+        ] = score_df.T
+
+    # Save to NetCDF
+    result_da.to_netcdf(output_filepath)
+    return result_da
+
+
+# Need to figure out how to cast normal boundaries to several groups using the same logic as bsc.
+
+
+def b_metrics(ref, est, mono_casting="absorb", absorb_window=0, **bsc_kwargs):
+    # mono_casting can also be 'bsc'
+    # Return [p, r, f] * [0.5, 3] || [hr sr b t]
+    est = est.unique_labeling().prune_identical_levels()
+
+    if mono_casting == "absorb":
+        est_itvls = (
+            est.force_mono_B(absorb_window=absorb_window).prune_identical_levels().itvls
+        )
+    elif mono_casting == "bsc":
+        est_itvls = est.decode_B(**bsc_kwargs)
+    elif mono_casting is None:
+        est_itvls = est.force_mono_B(absorb_window=0).prune_identical_levels().itvls
+    else:
+        raise AttributeError("mono_casting can only be None, 'absorb' or 'bsc'")
+
+    return mtr.bmeasure(ref.itvls, est_itvls, trim=False, window=3)
