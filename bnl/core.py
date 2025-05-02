@@ -11,7 +11,7 @@ from .formatting import (
     mirevalflat2openseg,
     openseg2mirevalflat,
 )
-from .external import expand_hierarchy, reindex
+from .external import expand_hierarchy
 from . import viz, utils
 
 __all__ = ["S", "H", "multi2H", "levels2H", "flat2S", "sal2H"]
@@ -52,7 +52,7 @@ class S:
         Populates ._Bhat and .Bhat_bw
         """
         if self.Bhat_bw == bw:
-            return
+            return None
         self.Bhat_bw = bw
         boundaries = self.beta[1:-1]
         if len(boundaries) == 0:
@@ -63,11 +63,12 @@ class S:
             kde_bw = bw / boundaries.std(ddof=1) if boundaries.std(ddof=1) != 0 else bw
             kde = stats.gaussian_kde(boundaries, bw_method=kde_bw)
             self._Bhat = kde
+        return None
 
     def update_sr(self, sr):
         """Update sampling rate and ticks."""
         if self.sr == sr:
-            return
+            return None
         self.sr = float(sr)
         ## Use the same logic as mir_eval to build the ticks
         # Figure out how many frames we need
@@ -79,6 +80,7 @@ class S:
         )
 
         self.ticks = np.arange(n_frames + 1) * frame_size + self.T0
+        return None
 
     def B(self, x):
         """Return whether x is a boundary with integers 1/0"""
@@ -147,10 +149,6 @@ class S:
         # Plot the segments
         return viz.segment(self.itvls, self.labels, ax=ax, **new_kwargs)
 
-    def unique_labeling(self):
-        """Return a new S with default labeling."""
-        return S(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
-
     def expand(self, format="slm", always_include=False):
         """Expand the segmentation into a hierarchical format."""
         # Convert to hierarchical format using the specified format
@@ -193,8 +191,6 @@ class H:
 
         if labels is None:
             labels = [[str(s) for s in itvl[:, 0]] for itvl in itvls]
-        # make labels list of arrays
-        # labels = [np.asarray(lvl_labs) for lvl_labs in labels]
 
         self.levels = [
             S(i, l, sr=sr, Bhat_bw=Bhat_bw, time_decimal=time_decimal)
@@ -213,7 +209,6 @@ class H:
         """Update sampling rate and ticks for all levels."""
         for level in self.levels:
             level.update_sr(sr)
-
         self.sr = level.sr
         self.ticks = level.ticks
 
@@ -277,17 +272,6 @@ class H:
             [(level + 1) * (Ahats[level] > 0).astype(int) for level in range(self.d)]
         )
         return np.max(indexed_Ahats, axis=0)
-
-    def has_mono_L(self):
-        """Check if labels are monotonic across levels."""
-        return np.allclose(self.A(bs=self.beta), self.Astar(bs=self.beta))
-
-    def has_mono_B(self):
-        """Check if boundaries are monotonic across levels."""
-        return all(
-            set(self.levels[i - 1].beta).issubset(self.levels[i].beta)
-            for i in range(1, self.d)
-        )
 
     def M(self, bs=None, level_weights=None):
         """Return the resampled agreement area matrix."""
@@ -373,14 +357,6 @@ class H:
 
         return axs[0].get_figure(), axs
 
-    def relabel(self):
-        """Re-label the hierarchical segmentation."""
-        # Create a new set of labels for each level
-        ext_format = [[i, l] for i, l in zip(self.itvls, self.labels)]
-        new_hier = reindex(ext_format)
-        new_labels = [lvl[1] for lvl in new_hier]
-        return H(self.itvls, new_labels, sr=self.sr, Bhat_bw=self.Bhat_bw)
-
     def decode_B(
         self,
         depth=None,
@@ -446,90 +422,6 @@ class H:
         new_itvls = self.decode_B(depth=depth, **kwargs)
         # Decode labels
         return self.decode_L(new_itvls, min_k=min_k)
-
-    def force_mono_B(self, absorb_window=0):
-        """Force monotonic boundaries across levels.
-        If a boundary is present in a parent level, it has to appear in a child level.
-        If there were boundaries in the child level within absorb_window of the new created boundaries, get rid of them.
-        """
-        ## Start from the first level and work down
-        new_levels = []
-        for level in self.levels:
-            if len(new_levels) == 0:
-                new_levels.append(level)
-                continue
-            parent_bounds = new_levels[-1].beta
-            child_bounds = level.beta
-            if set(parent_bounds).issubset(child_bounds):
-                new_levels.append(level)
-            else:
-                # Get rid of boundaries in the child level within absorb_window of any parent boundaries
-                if absorb_window:
-                    child_bounds = set(
-                        b
-                        for b in child_bounds
-                        if all(abs(b - pb) > absorb_window for pb in parent_bounds)
-                    )
-                new_child_bounds = sorted(list(set(parent_bounds).union(child_bounds)))
-                new_child_itvls = boundaries_to_intervals(new_child_bounds)
-                # new_child_temp_labels = [level.L(b) for b in new_child_bounds[:-1]]
-                # New labeling Strategy: for each segment, look for max overlap in the old segment.
-                new_child_labels = [
-                    utils.best_matching_label(query_itvl, level.itvls, level.labels)
-                    for query_itvl in new_child_itvls
-                ]
-                new_levels.append(S(new_child_itvls, new_child_labels))
-        return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
-
-    def force_mono_L(self, absorb_window=0):
-        """Force monotonic labels across levels.
-        We do this by prepending parent labels to child labels.
-        """
-        ## First check boundary monotonicity, and force it if necessary
-        self_mono_B = self.force_mono_B(absorb_window=absorb_window)
-
-        ## Now we check label monotonicity
-        if self_mono_B.has_mono_L():
-            return self_mono_B
-
-        ## Start from the first level and work down
-        new_levels = [self_mono_B.levels[0]]
-        for i in range(1, self_mono_B.d):
-            level = self_mono_B.levels[i]
-            # Prepend parent labels to child labels for each segment in the child
-            parent_level = new_levels[-1]
-            new_child_labels = [
-                parent_level(b) + "." + level(b) for b in level.beta[:-1]
-            ]
-            new_levels.append(S(level.itvls, new_child_labels))
-        return levels2H(new_levels, sr=self.sr, Bhat_bw=self.Bhat_bw)
-
-    def prune_identical_levels(self, boundary_only=False):
-        """Prune identical levels."""
-        if boundary_only:
-            hier = H(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
-        else:
-            hier = self
-        new_levels = [hier.levels[0]]
-        for i in range(1, hier.d):
-            # Check if current level and previous level are identical in boundaries and label structure
-            # First check if they have the same boundaries
-            if np.array_equal(hier.levels[i].beta, hier.levels[i - 1].beta):
-                # Now check if the label agreement matrices are the same
-                # by evaluating both at the same set of boundaries
-                common_bs = hier.levels[i].beta
-                if np.allclose(
-                    hier.levels[i].A(bs=common_bs),
-                    new_levels[-1].A(bs=common_bs),
-                ):
-                    continue
-
-            new_levels.append(hier.levels[i])
-        return levels2H(new_levels, sr=hier.sr, Bhat_bw=hier.Bhat_bw)
-
-    def unique_labeling(self):
-        """Return a new H with default labeling."""
-        return H(self.itvls, sr=self.sr, Bhat_bw=self.Bhat_bw)
 
     def expand(self, format="slm", always_include=False):
         """Expand the hierarchy annotations using the specified format.
