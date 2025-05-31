@@ -286,19 +286,18 @@ def compare_bmetrics_on_refs(tid, cache_dir="./ref_boundary_metrics", recompute=
 
 
 def compare_bmetrics_on_ests(tid, cache_dir="./est_boundary_metrics", recompute=False):
+    # Load the reference and estimated annotations
+    refs, ests = fio.salami_annos(str(tid))
+    if len(refs) <= 1:
+        # print(f"Track {tid} don't have multiple hierarchy annotations, skipping.")
+        return
+
     # Check if already computed
     os.makedirs(cache_dir, exist_ok=True)
     output_filepath = os.path.join(cache_dir, f"{tid}.nc")
     if os.path.exists(output_filepath) and not recompute:
         # print(f"Already computed {tid}.")
         return xr.open_dataarray(output_filepath)
-
-    # Load the reference and estimated annotations
-    refs, ests = fio.salami_annos(str(tid))
-    ref = list(refs.values())[0]
-    est = list(ests.values())[1]
-    ref = mc.relabel(ref, strategy="unique")
-    est = mc.relabel(est, strategy="unique")
 
     # build result xarray data array
     result_coords = dict(
@@ -308,33 +307,55 @@ def compare_bmetrics_on_ests(tid, cache_dir="./est_boundary_metrics", recompute=
         window=["0.5", "3"],
         mono_casting=["naive", "absorb", "bsc"],
         depth=["default", "3"],
+        est_id=["mu1_gamma1", "mu5_gamma5", "mu1_gamma9"],
+        anno_id=["0", "1"],
     )
     result_da = xr.DataArray(dims=result_coords.keys(), coords=result_coords)
 
-    for window, mono_casting, depth in itertools.product(
-        result_coords["window"], result_coords["mono_casting"], result_coords["depth"]
+    for window, mono_casting, depth, est_key, aid in itertools.product(
+        result_coords["window"],
+        result_coords["mono_casting"],
+        result_coords["depth"],
+        result_coords["est_id"],
+        result_coords["anno_id"],
     ):
+        est = mc.squash_levels(ests[est_key], max_depth=None, boundary_only=True)
+        ref = mc.squash_levels(
+            list(refs.values())[int(aid)], max_depth=None, boundary_only=True
+        )
+        max_depth = int(depth) if depth != "default" else None
+
         # prepare the est according to mono_casting
         if mono_casting == "absorb":
-            est = mc.prune_identical_levels(mc.force_mono_B(est, absorb_window=1))
+            fixed_est = mc.relabel(
+                mc.force_mono_B(est, absorb_window=1), strategy="unique"
+            )
         elif mono_casting == "bsc":
-            est = H(est.decode_B(sr=5, bw=1, depth=3))
+            fixed_est = H(est.decode_B(sr=10, bw=1, depth=max_depth))
         elif mono_casting == "naive":
-            est = mc.prune_identical_levels(mc.force_mono_B(est, absorb_window=0))
+            fixed_est = mc.relabel(
+                mc.force_mono_B(est, absorb_window=0), strategy="unique"
+            )
 
         # squash levels if depth is not default
         if depth != "default":
-            est = mc.squash_levels(est, max_depth=int(depth))
+            fixed_est = mc.squash_levels(fixed_est, max_depth=max_depth)
 
         # Compute the components
-        score_df = mtr.bmeasure(ref.itvls, est.itvls, trim=False, window=float(window))
-        score_df.loc["t"] = mtr.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)
+        score_df = mtr.bmeasure(
+            ref.itvls, fixed_est.itvls, trim=False, window=float(window)
+        )
+        score_df.loc["t"] = mtr.lmeasure(
+            ref.itvls, ref.labels, fixed_est.itvls, fixed_est.labels
+        )
         result_da.loc[
             dict(
                 window=window,
                 tid=tid,
                 mono_casting=mono_casting,
                 depth=depth,
+                est_id=est_key,
+                anno_id=aid,
             )
         ] = score_df.T
 
