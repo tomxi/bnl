@@ -1,6 +1,6 @@
 """Basic tests for the core module."""
 
-from bnl.core import Segment, Hierarchy
+from bnl.core import Segment, Hierarchy  # Using absolute import from the package root
 
 
 def test_segment_creation():
