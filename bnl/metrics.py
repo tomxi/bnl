@@ -1,3 +1,27 @@
+# bnl/metrics.py
+# TODO: Review function names and parameters for clarity and consistency.
+#       - Functions currently take `ref_itvls, ref_labels, est_itvls, est_labels`.
+#         This is consistent with mir_eval but could be adapted to take `Segmentation` objects directly,
+#         which might simplify calls from user code, e.g., `lmeasure(ref_segmentation, est_segmentation)`.
+#         This would involve extracting .itvls and .labels inside the metric functions.
+#       - Parameter names like `hier_itvls` in `boundary_counts` are clear.
+#       - `bs_sals` in `query_salience` could be `boundary_salience_map`.
+#
+# General Note: Many functions in this module are direct or very close ports of
+# mir_eval.hierarchy and mir_eval.segment functionalities, adapted for the specific
+# internal data structures (list of interval arrays, list of label lists for hierarchies).
+# Future refactoring could involve:
+#   1. Directly using mir_eval functions where the overhead of converting to
+#      Segmentation objects and then back to mir_eval's expected format is minimal.
+#   2. Adapting these functions to take Segmentation objects as input, which would
+#      encapsulate the itvls/labels and provide a cleaner API if bnl is used as a library.
+#      This would mean `ref_obj.itvls, ref_obj.labels` etc. would be used internally.
+#   3. For functions like `_compare_segment_rankings`, `_count_weighted_inversions`,
+#      `_weighted_contingency`, these are low-level operations that mir_eval also implements.
+#      If mir_eval's versions are suitable and efficient, they could be used directly
+#      to reduce code duplication, provided the specific weighting and handling here
+#      are identical.
+
 import mir_eval, itertools, collections
 import numpy as np
 from scipy import stats

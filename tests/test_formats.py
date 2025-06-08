@@ -1,7 +1,7 @@
 import mir_eval
 import numpy as np
 import pytest
-from bnl import formatting as fmt
+from bnl import formats as fmt
 
 
 @pytest.fixture(scope="module")

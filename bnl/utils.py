@@ -1,3 +1,21 @@
+# bnl/utils.py
+# TODO: Review function names and parameters for clarity and consistency.
+#       - `quantize`: Consider if `sklearn.preprocessing.KBinsDiscretizer` (for 'kmeans')
+#         or `scipy.stats.mstats.mquantiles` (for 'percentile') could simplify or replace.
+#         Current implementation is custom.
+#       - `laplacian`, `eigen_gap_scluster`: Standard names, seem okay.
+#       - `slice_matrix`, `resample_matrix`: Custom logic for specific resampling.
+#         Review for edge cases (e.g., empty bounds, new_bounds outside old_bounds range).
+#       - `cluster_boundaries`: Uses `quantize`. Name is clear.
+#       - `pad_itvls`: Could potentially use `mir_eval.util.adjust_intervals`.
+#         The current implementation modifies intervals in-place. Consider returning new arrays
+#         to avoid side effects if that's preferred.
+#       - `fill_out_anno`: Operates on JAMS annotations. `mir_eval.util.adjust_intervals`
+#         might be relevant if working with interval arrays directly.
+#       - `best_matching_label`: Clear. Consider if `mir_eval.util.match_labeled_intervals` could be used,
+#         though this function seems to find a single best match based on overlap, which is specific.
+#       - `bs2grid_area`: Clear utility for creating an outer product of segment durations.
+
 import mir_eval, os
 import numpy as np
 

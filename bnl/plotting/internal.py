@@ -1,3 +1,13 @@
+# bnl/plotting/internal.py
+# TODO: Review function names and parameters for clarity and consistency.
+#       - `sq`: Could be `plot_similarity_matrix` or `plot_meet_matrix`.
+#       - `segment`: Parameter `ax` is conventional. `ytick` could be `y_axis_label`.
+#       - `label_style_dict`: Name is descriptive.
+#       - `create_fig`: Name is clear.
+#       - `plot_scatter_frame_vs_continuous`: Name is very specific, which is good.
+#         Parameters like `sel_dict` could be more explicitly named if its structure is fixed,
+#         e.g., `output_selector_dict`.
+
 # import librosa
 from librosa.display import TimeFormatter, specshow
 import numpy as np

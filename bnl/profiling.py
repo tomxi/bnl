@@ -1,10 +1,10 @@
-from . import fio, mtr, H
+from . import fio, metrics as mtr, core
 import xarray as xr
 import os, time, mir_eval, warnings, json
 import numpy as np
 import pandas as pd
 import itertools
-import bnl.mono_casting as mc
+import bnl.hierarchy as hier
 
 
 # warnings.filterwarnings("ignore", category=UserWarning, module="mir_eval")
@@ -223,8 +223,8 @@ def compare_boundary_metrics(tid, cache_dir="./boundary_metrics", recompute=Fals
 
     for anno_id, ref in enumerate(salami_hiers):
         for est_id, est in adobe_hiers.items():
-            ref = mc.relabel(ref, strategy="unique")
-            est = mc.relabel(est, strategy="unique")
+            ref = hier.relabel(ref, strategy="unique")
+            est = hier.relabel(est, strategy="unique")
             for window in result_coords["window"]:
                 # Compute the components
                 score_df = mtr.bmeasure(
@@ -267,8 +267,8 @@ def compare_bmetrics_on_refs(tid, cache_dir="./ref_boundary_metrics", recompute=
     )
     result_da = xr.DataArray(dims=result_coords.keys(), coords=result_coords)
 
-    ref = mc.relabel(salami_hiers[0], strategy="unique")
-    est = mc.relabel(salami_hiers[1], strategy="unique")
+    ref = hier.relabel(salami_hiers[0], strategy="unique")
+    est = hier.relabel(salami_hiers[1], strategy="unique")
     for window in result_coords["window"]:
         # Compute the components
         score_df = mtr.bmeasure(ref.itvls, est.itvls, trim=False, window=float(window))
@@ -319,27 +319,30 @@ def compare_bmetrics_on_ests(tid, cache_dir="./est_boundary_metrics", recompute=
         result_coords["est_id"],
         result_coords["anno_id"],
     ):
-        est = mc.squash_levels(ests[est_key], max_depth=None, boundary_only=True)
-        ref = mc.squash_levels(
+        est = hier.squash_levels(ests[est_key], max_depth=None, boundary_only=True)
+        ref = hier.squash_levels(
             list(refs.values())[int(aid)], max_depth=None, boundary_only=True
         )
         max_depth = int(depth) if depth != "default" else None
 
         # prepare the est according to mono_casting
         if mono_casting == "absorb":
-            fixed_est = mc.relabel(
-                mc.force_mono_B(est, absorb_window=1), strategy="unique"
+            fixed_est = hier.relabel(
+                hier.force_mono_B(est, absorb_window=1), strategy="unique"
             )
         elif mono_casting == "bsc":
-            fixed_est = H(est.decode_B(sr=10, bw=1, depth=max_depth))
+            # Assuming est is a Segmentation object, est.decode_B returns itvls
+            # and Segmentation constructor can handle itvls directly for hierarchical.
+            fixed_est = core.Segmentation(est.decode_B(sr=10, bw=1, depth=max_depth),
+                                           sr=est.sr, Bhat_bw=est.Bhat_bw, is_hierarchical=True)
         elif mono_casting == "naive":
-            fixed_est = mc.relabel(
-                mc.force_mono_B(est, absorb_window=0), strategy="unique"
+            fixed_est = hier.relabel(
+                hier.force_mono_B(est, absorb_window=0), strategy="unique"
             )
 
         # squash levels if depth is not default
         if depth != "default":
-            fixed_est = mc.squash_levels(fixed_est, max_depth=max_depth)
+            fixed_est = hier.squash_levels(fixed_est, max_depth=max_depth)
 
         # Compute the components
         score_df = mtr.bmeasure(

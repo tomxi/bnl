@@ -1,5 +1,7 @@
 import os, jams, json
-from . import multi2H, fmt, H
+from .core import multi_to_segmentation, Segmentation
+from . import formats as fmt
+
 
 ROOT_DATA_DIR = os.path.expanduser("~/data/")
 
@@ -22,8 +24,8 @@ def salami_ref_hiers(tid, salami_jams_dir="salami-jams/"):
             raise ValueError(
                 f"Upper and lower annotators do not match: {upper_annotator} vs {lower_annotator}"
             )
-        # Convert to multi2H format
-        ref_hiers[upper_annotator] = multi2H(
+        # Convert to multi_to_segmentation format
+        ref_hiers[upper_annotator] = multi_to_segmentation(
             fmt.openseg2multi([upper[anno_id], lower[anno_id]])
         )
     return ref_hiers
@@ -41,9 +43,11 @@ def salami_adobe_hiers(
     for opt, opt_str in zip(options, opt_strs):
         with open(os.path.join(ROOT_DATA_DIR, result_dir, opt, filename), "r") as f:
             raw_hierarchy = json.load(f)
-            # Raw_hierarchy is list of [itvls, labels], H need list of itvls and list of labels.
-            # zip and unpack
-            hiers[opt_str] = H(*zip(*raw_hierarchy))
+            # Raw_hierarchy is list of [itvls_array_for_level_0, labels_list_for_level_0], [itvls1, labels1], ...
+            # We need to transform it into: [itvls_array_lvl0, itvls_array_lvl1, ...], [labels_list_lvl0, labels_list_lvl1, ...]
+            # The zip(*raw_hierarchy) does exactly this.
+            itvls_list, labels_list = zip(*raw_hierarchy)
+            hiers[opt_str] = Segmentation(list(itvls_list), list(labels_list), is_hierarchical=True)
     return hiers
 
 

@@ -1,3 +1,11 @@
+# bnl/formats/internal.py
+# TODO: Review function names and parameter names for clarity and consistency.
+# For example, 'anno' is used for JAMS annotations, 'hier' for mireval-style hierarchies.
+# Consider standardizing parameter names like 'jams_annotation' or 'mireval_hierarchy'.
+# Function names like 'multi2hier' are clear within context but could be more descriptive
+# if this module were to be used more broadly (e.g., 'jams_multi_to_mireval_hierarchical').
+# However, for internal use, current names might be acceptable.
+
 import jams
 import numpy as np
 

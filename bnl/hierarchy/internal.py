@@ -1,9 +1,49 @@
+# bnl/hierarchy/internal.py
+# TODO: Review function names and parameters for clarity and consistency.
+#       - Many functions take `hier` (Segmentation object) or `levels` (mireval list-of-lists).
+#         Ensure this is clear in docstrings and consistent.
+#       - `_reindex_labels`: Internal function, name is okay.
+#       - `reindex`: Parameter `hierarchy` is a list of [intervals, labels] lists.
+#       - `flatten_labels`, `expand_labels`: Clear.
+#       - `issame`: Clear.
+#       - `expand_hierarchy`: Parameter `_ann` is a JAMS annotation. Could be `jams_annotation`.
+#         (Note: This `expand_hierarchy` is the JAMS-based one, distinct from `Segmentation.expand`).
+#       - `clean_segments`: `levels` is mireval format. `fix_level` is 1-indexed.
+#       - `prune_identical_levels`, `squash_levels`, `relabel`, `has_mono_L`, `has_mono_B`,
+#         `force_mono_B`, `force_mono_L`: These now take `Segmentation` objects.
+#         Parameter name `hier` is used, which is good. Consider if `segmentation_obj`
+#         would be even clearer across the library if these were to be public.
+
+# bnl/hierarchy/internal.py
+# TODO: Review function names and parameters for clarity and consistency.
+#       - Many functions take `hier` (Segmentation object) or `levels` (mireval list-of-lists).
+#         Ensure this is clear in docstrings and consistent.
+#       - `_reindex_labels`: Internal function, name is okay.
+#       - `reindex`: Parameter `hierarchy` is a list of [intervals, labels] lists.
+#         Could be more specific, e.g., `mireval_hierarchy_data`.
+#       - `flatten_labels`, `expand_labels`: Clear.
+#       - `issame`: Clear.
+#       - `expand_hierarchy`: Parameter `_ann` is a JAMS annotation. Could be `jams_annotation`.
+#         (Note: This `expand_hierarchy` is the JAMS-based one, distinct from `Segmentation.expand`).
+#       - `clean_segments`: `levels` is mireval format. `fix_level` is 1-indexed.
+#       - `prune_identical_levels`, `squash_levels`, `relabel`, `has_mono_L`, `has_mono_B`,
+#         `force_mono_B`, `force_mono_L`: These now take `Segmentation` objects.
+#         Parameter name `hier` is used, which is good. Consider if `segmentation_obj`
+#         would be even clearer across the library if these were to be public.
+
 # Adapted From Brian McFee
 
 from collections import Counter, defaultdict
 import numpy as np
 import jams
 import re
+
+from mir_eval.util import boundaries_to_intervals
+from ..core import Segmentation, levels_to_segmentation, flat_to_segmentation
+from ..formats import mirevalflat2openseg
+from ..utils import best_matching_label
+from ..metrics import vmeasure
+
 
 HMX_MAPPING = {
     "altchorus": "chorus",
@@ -589,4 +629,175 @@ def clean_segments(levels, min_duration=8, fix_level=3, verbose=False):
     return segs
 
 
-__all__ = ["reindex", "expand_hierarchy", "clean_segments"]
+def prune_identical_levels(hier: Segmentation, boundary_only=False):
+    """Prune identical levels."""
+    hier._check_hierarchical("prune_identical_levels")
+    if boundary_only:
+        # Create a new Segmentation with only intervals, effectively removing labels for boundary-only comparison
+        hier = Segmentation(hier.itvls, sr=hier.sr, Bhat_bw=hier.Bhat_bw, is_hierarchical=True)
+
+    new_levels_S_instances = [hier.levels[0]] # Start with the first S-like level
+    for i in range(1, hier.d):
+        current_S_level = hier.levels[i]
+        prev_S_level_in_new = new_levels_S_instances[-1]
+        if np.array_equal(current_S_level.beta, prev_S_level_in_new.beta):
+            common_bs = current_S_level.beta
+            # Compare A matrices of the S-like levels
+            if np.allclose(current_S_level.A(bs=common_bs), prev_S_level_in_new.A(bs=common_bs)):
+                continue
+        new_levels_S_instances.append(current_S_level)
+    return levels_to_segmentation(new_levels_S_instances, sr=hier.sr, Bhat_bw=hier.Bhat_bw)
+
+
+def squash_levels(hier: Segmentation, boundary_only=False, max_depth=3, remove_single_itvls=True):
+    """Squash levels by removing the level that adds the least information according to vmeasure."""
+    hier._check_hierarchical("squash_levels")
+    if boundary_only:
+        hier = Segmentation(hier.itvls, sr=hier.sr, Bhat_bw=hier.Bhat_bw, is_hierarchical=True)
+
+    new_levels_S_instances = hier.levels.copy() # List of S-like Segmentations
+    if remove_single_itvls:
+        # Iterate over a copy if removing items: new_levels_S_instances[:]
+        for lvl_idx in range(len(new_levels_S_instances) - 1, -1, -1): # Iterate backwards for safe removal
+            lvl = new_levels_S_instances[lvl_idx]
+            # remove single interval levels
+            if len(lvl.itvls) == 1:
+                new_levels_S_instances.pop(lvl_idx) # Use pop for safe removal by index
+                continue
+
+    # max_depth = None means no limit
+    while max_depth is not None and len(new_levels_S_instances) > max_depth and len(new_levels_S_instances) > 1 : # Added len > 1 to prevent infinite loop on single level
+        # get rid of the level that adds the least information
+        # look at vmeasure between all consecutive levels,
+        # get the one with the lowest vmeasure with the next level
+        if len(new_levels_S_instances) <= 1: # Break if only one or zero levels left
+            break
+        level_pairs = [
+            (new_levels_S_instances[i], new_levels_S_instances[i + 1]) for i in range(len(new_levels_S_instances) - 1)
+        ]
+        v_f1 = [ # Ensure lv1 and lv2 are S-like Segmentations with .itvls and .labels
+            vmeasure(lv1.itvls, lv1.labels, lv2.itvls, lv2.labels)[2]
+            for lv1, lv2 in level_pairs
+        ]
+        new_levels_S_instances.pop(np.argmax(v_f1))
+    return levels_to_segmentation(new_levels_S_instances, sr=hier.sr, Bhat_bw=hier.Bhat_bw)
+
+
+def relabel(hier: Segmentation, strategy="max_overlap"):
+    """Re-label the hierarchical segmentation."""
+    hier._check_hierarchical("relabel")
+    if strategy == "max_overlap":
+        # ext_format expects list of [itvls_array, labels_array] for each level
+        # hier.levels are S-like, so hier.itvls and hier.labels are lists of arrays/lists
+        ext_format = [[itvls_arr, labels_arr] for itvls_arr, labels_arr in zip(hier.itvls, hier.labels)]
+        relabeled_hierarchy_raw = reindex(ext_format) # reindex returns list of [itvls_arr, labels_arr]
+        # Extract just the labels part for the new Segmentation
+        new_labels_list_of_lists = [level_output[1] for level_output in relabeled_hierarchy_raw]
+        # Create new Segmentation with original intervals and new labels
+        return Segmentation(hier.itvls, new_labels_list_of_lists, sr=hier.sr, Bhat_bw=hier.Bhat_bw, is_hierarchical=True)
+    elif strategy == "unique":
+        # Create new Segmentation with original intervals and no labels (will default)
+        return Segmentation(hier.itvls, None, sr=hier.sr, Bhat_bw=hier.Bhat_bw, is_hierarchical=True)
+    raise ValueError(f"Unknown relabeling strategy: {strategy}")
+
+
+def has_mono_L(hier: Segmentation):
+    """Check if labels are monotonic across levels."""
+    hier._check_hierarchical("has_mono_L")
+    # A and Astar are methods of Segmentation (H-like)
+    return np.allclose(hier.A(bs=hier.beta), hier.Astar(bs=hier.beta))
+
+
+def has_mono_B(hier: Segmentation):
+    """Check if boundaries are monotonic across levels."""
+    hier._check_hierarchical("has_mono_B")
+    # hier.levels are S-like Segmentations
+    return all(
+        set(hier.levels[i - 1].beta).issubset(set(hier.levels[i].beta)) for i in range(1, hier.d)
+    )
+
+
+def force_mono_B(hier: Segmentation, absorb_window=0):
+    """Force monotonic boundaries across levels."""
+    hier._check_hierarchical("force_mono_B")
+    new_S_levels = []
+    for s_level in hier.levels: # Iterate over S-like Segmentations
+        if not new_S_levels: # First level
+            new_S_levels.append(s_level)
+            continue
+
+        parent_S_level = new_S_levels[-1]
+        parent_bounds = parent_S_level.beta
+        child_bounds = s_level.beta
+
+        if set(parent_bounds).issubset(set(child_bounds)):
+            new_S_levels.append(s_level)
+        else:
+            current_child_bounds_set = set(child_bounds)
+            if absorb_window > 0:
+                current_child_bounds_set = {
+                    b for b in current_child_bounds_set
+                    if all(abs(b - pb) > absorb_window for pb in parent_bounds)
+                }
+
+            new_child_bounds_sorted = sorted(list(set(parent_bounds).union(current_child_bounds_set)))
+            new_child_itvls = boundaries_to_intervals(new_child_bounds_sorted)
+            # Relabel based on original child's labels
+            new_child_labels = [
+                best_matching_label(query_itvl, s_level.itvls, s_level.labels)
+                for query_itvl in new_child_itvls
+            ]
+            # Create a new S-like Segmentation for this modified level
+            # Need to convert raw itvls/labels to a JAMS annotation first for flat_to_segmentation
+            jams_anno = mirevalflat2openseg(new_child_itvls, new_child_labels)
+            new_S_levels.append(flat_to_segmentation(jams_anno, sr=hier.sr, Bhat_bw=hier.Bhat_bw))
+    return levels_to_segmentation(new_S_levels, sr=hier.sr, Bhat_bw=hier.Bhat_bw)
+
+
+def force_mono_L(hier: Segmentation, absorb_window=0):
+    """Force monotonic labels across levels."""
+    hier._check_hierarchical("force_mono_L")
+    # force_mono_B returns a new H-like Segmentation
+    mono_B_hier = force_mono_B(hier, absorb_window=absorb_window)
+    # The has_mono_L check was removed as it was preventing the desired relabeling.
+    # force_mono_L should establish the parent.child label convention.
+
+    new_S_levels = [mono_B_hier.levels[0]] # Start with the first S-like level of mono_B_hier
+    for i in range(1, mono_B_hier.d):
+        current_S_level = mono_B_hier.levels[i] # S-like
+        parent_S_level = new_S_levels[-1] # S-like
+
+        new_child_labels = []
+        for k_idx, k_itvl in enumerate(current_S_level.itvls):
+            # Use the start of the interval for label lookup, consistent with __call__ logic for flat segs
+            # when x is exactly on a boundary.
+            # Ensure the boundary is within the parent's range before calling.
+            boundary_for_label_lookup = current_S_level.beta[k_idx]
+
+            parent_lab_str = str(parent_S_level(boundary_for_label_lookup if boundary_for_label_lookup >= parent_S_level.T0 and boundary_for_label_lookup <= parent_S_level.T else parent_S_level.beta[0]))
+            current_lab_str = str(current_S_level(boundary_for_label_lookup)) # current_S_level already has this boundary
+
+            # Ensure labels are not empty for concatenation, default to a placeholder if so (though ideally labels should always be meaningful)
+            parent_lab_str = parent_lab_str if parent_lab_str else "P"
+            current_lab_str = current_lab_str if current_lab_str else "C"
+
+            new_child_labels.append(f"{parent_lab_str}.{current_lab_str}")
+
+        # Create a new S-like Segmentation for this modified level
+        jams_anno = mirevalflat2openseg(current_S_level.itvls, new_child_labels)
+        new_S_levels.append(flat_to_segmentation(jams_anno, sr=hier.sr, Bhat_bw=hier.Bhat_bw))
+    return levels_to_segmentation(new_S_levels, sr=hier.sr, Bhat_bw=hier.Bhat_bw)
+
+
+__all__ = [
+    "reindex",
+    "expand_hierarchy",
+    "clean_segments",
+    "prune_identical_levels",
+    "squash_levels",
+    "relabel",
+    "has_mono_L",
+    "has_mono_B",
+    "force_mono_B",
+    "force_mono_L",
+]
