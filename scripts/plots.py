@@ -5,6 +5,8 @@ import mir_eval
 import numpy as np
 import xarray as xr
 from matplotlib import pyplot as plt
+import matplotlib as mpl
+import seaborn as sns
 
 
 def make_hierarchies():
@@ -90,7 +92,7 @@ def plot_column(hier, q_fraq=0.3, axs=None):
     u_more_relevant_mat = np.less.outer(q_rel, q_rel)
     viz.sq(u_more_relevant_mat, hier.ticks, ax=axs[next_row + 2], cmap="Reds")
     axs[next_row + 2].set(
-        title="Relevant Triplets $\mathcal{A}(H;t)$", xlabel="u", ylabel="v"
+        title="Relevant Triplets $\mathcal{A}(H;t)$", xlabel="u (sec)", ylabel="v (sec)"
     )
     fig = axs[0].get_figure()
     return fig, axs, u_more_relevant_mat
@@ -121,11 +123,11 @@ def explain_triplet():
     axs[-1, 0].set_title("Intersection")
     filtered_ref = intersect_pairs - false_negative_pairs
     viz.sq(filtered_ref, h1.ticks, ax=axs[-1, 0])
-    axs[-1, 0].set(xlabel="u", ylabel="v")
+    axs[-1, 0].set(xlabel="u (sec)", ylabel="v (sec)")
     axs[-1, 1].set_title("Intersection")
     filtered_est = intersect_pairs - false_positive_pairs
     viz.sq(filtered_est, h2.ticks, ax=axs[-1, 1])
-    axs[-1, 1].set(xlabel="u", ylabel="v")
+    axs[-1, 1].set(xlabel="u (sec)", ylabel="v (sec)")
     axs[-2, -1].set_title("Relevant Triplets $\mathcal{A}(\hat{H};t)$")
 
     # Make the bottom three rows' axis box be in red dashed lines
@@ -138,8 +140,16 @@ def explain_triplet():
     for ax in axs.flat[6:]:
         ax.label_outer()
 
-    # now compute the intersection of the two hierarchies relevant pair
-    fig.savefig("scripts/explain_triplet.pdf", transparent=True)
+    # Reduce number of x and y ticks for all axes
+    for ax in axs.flat:
+        xticks = ax.get_xticks()
+        yticks = ax.get_yticks()
+        if len(xticks) > 0:
+            ax.set_xticks(xticks[::2])
+        if len(yticks) > 0:
+            ax.set_yticks(yticks[::2])
+
+    fig.savefig("./explain_triplet.pdf", transparent=True)
 
 
 def explain_pfc():
@@ -184,12 +194,12 @@ def explain_pfc():
         ax=axes[2, 1],
     )
 
-    axes[0, 0].set(title="Reference Segmentation", xticks=[], xlabel="")
-    axes[0, 1].set(title="Estimated Segmentation", xticks=[], xlabel="")
-    axes[1, 0].set(title="Label Agreement Map $M$", xticks=[], xlabel="")
-    axes[1, 1].set(title="Label Agreement Map $M$", xticks=[], xlabel="", ylabel="")
-    axes[2, 0].set(title="Intersection and Difference")
-    axes[2, 1].set(title="Intersection and Difference", ylabel="")
+    axes[0, 0].set(title="Reference Segmentation", xlabel="")
+    axes[0, 1].set(title="Estimated Segmentation", xlabel="")
+    axes[1, 0].set(title="Label Agreement Map $M$", xlabel="")
+    axes[1, 1].set(title="Label Agreement Map $M$", xlabel="", ylabel="")
+    axes[2, 0].set(title="Intersection")
+    axes[2, 1].set(title="Intersection", ylabel="")
 
     fig.savefig("./explain_pfc.pdf", bbox_inches="tight", transparent=True)
 
@@ -203,7 +213,7 @@ def frame_size_deviation():
     results = xr.open_dataarray("./scripts/new_faster_compare.nc")
     metrics_list = ["pairwise", "vmeasure", "lmeasure"]
 
-    fig, axes = plt.subplots(1, 3, figsize=(8, 1.8), sharey=True, sharex=True)
+    fig, axes = plt.subplots(1, 3, figsize=(8, 1.9), sharey=True, sharex=True)
 
     for ax, metric in zip(axes, metrics_list):
         my_results = results.sel(output="f", metric=metric, frame_size=0)
@@ -240,16 +250,18 @@ def frame_size_deviation():
         ax.set_xscale("symlog", linthresh=0.001)
         ax.grid(True)
         ax.set_title(metric.capitalize())
+        xticks = ax.get_xticks()
+        ax.set_xticks(xticks[::2])
 
-    axes[0].set(ylabel="Frame Size (seconds)", xlabel="")
-    axes[1].set(xlabel="")
+    axes[0].set(ylabel="Frame Size (sec)", xlabel="")
+    axes[1].set(xlabel="Metric Deviation", title="V-measure")
     axes[2].set(xlabel="", title="L-measure")
     plt.tight_layout()
     plt.savefig("./frame_size_metrics_comparison.pdf", bbox_inches="tight")
 
 
 def depth_sweep():
-    da = xr.open_dataarray("./depth_sweep.nc")
+    da = xr.open_dataarray("./scripts/depth_sweep.nc")
     my_result = da.sel(output="run_time", version="my")
     my_result.name = "my_run_time"
     me_result = da.sel(output="run_time", version="mir_eval")
@@ -261,6 +273,9 @@ def depth_sweep():
     df = runtime_da.to_dataframe(name="run_time").reset_index()
     # Offset levels by 1
     df["level"] += 1
+
+    # Increase font size globally by 1pt
+    mpl.rcParams.update({"font.size": mpl.rcParams["font.size"] + 1})
 
     plt.figure(figsize=(4, 3))
 
@@ -276,20 +291,23 @@ def depth_sweep():
     )
 
     plt.yscale("log")
-    plt.xlabel("Hierarchy Depth")
-    plt.ylabel("Runtime (seconds)")
-    plt.title("Runtime Distribution vs Number of Levels")
+    plt.xlabel("Depth of Estimated Hierarchy")
+    plt.ylabel("Runtime (sec)")
+    plt.title("Effect of Hierarchy Depth\n on L-measure Runtime")
     plt.grid(True)
     plt.xlim(1, 12)
 
     # Modify legend text to "mir_eval" and "ours"
     handles, labels = ax.get_legend_handles_labels()
     new_labels = [
-        "Frame size = 0.1s" if label == "mir_eval" else "Continuous" for label in labels
+        "Frame size = 0.1s" if label == "mir_eval" else "Event-based"
+        for label in labels
     ]
     plt.legend(handles, new_labels)
     plt.tight_layout()
     plt.savefig("./depth_sweep_runtime.pdf", bbox_inches="tight", transparent=True)
+    # Increase font size globally by 1pt
+    mpl.rcParams.update({"font.size": mpl.rcParams["font.size"] - 1})
 
 
 def runtime_sweep():
@@ -304,7 +322,7 @@ def runtime_sweep():
 
     def plot_runtime(ax, metric="pairwise", **kwargs):
         """Plot runtime vs duration for a specific metric."""
-        results = xr.open_dataarray("./new_faster_compare.nc")
+        results = xr.open_dataarray("./scripts/new_faster_compare.nc")
         all_results = results.sel(output="run_time", metric=metric)
         all_results.name = "run_time"
         run_time_df = (
@@ -319,7 +337,7 @@ def runtime_sweep():
         )
         custom_palette = ["#000000", "#333333", "#666666", "#999999", "#CCCCCC"]
         cp = ["#FF0000"] + custom_palette
-        dur_dict = json.load(open("salami_durations.json"))
+        dur_dict = json.load(open("./scripts/salami_durations.json"))
         run_time_df["duration"] = run_time_df["tid"].map(dur_dict)
         run_time_df["duration"] = np.round((run_time_df["duration"] / 15)) * 15 + 0.1
 
@@ -339,7 +357,7 @@ def runtime_sweep():
         return ax
 
     # Create the figure with three subplots
-    fig, axes = plt.subplots(1, 3, figsize=(8, 2.4), sharey=True, sharex=True)
+    fig, axes = plt.subplots(1, 3, figsize=(8, 2.3), sharey=True, sharex=True)
 
     plot_runtime(axes[1], "vmeasure")
 
@@ -349,8 +367,8 @@ def runtime_sweep():
     axes[2].set_title("L-measure")
     plot_runtime(axes[2], "lmeasure", legend=False)
     plot_runtime(axes[0], "pairwise", legend=False)
-    axes[0].set_ylabel("Runtime (seconds)")
-    axes[1].set_xlabel("Duration (seconds)")
+    axes[0].set_ylabel("Runtime (sec)")
+    axes[1].set_xlabel("Track Duration (sec)")
     axes[2].set_xlabel("")
     axes[0].set_xlabel("")
 
@@ -373,7 +391,7 @@ def runtime_sweep():
 
     # Save the plot with clean styling
     fig.tight_layout()
-    plt.savefig("./runtime_vs_duration_br2.pdf", transparent=True, bbox_inches="tight")
+    plt.savefig("./runtime_vs_duration_br.pdf", transparent=True, bbox_inches="tight")
 
 
 if __name__ == "__main__":
@@ -394,6 +412,12 @@ if __name__ == "__main__":
     elif command == "depth_sweep":
         depth_sweep()
     elif command == "runtime_sweep":
+        runtime_sweep()
+    elif command == "all":
+        explain_triplet()
+        frame_size_deviation()
+        explain_pfc()
+        depth_sweep()
         runtime_sweep()
     else:
         raise NotImplementedError(f"Command '{command}' is not implemented")
