@@ -226,8 +226,20 @@ def create_fig(
     axs = []
     for i in range(len(h_ratios)):
         row = []
+        sharey_ax = None  # For sharing y-axis within the -3 row
         for j in range(len(w_ratios)):
-            row.append(fig.add_subplot(gs[i * 2, j * 2]))
+            # Share y-axis for the -3 row (third from last)
+            if i == len(h_ratios) - 3 and j > 0:
+                ax = fig.add_subplot(gs[i * 2, j * 2], sharey=sharey_ax)
+            else:
+                ax = fig.add_subplot(gs[i * 2, j * 2])
+
+            row.append(ax)
+
+            # Store the first axis of the -3 row for sharing
+            if i == len(h_ratios) - 3 and j == 0:
+                sharey_ax = ax
+
         axs.append(np.array(row))
 
     fig = row[0].get_figure()

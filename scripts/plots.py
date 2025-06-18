@@ -46,8 +46,6 @@ def make_hierarchies():
 def plot_column(hier, q_fraq=0.3, axs=None):
     ts = (hier.ticks[:-1] + hier.ticks[1:]) / 2
     q = int(q_fraq * (len(ts) - 1))
-    q2 = int((1 - q_fraq) * (len(ts) - 1))
-
     axs = np.asarray(axs).flatten()
 
     # Let's figure out if we need to turn off some axis.
@@ -80,13 +78,13 @@ def plot_column(hier, q_fraq=0.3, axs=None):
     q_rel = meet[q]
     axs[next_row + 1].plot(ts, q_rel, color="k")
     axs[next_row + 1].fill_between(ts, q_rel, color="pink", alpha=0.8)
-    axs[next_row + 1].vlines(
-        ts[q], 0, max(q_rel), colors="r", linestyles="dashed", label="Query time"
-    )
+
+    # Use axvline which automatically spans the full height of the axes
+    axs[next_row + 1].axvline(ts[q], color="r", linestyle="dashed")
     axs[next_row + 1].set(
         title="Relevance to t: $M(t,\cdot)$", xlabel="Time (s)", ylabel="Meet Depth"
     )
-    axs[next_row + 1].legend()
+    # axs[next_row + 1].set_ylim(0, max(q_rel) * 1.1)
 
     # Relevant pairs u, v for frame q on axs[next_row + 3]
     u_more_relevant_mat = np.less.outer(q_rel, q_rel)
@@ -114,6 +112,19 @@ def explain_triplet():
     fig, _, r_sig_pairs = plot_column(h1, axs=axs[:-1, 0])
     fig, _, e_sig_pairs = plot_column(h2, axs=axs[:-1, 1])
 
+    # Set integer y-ticks for the -3 row (relevance plots)
+    # Get the maximum y-value from both relevance plots
+    y_max_left = max(axs[-3, 0].get_ylim())
+    y_max_right = max(axs[-3, 1].get_ylim())
+    y_max = max(y_max_left, y_max_right)
+
+    # Set integer ticks from 0 to the maximum value
+    import numpy as np
+
+    y_ticks = np.arange(0, int(np.ceil(y_max)))
+    axs[-3, 0].set_yticks(y_ticks)
+    axs[-3, 1].set_yticks(y_ticks)
+
     intersect_pairs = (r_sig_pairs * e_sig_pairs).astype(int)
     false_negative_pairs = -intersect_pairs + r_sig_pairs.astype(int)
     false_positive_pairs = -intersect_pairs + e_sig_pairs.astype(int)
@@ -137,17 +148,19 @@ def explain_triplet():
             spine.set_linestyle("dashed")
             spine.set_linewidth(1.5)
 
-    for ax in axs.flat[6:]:
+    for ax in axs.flat[-8:]:
         ax.label_outer()
-
-    # Reduce number of x and y ticks for all axes
-    for ax in axs.flat:
+    for ax in axs.flat[-6:]:
         xticks = ax.get_xticks()
+        ax.set_xticks(xticks[::2])
+
+    for ax in axs.flat[-8:-6]:
         yticks = ax.get_yticks()
-        if len(xticks) > 0:
-            ax.set_xticks(xticks[::2])
-        if len(yticks) > 0:
-            ax.set_yticks(yticks[::2])
+        ax.set_yticks(yticks[::2])
+
+    for ax in axs.flat[-4:]:
+        yticks = ax.get_yticks()
+        ax.set_yticks(yticks[::2])
 
     fig.savefig("./explain_triplet.pdf", transparent=True)
 
