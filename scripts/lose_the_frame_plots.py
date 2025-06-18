@@ -11,7 +11,7 @@ import pandas as pd
 import seaborn as sns
 import xarray as xr
 from matplotlib import pyplot as plt
-from matplotlib.ticker import LogFormatter, LogLocator
+from matplotlib.ticker import LogLocator, FuncFormatter
 from mir_eval import hierarchy, util
 from bnl import H, fio, mtr, viz
 
@@ -289,6 +289,8 @@ class FigurePlotter:
 
         axes[0].set_ylabel("Frame Size (sec)")
         axes[1].set_xlabel("Metric Deviation")
+        axes[0].set_xlabel("")
+        axes[2].set_xlabel("")
         fig.tight_layout()
         self._save_plot(fig, "frame_size_metrics_comparison")
 
@@ -306,7 +308,7 @@ class FigurePlotter:
             data=df,
             markers="o",
             dashes=False,
-            errorbar=("ci", 99.9),
+            errorbar=("ci", 95),
             palette="deep",
             ax=ax,
         )
@@ -320,7 +322,7 @@ class FigurePlotter:
         ax.set_xlim(1, 12)
         handles, labels = ax.get_legend_handles_labels()
         new_labels = [
-            "Frame size = 0.1s" if label == "mir_eval" else "Event-based"
+            "frame size = 0.1s" if label == "mir_eval" else "event-based"
             for label in labels
         ]
         ax.legend(handles, new_labels)
@@ -372,13 +374,17 @@ class FigurePlotter:
                 palette=custom_palette,
                 ax=ax,
                 legend=(metric == "vmeasure"),
+                errorbar=("ci", 95),
             )
 
             # Apply styling
             ax.set_yscale("log")
+            ax.set_ylim(1e-4, 1e2)
             self._apply_common_styles(ax, title)
             ax.yaxis.set_major_locator(LogLocator(base=10, numticks=5))
-            ax.yaxis.set_major_formatter(LogFormatter(base=10, labelOnlyBase=False))
+            ax.yaxis.set_major_formatter(
+                FuncFormatter(lambda x, pos: f"$10^{{{int(np.log10(x))}}}$")
+            )
             ax.grid(True, which="minor", alpha=0.1, linestyle="-", linewidth=0.3)
 
             # Handle legend for vmeasure subplot
@@ -391,6 +397,8 @@ class FigurePlotter:
 
         axes[0].set_ylabel("Runtime (sec)")
         axes[1].set_xlabel("Track Duration (sec)")
+        axes[0].set_xlabel("")
+        axes[2].set_xlabel("")
         fig.tight_layout()
         self._save_plot(fig, "runtime_vs_duration_br")
 
