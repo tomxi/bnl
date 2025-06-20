@@ -142,7 +142,14 @@ def plot_segment(
 
     if title and seg.name:
         ax.set_title(seg.name)
-    ax.set_xlim(seg.start, seg.end)
+
+    # Set xlim only if start and end are different to avoid matplotlib warning
+    if seg.start != seg.end:
+        ax.set_xlim(seg.start, seg.end)
+    else:
+        # For empty or zero-duration segments, set a small default range
+        ax.set_xlim(-0.1, 0.1)
+
     ax.set_ylim(0, 1)
 
     if time_ticks:

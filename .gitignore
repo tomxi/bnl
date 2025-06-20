@@ -19,8 +19,7 @@ coverage.xml
 .ipynb_checkpoints
 
 # IDE
-# .vscode/
-venv/
+.vscode/
 
 # Documentation
 docs/_*/
@@ -28,3 +27,6 @@ docs/**/_generated_*/
 
 # Local development
 *.log
+
+# macOS
+.DS_Store
