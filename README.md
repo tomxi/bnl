@@ -1,6 +1,8 @@
 # BNL: Boundaries and Labels
 
-A Python library for hierarchical text segmentation and evaluation.
+A Python library for working with hierarchical Music Structure Analysis.
+
+> This repo is co-authored with LLMs in their various forms.
 
 ## Quick Start
 
