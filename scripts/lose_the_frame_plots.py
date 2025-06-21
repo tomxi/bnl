@@ -16,6 +16,7 @@ from mir_eval import hierarchy, util
 from bnl import H, fio, mtr, viz
 
 
+
 class FigurePlotter:
     """Simple plotter for paper figures"""
 
@@ -25,8 +26,15 @@ class FigurePlotter:
 
         # Load data once
         self.salami_durations = json.load(open("scripts/salami_durations.json"))
-        self.depth_sweep_data = xr.open_dataarray("scripts/depth_sweep.nc")
         self.comparison_data = xr.open_dataarray("scripts/new_faster_compare.nc")
+        self.depth_sweep_data = pd.read_feather("scripts/depth_sweep_runtime.feather")
+        self.custom_palette = ["#FF0000"] + [
+            "#000000",
+            "#333333",
+            "#666666",
+            "#999999",
+            "#CCCCCC",
+        ]
 
     def _save_plot(self, fig, filename):
         """Save figure with consistent settings"""
@@ -296,36 +304,41 @@ class FigurePlotter:
 
     def plot_depth_sweep(self):
         """Generate the depth sweep runtime plot."""
-        da = self.depth_sweep_data
-        df = da.sel(output="run_time").to_dataframe(name="run_time").reset_index()
-        df["level"] += 1
-
+        df = self.depth_sweep_data
+        
         fig, ax = plt.subplots(figsize=(4, 3))
+        
         sns.lineplot(
-            x="level",
-            y="run_time",
-            hue="version",
+            x='level',
+            y='run_time',
+            hue='frame_size',
             data=df,
-            markers="o",
-            dashes=False,
-            errorbar=("ci", 95),
-            palette="deep",
-            ax=ax,
+            errorbar=('ci', 99.9),
+            palette=self.custom_palette,
+            ax=ax
         )
-        ax.set_yscale("log")
+        
+        ax.set_yscale('log')
         self._apply_common_styles(
             ax,
-            "Effect of Hierarchy Depth\n on L-measure Runtime",
+            "Effect of Depth on L-measure Runtime",
             "Depth of Estimated Hierarchy",
             "Runtime (sec)",
         )
         ax.set_xlim(1, 12)
+        ax.set_xticks(range(1, 13))
+        # Modify legend text and reorder
         handles, labels = ax.get_legend_handles_labels()
-        new_labels = [
-            "frame size = 0.1s" if label == "mir_eval" else "event-based"
-            for label in labels
-        ]
-        ax.legend(handles, new_labels)
+        new_labels = [f'{lbl}s' if lbl != '0.0' else 'event\nbased' for lbl in labels]
+        
+        # Roll the handles and labels to move the first item to the end
+        handles = handles[1:] + [handles[0]]
+        new_labels = new_labels[1:] + [new_labels[0]]
+        
+        ax.legend(handles, new_labels, 
+                  title='Frame Size', ncol=1, 
+                  bbox_to_anchor=(1.01, 1), 
+                  loc='upper left')
         fig.tight_layout()
         self._save_plot(fig, "depth_sweep_runtime")
 
@@ -334,14 +347,6 @@ class FigurePlotter:
         fig, axes = plt.subplots(1, 3, figsize=(8, 2.3), sharey=True, sharex=True)
         metrics = ["pairwise", "vmeasure", "lmeasure"]
         titles = ["Pairwise", "V-measure", "L-measure"]
-
-        custom_palette = ["#FF0000"] + [
-            "#000000",
-            "#333333",
-            "#666666",
-            "#999999",
-            "#CCCCCC",
-        ]
 
         for ax, metric, title in zip(axes, metrics, titles):
             # Get data for this metric
@@ -371,7 +376,7 @@ class FigurePlotter:
                 y="run_time",
                 hue="frame_size",
                 alpha=0.5,
-                palette=custom_palette,
+                palette=self.custom_palette,
                 ax=ax,
                 legend=(metric == "vmeasure"),
                 errorbar=("ci", 95),

@@ -91,8 +91,7 @@ def time_metric(ref, est, frame_size=0):
     )
 
 
-def time_depth_sweep(tid, frame_size=0.2, cache_dir="./depth_sweep", retime=False):
-
+def time_depth_sweep(tid, cache_dir="./depth_sweep", retime=False):
     # Check if already timed
     os.makedirs(cache_dir, exist_ok=True)
     output_filepath = os.path.join(cache_dir, f"{tid}.nc")
@@ -100,48 +99,55 @@ def time_depth_sweep(tid, frame_size=0.2, cache_dir="./depth_sweep", retime=Fals
         print(f"Already timed {tid}.")
         return output_filepath
 
-    adobe_hier = fio.adobe_hiers(tid=str(tid))
-    salami_hier = fio.salami_ref_hiers(tid=str(tid))[0]
-    ref, est = mtr.align_hier(salami_hier, adobe_hier)
+    adobe_hiers = fio.salami_adobe_hiers(tid=str(tid))
+    ref_hiers = fio.salami_ref_hiers(tid=str(tid))
+    
+    # Get the first hierarchy from each dictionary
+    adobe_hier = list(adobe_hiers.values())[0]
+    salami_hier = list(ref_hiers.values())[0]
+    
+    # Extract intervals and labels from hierarchy objects
+    ref_itvls, ref_labels, est_itvls, est_labels = mtr.align_hier(
+        salami_hier.itvls, salami_hier.labels, 
+        adobe_hier.itvls, adobe_hier.labels
+    )
+    
+    # Create hierarchy objects from aligned data
+    ref = H(ref_itvls, ref_labels)
+    est = H(est_itvls, est_labels)
     # Save the results to xarray
     result_da = xr.DataArray(
-        dims=["level", "tid", "version", "output"],
+        dims=["level", "tid", "output", "frame_size"],
         coords={
             "level": range(est.d),
             "tid": [tid],
-            "version": ["mir_eval", "my"],
             "output": ["run_time", "lp", "lr", "lf"],
+            "frame_size": [0, 0.1, 0.2, 0.5, 1, 2],
         },
     )
 
     for d in range(est.d):
-        start_time = time.time()
-        mylp, mylr, mylm = fmtr.lmeasure(
-            ref.itvls, ref.labels, est.itvls[: d + 1], est.labels[: d + 1]
-        )
-        my_run_time = time.time() - start_time
-        result_da.loc[dict(level=d, tid=tid, version="my")] = [
-            my_run_time,
-            mylp,
-            mylr,
-            mylm,
-        ]
+        for frame_size in result_da.coords["frame_size"]:
+            start_time = time.time()
+            if frame_size == 0:
+                lp, lr, lm = mtr.lmeasure(
+                    ref.itvls, ref.labels, est.itvls[: d + 1], est.labels[: d + 1]
+                )
+            else:
+                lp, lr, lm = mir_eval.hierarchy.lmeasure(
+                    ref.itvls,
+                    ref.labels,
+                    est.itvls[: d + 1],
+                    est.labels[: d + 1],
+                    frame_size=frame_size,
+                )
+            # Calculate the run time
+            run_time = time.time() - start_time
 
-        start_time = time.time()
-        melp, melr, melm = mir_eval.hierarchy.lmeasure(
-            ref.itvls,
-            ref.labels,
-            est.itvls[: d + 1],
-            est.labels[: d + 1],
-            frame_size=frame_size,
-        )
-        me_run_time = time.time() - start_time
-        result_da.loc[dict(level=d, tid=tid, version="mir_eval")] = [
-            me_run_time,
-            melp,
-            melr,
-            melm,
-        ]
+            result_da.loc[dict(level=d, tid=tid, output="run_time", frame_size=frame_size)] = run_time
+            result_da.loc[dict(level=d, tid=tid, output="lp", frame_size=frame_size)] = lp
+            result_da.loc[dict(level=d, tid=tid, output="lr", frame_size=frame_size)] = lr
+            result_da.loc[dict(level=d, tid=tid, output="lf", frame_size=frame_size)] = lm
 
     # Save the results to a NetCDF file
     result_da.to_netcdf(output_filepath)
