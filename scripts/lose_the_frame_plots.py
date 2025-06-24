@@ -306,7 +306,7 @@ class FigurePlotter:
         """Generate the depth sweep runtime plot."""
         df = self.depth_sweep_data
         
-        fig, ax = plt.subplots(figsize=(4, 3))
+        fig, ax = plt.subplots(figsize=(4.5, 3))
         
         sns.lineplot(
             x='level',
@@ -407,6 +407,103 @@ class FigurePlotter:
         fig.tight_layout()
         self._save_plot(fig, "runtime_vs_duration_br")
 
+    def plot_depth_residual(self):
+        """Generate depth vs frame size f-score deviation plot."""
+        # Load the depth sweep data with f-scores
+        depth_data = xr.open_dataarray("scripts/depth_sweep_all.nc")
+        
+        # Get f-scores for all frame sizes and levels
+        f_scores = depth_data.sel(output="lf")  # lf = L-measure f-score
+        
+        # Get event-based f-scores (frame_size=0) for comparison
+        event_based = f_scores.sel(frame_size=0.0)
+        
+        # Calculate differences between frame-based and event-based f-scores
+        # for each non-zero frame size
+        frame_sizes = [0.1, 0.2, 0.5, 1.0, 2.0]  # exclude 0.0
+        
+        # Create a list to store all differences
+        all_differences = []
+        
+        for fs in frame_sizes:
+            frame_based = f_scores.sel(frame_size=fs)
+            difference = frame_based - event_based  # frame-based - event-based
+            
+            # Convert to DataFrame for easier manipulation
+            diff_df = difference.to_dataframe(name='residual').reset_index()
+            diff_df['frame_size'] = fs
+            all_differences.append(diff_df)
+        
+        # Combine all differences into one DataFrame
+        combined_df = pd.concat(all_differences, ignore_index=True)
+        
+        # Adjust level to be 1-indexed (as in the original depth_sweep plot)
+        combined_df['level'] = combined_df['level'] + 1
+        
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(8, 3))
+        
+        # # Create stripplot for individual differences
+        # sns.stripplot(
+        #     data=combined_df,
+        #     x='level',
+        #     y='residual',
+        #     hue='frame_size',
+        #     palette="colorblind",
+        #     alpha=0.3,
+        #     size=1,
+        #     jitter=0.3,
+        #     ax=ax,
+        #     dodge=True
+        # )
+        
+        # Overlay boxplot for summary statistics
+        sns.boxplot(
+            data=combined_df,
+            x='level',
+            y='residual',
+            hue='frame_size',
+            palette="colorblind",
+            fill=False,
+            fliersize=0,
+            ax=ax,
+            dodge=True,
+            linewidth=1
+        )
+        
+        # Style the plot
+        self._apply_common_styles(
+            ax,
+            "Frame-based L-measure F1 Residual",
+            "Depth of Estimated Hierarchy",
+            "L-measure F1 Residual"
+        )
+
+        # Set y-axis to symlog scale (similar to frame_size_deviation plot)
+        ax.set_yscale('symlog', linthresh=0.001)
+        ax.set_ylim(-1, 1)
+        # Set x-axis ticks
+        ax.set_xticks(range(13))
+        
+        # Format legend
+        handles, labels = ax.get_legend_handles_labels()
+        # Remove duplicate legends (stripplot and boxplot create duplicates)
+        n_frame_sizes = len(frame_sizes)
+        handles = handles[:n_frame_sizes]
+        labels = [f'{lbl}s' for lbl in labels[:n_frame_sizes]]
+        
+        # # Make legend handles more visible
+        # for handle in handles:
+        #     handle.set_markersize(8)
+        
+        ax.legend(handles, labels, 
+                  title='Frame Size', 
+                  bbox_to_anchor=(1.01, 1), 
+                  loc='upper left')
+        
+        fig.tight_layout()
+        self._save_plot(fig, "depth_residual")
+
     def plot_all(self):
         """Generate all figures"""
         self.plot_explain_triplet()
@@ -414,6 +511,7 @@ class FigurePlotter:
         self.plot_explain_pfc()
         self.plot_depth_sweep()
         self.plot_runtime_sweep()
+        self.plot_depth_residual()
 
 
 def main():
@@ -429,7 +527,7 @@ def main():
         print()
         print("Usage: python lose_the_frame_plots.py <command> [output_dir]")
         print(
-            "Commands: explain_triplet, frame_size_deviation, explain_pfc, depth_sweep, runtime_sweep, all"
+            "Commands: explain_triplet, frame_size_deviation, explain_pfc, depth_sweep, runtime_sweep, depth_residual, all"
         )
         print("output_dir: Optional relative directory for output (default: ./figs)")
         sys.exit(1)
@@ -444,6 +542,7 @@ def main():
         "explain_pfc": plotter.plot_explain_pfc,
         "depth_sweep": plotter.plot_depth_sweep,
         "runtime_sweep": plotter.plot_runtime_sweep,
+        "depth_residual": plotter.plot_depth_residual,
         "all": plotter.plot_all,
     }
 
