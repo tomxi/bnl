@@ -1,11 +1,12 @@
 """Core data structures and constructors."""
 
 from dataclasses import dataclass, field
-from typing import Optional, List, Dict, Any, Set, Tuple
-import numpy as np
-from mir_eval.util import boundaries_to_intervals
+from typing import Any, Dict, List, Optional, Set, Tuple
+
 import jams
 import matplotlib.pyplot as plt
+import numpy as np
+from mir_eval.util import boundaries_to_intervals
 
 __all__ = ["TimeSpan", "Segmentation", "Hierarchy"]
 

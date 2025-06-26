@@ -1,13 +1,13 @@
 """Visualization utilities for segmentations."""
 
+import itertools
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+
+import librosa.display
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
-import librosa.display
 import numpy as np
-import itertools
 from cycler import cycler
-from typing import List, Optional, Dict, Any, Tuple, TYPE_CHECKING
-
 
 # Import Segmentation for type hinting only to avoid circular dependency
 if TYPE_CHECKING:

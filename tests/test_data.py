@@ -1,11 +1,13 @@
 """Tests for BNL data loading functionality."""
 
-import pytest
-from pathlib import Path
 import tempfile
-from bnl.data.salami import find_audio_file, list_tids
-from bnl.data.base import DatasetConfig, set_config, get_config
+from pathlib import Path
+
+import pytest
+
 import bnl.data as data
+from bnl.data.base import DatasetConfig, get_config, set_config
+from bnl.data.salami import find_audio_file, list_tids
 
 
 def test_config():

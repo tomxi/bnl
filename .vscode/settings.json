@@ -10,12 +10,7 @@
         "**/.pytest_cache": true
     },
     "python.experiments.optInto": ["pythonTestAdapter"],
-    "python.testing.pytestArgs": [
-        "tests",
-        "--cov=bnl",
-        "--cov-report=term-missing"
-    ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
-    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "python.testing.autoTestDiscoverOnSaveEnabled": true
 }

@@ -1,0 +1,99 @@
+[project]
+name = "bnl"
+version = "0.2.0"
+description = "Boundary and Labeling: Tools for Hierarchical Music Structure Analysis"
+authors = ["tomxi <tom.xi@nyu.edu>"]
+channels = ["conda-forge"]
+platforms = ["osx-64", "linux-64", "win-64"]
+
+[system-requirements]
+
+[dependencies]
+# Core dependencies
+numpy = "*"
+matplotlib = "*"
+librosa = "*"
+pyarrow = "*"
+seaborn = "*"
+mir_eval = "*"
+
+# Runtime dependencies
+python = "3.12.*"
+
+[host-dependencies]
+pip = "*"
+
+[build-dependencies]
+setuptools = ">=61.0.0"
+wheel = "*"
+
+[pypi-dependencies]
+jams = "*"
+
+[feature.docs.dependencies]
+# Documentation dependencies
+sphinx = "*"
+sphinx-rtd-theme = "*"
+numpydoc = "*"
+sphinx-copybutton = "*"
+myst-parser = "*"
+sphinx-autobuild = "*"
+
+[feature.dev.dependencies]
+# Development dependencies
+pytest = "*"
+pytest-cov = "*"
+black = "*"
+isort = "*"
+mypy = "*"
+pylint = "*"
+
+[feature.notebooks.dependencies]
+# Notebook dependencies
+jupyter = "*"
+ipykernel = "*"
+
+[feature.apps.dependencies]
+# Dependencies for running some interactive apps or widgets
+streamlit = "*"
+
+[environments]
+default = ["docs", "dev", "notebooks", "apps"]
+minimal = []
+docs = ["docs"]
+dev = ["dev"]
+notebooks = ["notebooks"]
+apps = ["apps"]
+
+[tasks]
+# Install the package in development mode
+install-dev = "pip install -e ."
+
+# Testing tasks
+test = "pytest"
+test-cov = "pytest --cov=src --cov-report=html --cov-report=term"
+
+# Linting and formatting
+lint = "pylint src/"
+format = "black src/ tests/"
+format-check = "black --check src/ tests/"
+isort = "isort src/ tests/"
+isort-check = "isort --check-only src/ tests/"
+typecheck = "mypy src/"
+
+# Documentation tasks
+docs-build = "sphinx-build -b html docs docs/_build/html"
+docs-serve = "sphinx-autobuild docs docs/_build/html --host 0.0.0.0 --port 8000"
+docs-clean = "rm -rf docs/_build"
+
+# Combined tasks
+check-fast = { depends-on = ["format-check", "isort-check", "typecheck"] }
+check-all = { depends-on = ["check-fast", "lint", "test"] }
+format-all = { depends-on = ["format", "isort"] }
+
+# Jupyter tasks
+notebook = "jupyter notebook"
+lab = "jupyter lab" 
+
+# App tasks
+app = "streamlit run"

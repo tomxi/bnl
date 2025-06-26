@@ -14,16 +14,21 @@
 htmlcov/
 .coverage
 coverage.xml
+.mypy_cache/
 
 # Jupyter Notebook
 .ipynb_checkpoints
 
 # IDE
-.vscode/
+# .vscode/
 
 # Documentation
 docs/_*/
 docs/**/_generated_*/
+site/
+
+# Pixi
+.pixi/
 
 # Local development
 *.log

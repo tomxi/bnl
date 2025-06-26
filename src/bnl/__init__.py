@@ -19,17 +19,10 @@ metrics
 __version__ = "0.1.0"
 
 # --- Import submodules for explicit, namespaced access ---
-from . import viz
-from . import data
-from . import ops
-from . import metrics
+from . import data, metrics, ops, viz
 
 # --- Promote the core data structures to the top level ---
-from .core import (
-    TimeSpan,
-    Segmentation,
-    Hierarchy,
-)
+from .core import Hierarchy, Segmentation, TimeSpan
 
 # --- Define the public-facing API of the `bnl` package ---
 __all__ = [

@@ -4,11 +4,11 @@ This module provides functions to load and work with the SALAMI
 (Structural Analysis of Large Amounts of Music Information) dataset.
 """
 
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional, Union
 
-from .base import get_config, BaseTrack
+from .base import BaseTrack, get_config
 
 
 @dataclass

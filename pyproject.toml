@@ -7,7 +7,7 @@ name = "bnl"
 version = "0.2.0"
 description = "Boundary and Labeling: Tools for Hierarchical Music Structure Analysis"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12, <3.13"
 license = {text = "MIT"}
 dependencies = [
     "numpy",  
@@ -16,25 +16,7 @@ dependencies = [
     "pyarrow",
     "seaborn",
     "mir_eval",
-    "jams @ git+https://github.com/marl/jams.git"
-]
-
-[project.optional-dependencies]
-docs = [
-    "sphinx",
-    "sphinx-rtd-theme",
-    "numpydoc",
-    "sphinx-copybutton",
-    "myst-parser",
-    "sphinx-autobuild",
-]
-dev = [
-    "pytest",
-    "pytest-cov",
-    "black",
-    "isort",
-    "mypy",
-    "pylint",
+    "jams"
 ]
 
 [project.urls]
@@ -46,6 +28,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+addopts = "--cov=bnl --cov-report=term-missing"
 filterwarnings = [
     "ignore::DeprecationWarning:jsonschema.*",
 ]
@@ -65,3 +48,11 @@ exclude_lines = [
     "raise ImportError"
 ]
 fail_under = 80
+
+[tool.isort]
+profile = "black"
+
+[tool.mypy]
+[[tool.mypy.overrides]]
+module = "jams"
+ignore_missing_imports = true

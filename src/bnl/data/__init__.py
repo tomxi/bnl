@@ -19,8 +19,8 @@ Examples
 >>> print(f"Available tracks: {len(tids)}")
 """
 
-from .base import get_config, set_config
 from . import salami as slm
+from .base import get_config, set_config
 
 __all__ = [
     "get_config",

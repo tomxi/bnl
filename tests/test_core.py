@@ -1,7 +1,8 @@
-import pytest
-import numpy as np
-import bnl
 import matplotlib.pyplot as plt
+import numpy as np
+import pytest
+
+import bnl
 
 
 def test_segmentation_basic_init():

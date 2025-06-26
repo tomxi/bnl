@@ -1,7 +1,7 @@
-import pytest
-import numpy as np
-import matplotlib.pyplot as plt
 import librosa.display
+import matplotlib.pyplot as plt
+import numpy as np
+import pytest
 
 from bnl import Segmentation, TimeSpan, viz
 

@@ -19,18 +19,28 @@ seg = Segment(boundaries, labels)
 fig, ax = plot_segment(seg, text=True)
 ```
 
-## Installation
+## Installation & Setup
+
+This project is managed by [Pixi](https://pixi.sh/).
 
 ```bash
 git clone https://github.com/tomxi/bnl.git
 cd bnl
-pip install -e ".[dev,docs]"
+pixi install
+pixi run install-dev
 ```
+
+This command installs all dependencies into a local `.pixi` environment and makes the `bnl` package available for use.
 
 ## Development
 
-- **Serve Docs**: `Cmd+Shift+P` → `Tasks: Run Task` → `Serve Docs`
-- **Format**: Auto-formatting enabled on save
+All development tasks are managed via `pixi run`.
+
+- **Format code**: `pixi run format-all`
+- **Run all checks (format, lint, types, tests)**: `pixi run check-all`
+- **Serve docs (live-reload)**: `pixi run docs-serve`
+- **Run tests with coverage**: `pixi run test-cov`
+- **See all available tasks**: `pixi run`
 
 ## Features
 

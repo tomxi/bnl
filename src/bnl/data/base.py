@@ -1,8 +1,9 @@
 """Generic data loading utilities and configuration."""
 
-from pathlib import Path
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from pathlib import Path
+from typing import Any, Dict, Optional
+
 import jams
 
 
