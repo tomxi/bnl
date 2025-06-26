@@ -2,9 +2,11 @@
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 import jams
+import librosa
+import numpy as np
 
 
 @dataclass
@@ -110,9 +112,20 @@ class BaseTrack:
             # Fallback if JAMS loading fails
             return f"Track({self.track_id})"
 
+    def load_audio(self, sr=22050) -> Tuple[np.ndarray, int]:
+        """Load the audio file for the track."""
+        if self.audio_path is None:
+            raise ValueError("Audio path is not set")
+        return librosa.load(self.audio_path, sr=sr, mono=True)
+
 
 # Global configuration instance
 _default_config = DatasetConfig()
+
+
+def build_config(data_root: Path) -> DatasetConfig:
+    """Build a dataset configuration from a data root."""
+    return DatasetConfig(data_root=data_root)
 
 
 def get_config() -> DatasetConfig:

@@ -20,10 +20,11 @@ Examples
 """
 
 from . import salami as slm
-from .base import get_config, set_config
+from .base import build_config, get_config, set_config
 
 __all__ = [
     "get_config",
     "set_config",
+    "build_config",
     "slm",
 ]

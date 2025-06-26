@@ -83,17 +83,18 @@ typecheck = "mypy src/"
 
 # Documentation tasks
 docs-build = "sphinx-build -b html docs docs/_build/html"
-docs-serve = "sphinx-autobuild docs docs/_build/html --host 0.0.0.0 --port 8000"
+docs = "sphinx-autobuild docs docs/_build/html --host 0.0.0.0 --port 8000"
 docs-clean = "rm -rf docs/_build"
 
 # Combined tasks
-check-fast = { depends-on = ["format-check", "isort-check", "typecheck"] }
-check-all = { depends-on = ["check-fast", "lint", "test"] }
+check-all = { depends-on = ["format-check", "isort-check", "typecheck", "lint", "test"] }
 format-all = { depends-on = ["format", "isort"] }
+docs-all = { depends-on = ["docs-clean", "docs"]}
 
 # Jupyter tasks
 notebook = "jupyter notebook"
 lab = "jupyter lab" 
 
 # App tasks
-app = "streamlit run"
+sr = "streamlit run"
+exp = "streamlit run ./apps/exp.py"
