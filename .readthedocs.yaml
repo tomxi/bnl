@@ -16,7 +16,7 @@ build:
       - export PATH="/home/docs/.pixi/bin:$PATH"
     install:
       # Install project dependencies from pixi.lock
-      - pixi install -e docs
+      - /home/docs/.pixi/bin/pixi install -e docs
 
 # Build the documentation
 sphinx:
