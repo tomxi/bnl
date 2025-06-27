@@ -17,12 +17,14 @@ classifiers = [
 ]
 dependencies = [
     "numpy",
+    "pandas",
     "matplotlib",
     "librosa",
     "pyarrow",
     "seaborn",
     "mir_eval",
     "jams",
+    "requests",
 ]
 requires-python = ">=3.9"
 

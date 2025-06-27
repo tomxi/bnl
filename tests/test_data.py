@@ -126,7 +126,7 @@ def test_dataset_init_file_not_found():
         data.Dataset("non/existent/manifest.csv")
 
 
-def test_load_track_local(mock_local_manifest_file: Path):
+def test_load_track_local(mock_local_manifest_file: Path, monkeypatch):
     """Test loading a track and accessing its info from a local dataset."""
     dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
     track = dataset.load_track("1")
@@ -138,22 +138,19 @@ def test_load_track_local(mock_local_manifest_file: Path):
     # Check that info resolves relative paths and parses JAMS metadata
     info = track.info
     expected_audio_path = mock_local_manifest_file.parent / "audio/1/audio.mp3"
-    assert info["audio_mp3_path"] == str(expected_audio_path)
+    assert info["audio_mp3_path"] == expected_audio_path
     assert info["annotation_reference_path"] == (mock_local_manifest_file.parent / "jams/1.jams")
     assert info["title"] == "MockTitle"
 
     # Mock librosa.load to test audio loading without a real audio file
-    class MockLibrosa:
-        def load(self, path, sr, mono):
-            assert path == expected_audio_path
-            return (pd.Series([1, 2, 3]), 22050)
+    def mock_load(path, sr, mono):
+        assert path == expected_audio_path
+        return (pd.Series([1, 2, 3]), 22050)
 
-    original_librosa_load = data.librosa.load
-    data.librosa.load = MockLibrosa().load
+    monkeypatch.setattr(data.librosa, "load", mock_load)
     y, sr = track.load_audio()
     assert y is not None
     assert sr is not None
-    data.librosa.load = original_librosa_load
 
     # Test audio loading for a track with a missing file (but present in manifest)
     track2 = dataset.load_track("2")
@@ -162,7 +159,7 @@ def test_load_track_local(mock_local_manifest_file: Path):
     assert sr2 is None
 
 
-def test_load_track_cloud(mock_cloud_manifest_file: Path, requests_mock):
+def test_load_track_cloud(mock_cloud_manifest_file: Path, requests_mock, monkeypatch):
     """Test loading a track, parsing JAMS, and loading audio from a cloud dataset."""
     dataset = data.Dataset(
         mock_cloud_manifest_file,
@@ -191,17 +188,14 @@ def test_load_track_cloud(mock_cloud_manifest_file: Path, requests_mock):
     assert info["title"] == "CloudTitle"
 
     # Mock librosa to check that it's called with the downloaded content
-    class MockLibrosa:
-        def load(self, buffer, sr, mono):
-            assert isinstance(buffer, io.BytesIO)
-            return (pd.Series([1, 2, 3]), 44100)
+    def mock_load(buffer, sr, mono):
+        assert isinstance(buffer, io.BytesIO)
+        return (pd.Series([1, 2, 3]), 44100)
 
-    original_librosa_load = data.librosa.load
-    data.librosa.load = MockLibrosa().load
+    monkeypatch.setattr(data.librosa, "load", mock_load)
     y, sr = track.load_audio()
     assert y is not None
     assert sr == 44100
-    data.librosa.load = original_librosa_load
 
 
 def test_load_track_with_missing_assets(mock_local_manifest_file: Path):

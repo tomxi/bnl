@@ -62,7 +62,7 @@ For local SALAMI datasets:
 
 ```bash
 # Generate manifest for local dataset
-pixi run build-manifest -- ~/data/salami
+pixi run build-local-manifest -- ~/data/salami
 ```
 
 Expected structure:
@@ -88,6 +88,14 @@ Documentation:
 pixi run docs-build  # Build docs
 pixi run docs-serve  # Serve with hot reload
 ```
+
+## Deployment
+
+### Streamlit Community Cloud
+
+The project includes a `requirements.txt` file specifically for Streamlit Community Cloud hosting. While local development uses pixi for dependency management, Streamlit Cloud requires a traditional requirements.txt file.
+
+> **Note**: Do not delete `requirements.txt` - it's essential for cloud deployment, even though we use pixi locally.
 
 ## License
 

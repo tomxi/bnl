@@ -1,0 +1,23 @@
+# Streamlit app requirements for cloud deployment
+# This file is specifically for Streamlit Community Cloud
+# Local development uses pixi for dependency management
+
+# Core scientific computing
+numpy
+pandas
+matplotlib
+seaborn
+
+# Audio processing and MIR
+librosa
+jams
+mir_eval
+
+# Data handling
+pyarrow
+requests
+
+# Web app framework
+streamlit
+
+# Note: The local 'bnl' package will be installed from source by Streamlit Cloud 
