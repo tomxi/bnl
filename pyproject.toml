@@ -42,6 +42,9 @@ apps = ["streamlit"]
 [project.urls]
 Homepage = "https://github.com/tomxi/bnl"
 
+[tool.setuptools]
+include-package-data = true
+
 [tool.setuptools.packages.find]
 where = ["src"]
 

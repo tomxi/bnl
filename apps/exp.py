@@ -15,8 +15,8 @@ Usage:
     pixi run exp
 
 Data Sources:
-- Cloud: Uses boolean manifest with automatic URL reconstruction
-- Local: Supports SALAMI-style datasets with local manifest files
+- Cloud: Uses a path-based manifest with full URLs to assets.
+- Local: Supports SALAMI-style datasets with a path-based manifest containing relative asset paths.
 
 Architecture:
 - Cloud-native: Streams data from R2 bucket without local storage
@@ -26,6 +26,7 @@ Architecture:
 """
 
 import os
+from pathlib import Path
 
 import librosa
 import librosa.display
@@ -38,9 +39,10 @@ import bnl
 st.set_page_config(layout="wide")
 st.title("SALAMI Explorer")
 
-# --- Data Source Configuration ---
+# --- Data Source and Path Configuration ---
 R2_BUCKET_PUBLIC_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
-CLOUD_MANIFEST_URL = f"{R2_BUCKET_PUBLIC_URL}/manifest_cloud_boolean.csv"
+# The cloud manifest is now a local resource, bundled with the app
+CLOUD_MANIFEST_PATH = Path(__file__).parent.parent / "src/bnl/resources/manifest_cloud_boolean.csv"
 LOCAL_DATASET_ROOT = "~/data/salami"  # Example local path, user might need to change this
 LOCAL_MANIFEST_PATH = os.path.expanduser(f"{LOCAL_DATASET_ROOT}/metadata.csv")
 
@@ -68,21 +70,25 @@ elif data_source_option != st.session_state.data_source_choice:
 def get_dataset(source_type: str):
     """Loads and caches the dataset object based on selected source."""
     if source_type == "Cloud (R2)":
-        manifest_path = CLOUD_MANIFEST_URL
+        if not CLOUD_MANIFEST_PATH.exists():
+            st.error(f"Cloud manifest not found at: {CLOUD_MANIFEST_PATH}")
+            st.error("Please ensure the `manifest_cloud_boolean.csv` file is in `src/bnl/resources/`.")
+            st.stop()
         try:
-            # For cloud, cloud_base_url is where assets are, not necessarily where manifest is.
+            # Load from the local resource, but treat it as a cloud source for path reconstruction
             return bnl.data.Dataset(
-                manifest_path,
+                CLOUD_MANIFEST_PATH,
                 data_source_type="cloud",
                 cloud_base_url=R2_BUCKET_PUBLIC_URL,
             )
         except Exception as e:
-            st.error(f"Failed to load CLOUD manifest from: {manifest_path}")
-            st.error(f"Error: {e}")
+            st.error(f"Failed to load CLOUD manifest: {e}")
             st.stop()
+
     elif source_type == "Local Filesystem":
         manifest_path = LOCAL_MANIFEST_PATH
         try:
+            # The Dataset class now infers the source type from the local path
             return bnl.data.Dataset(manifest_path, data_source_type="local")
         except FileNotFoundError:
             st.error(f"Local manifest not found at: {manifest_path}")

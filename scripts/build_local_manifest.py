@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""A dedicated script to build a manifest for a local dataset."""
+"""A dedicated script to build a manifest for the local SALAMI dataset."""
 
 import argparse
 import csv
@@ -7,7 +7,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-# --- Asset Specifications for Local Dataset ---
+# --- Asset Specifications for Local SALAMI Dataset ---
 ASSET_SPECS: list[dict[str, Any]] = [
     {
         "asset_type": "audio",
@@ -43,7 +43,7 @@ ASSET_SPECS: list[dict[str, Any]] = [
 
 
 def find_assets(dataset_root: Path, spec: dict[str, Any]) -> list[dict[str, Any]]:
-    """Find all assets matching a specification and return their relative paths."""
+    """Find all assets matching a specification."""
     records = []
     asset_glob = spec["path_glob"]
     track_id_pattern = re.compile(spec["track_id_pattern"])
@@ -52,29 +52,29 @@ def find_assets(dataset_root: Path, spec: dict[str, Any]) -> list[dict[str, Any]
         if not file_path.is_file():
             continue
 
-        relative_path = file_path.relative_to(dataset_root)
-        path_str = relative_path.as_posix()
+        # Use the relative path for pattern matching
+        path_str = str(file_path.relative_to(dataset_root).as_posix())
 
         match = track_id_pattern.search(path_str)
+
         if not match:
             continue
 
         track_id = match.group("track_id")
         asset_subtype = spec["asset_subtype"] or file_path.suffix[1:].lower()
-        asset_key = f"{spec['asset_type']}_{asset_subtype}_path"
 
         records.append(
             {
                 "track_id": track_id,
-                "asset_key": asset_key,
-                "asset_path": path_str,
+                "asset_type": spec["asset_type"],
+                "asset_subtype": asset_subtype,
             }
         )
     return records
 
 
 def build_manifest(dataset_root: Path, output_path: Path) -> None:
-    """Build metadata manifest with relative paths for the local dataset."""
+    """Build metadata manifest for the local dataset."""
     print(f"Scanning dataset at: {dataset_root}")
     all_records = []
     for spec in ASSET_SPECS:
@@ -95,20 +95,24 @@ def build_manifest(dataset_root: Path, output_path: Path) -> None:
         track_id = record["track_id"]
         if track_id not in manifest_data:
             manifest_data[track_id] = {"track_id": track_id}
-        asset_key = record["asset_key"]
-        manifest_data[track_id][asset_key] = record["asset_path"]
-        all_possible_asset_cols.add(asset_key)
+        asset_col_name = f"has_{record['asset_type']}_{record['asset_subtype']}"
+        manifest_data[track_id][asset_col_name] = True
+        all_possible_asset_cols.add(asset_col_name)
 
     final_rows = []
+    # Ensure track_ids are sorted numerically
     sorted_track_ids = sorted(manifest_data.keys(), key=int)
-    fieldnames = ["track_id"] + sorted(list(all_possible_asset_cols))
-
     for track_id in sorted_track_ids:
         row = {"track_id": track_id}
-        for col_name in fieldnames:
-            if col_name != "track_id":
-                row[col_name] = manifest_data[track_id].get(col_name)  # Use .get() to handle missing assets gracefully
+        # Ensure consistent column order
+        for col_name in sorted(list(all_possible_asset_cols)):
+            row[col_name] = manifest_data[track_id].get(col_name, False)
         final_rows.append(row)
+
+    if not final_rows:
+        fieldnames = ["track_id"] + sorted(list(all_possible_asset_cols))
+    else:
+        fieldnames = list(final_rows[0].keys())
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w", newline="") as f:
@@ -121,7 +125,7 @@ def build_manifest(dataset_root: Path, output_path: Path) -> None:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate a local dataset manifest with asset paths.")
+    parser = argparse.ArgumentParser(description="Generate a local SALAMI dataset manifest.")
     parser.add_argument(
         "dataset_root",
         type=Path,
@@ -135,6 +139,7 @@ def main():
     )
     args = parser.parse_args()
 
+    # Expand user-provided paths
     dataset_root = args.dataset_root.expanduser()
     if not dataset_root.is_dir():
         print(f"Error: Dataset root not found: {dataset_root}")

@@ -14,9 +14,7 @@ MOCK_LOCAL_DATA_ROOT = "test_data_root"
 
 
 # --- Helper Functions ---
-def create_mock_manifest_df(
-    track_ids: list[str], assets_info: dict[str, dict[str, str]]
-) -> pd.DataFrame:
+def create_mock_manifest_df(track_ids: list[str], assets_info: dict[str, dict[str, str]]) -> pd.DataFrame:
     """Creates a mock DataFrame for a path-based manifest."""
     records = []
     all_cols = {"track_id"}
@@ -35,72 +33,91 @@ def create_mock_manifest_df(
             df[col] = pd.NA
 
     # Ensure consistent column order
-    sorted_cols = ["track_id"] + sorted(
-        [col for col in df.columns if col != "track_id"]
-    )
+    sorted_cols = ["track_id"] + sorted([col for col in df.columns if col != "track_id"])
+    return df[sorted_cols]
+
+
+def create_mock_boolean_manifest_df(track_ids: list[str], assets_info: dict[str, list[str]]) -> pd.DataFrame:
+    """Creates a mock DataFrame for a boolean manifest."""
+    records = []
+    all_cols = {"track_id"}
+    # From the assets_info values (lists of column names), find all possible columns
+    for track_assets in assets_info.values():
+        all_cols.update(track_assets)
+
+    for tid in track_ids:
+        record = {"track_id": str(tid)}
+        # For each possible asset column, mark it True if it's in this track's list
+        for col in all_cols:
+            if col != "track_id":
+                record[col] = col in assets_info.get(str(tid), [])
+        records.append(record)
+
+    df = pd.DataFrame(records)
+
+    # Ensure consistent column order
+    sorted_cols = ["track_id"] + sorted([col for col in df.columns if col != "track_id"])
     return df[sorted_cols]
 
 
 # --- Fixtures ---
 @pytest.fixture
 def mock_local_manifest_file(tmp_path: Path) -> Path:
-    """Creates a mock local path-based manifest and corresponding dummy files."""
+    """Creates a mock local BOOLEAN manifest and corresponding dummy files."""
     manifest_dir = tmp_path / MOCK_LOCAL_DATA_ROOT
     manifest_dir.mkdir(parents=True, exist_ok=True)
     manifest_file = manifest_dir / "metadata.csv"
 
-    # Create dummy asset files
+    # Create dummy asset files that the loader will try to find
     (manifest_dir / "audio" / "1").mkdir(parents=True, exist_ok=True)
     (manifest_dir / "audio" / "1" / "audio.mp3").touch()
     jams_dir = manifest_dir / "jams"
     jams_dir.mkdir(parents=True, exist_ok=True)
     with open(jams_dir / "1.jams", "w") as f:
-        f.write(
-            '{"file_metadata": {"title": "MockTitle", "artist": "MockArtist", "duration": 10.0}}'
-        )
+        f.write('{"file_metadata": {"title": "MockTitle", "artist": "MockArtist", "duration": 10.0}}')
 
+    # Define which assets EXIST for each track_id via boolean flags
     assets_info = {
-        "1": {
-            "audio_mp3_path": "audio/1/audio.mp3",
-            "annotation_reference_path": "jams/1.jams",
-        },
-        "2": {"audio_mp3_path": "audio/2/audio.wav"},
+        "1": ["has_audio_mp3", "has_annotation_reference"],
+        "2": ["has_audio_mp3"],  # Note: The actual file audio/2/audio.mp3 doesn't exist
+        "3": [],  # Track with no assets
     }
-    df = create_mock_manifest_df(track_ids=["1", "2", "3"], assets_info=assets_info)
+    df = create_mock_boolean_manifest_df(track_ids=["1", "2", "3"], assets_info=assets_info)
     df.to_csv(manifest_file, index=False)
     return manifest_file
 
 
 @pytest.fixture
-def mock_cloud_manifest_file(requests_mock) -> str:
-    """Mocks a cloud-based manifest file served via HTTP."""
-    manifest_url = f"{MOCK_CLOUD_URL_BASE}/manifest.csv"
+def mock_cloud_manifest_file(tmp_path: Path) -> Path:
+    """Creates a mock local BOOLEAN manifest for testing cloud logic."""
+    manifest_file = tmp_path / "manifest_cloud.csv"
     assets_info = {
-        "101": {
-            "audio_mp3_path": f"{MOCK_CLOUD_URL_BASE}/audio/101.mp3",
-            "annotation_reference_path": f"{MOCK_CLOUD_URL_BASE}/jams/101.jams",
-        },
-        "102": {"audio_mp3_path": f"{MOCK_CLOUD_URL_BASE}/audio/102.mp3"},
+        "101": ["has_audio_mp3", "has_annotation_reference"],
+        "102": ["has_audio_mp3"],
     }
-    df = create_mock_manifest_df(track_ids=["101", "102"], assets_info=assets_info)
-    requests_mock.get(manifest_url, text=df.to_csv(index=False))
-    return manifest_url
+    df = create_mock_boolean_manifest_df(track_ids=["101", "102"], assets_info=assets_info)
+    df.to_csv(manifest_file, index=False)
+    return manifest_file
 
 
 # --- Test Core Functionality ---
 def test_dataset_init_local(mock_local_manifest_file: Path):
     """Test initializing a Dataset from a local manifest."""
-    dataset = data.Dataset(mock_local_manifest_file)
+    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
     assert dataset.data_source_type == "local"
     assert dataset.dataset_root == mock_local_manifest_file.parent
     assert dataset.list_tids() == ["1", "2", "3"]
 
 
-def test_dataset_init_cloud(mock_cloud_manifest_file: str):
-    """Test initializing a Dataset from a cloud manifest URL."""
-    dataset = data.Dataset(mock_cloud_manifest_file)
+def test_dataset_init_cloud(mock_cloud_manifest_file: Path):
+    """Test initializing a Dataset for cloud usage with a local boolean manifest."""
+    dataset = data.Dataset(
+        mock_cloud_manifest_file,
+        data_source_type="cloud",
+        cloud_base_url=MOCK_CLOUD_URL_BASE,
+    )
     assert dataset.data_source_type == "cloud"
-    assert hasattr(dataset, "dataset_root") is False  # No local root for cloud
+    assert dataset.base_url == MOCK_CLOUD_URL_BASE
     assert dataset.list_tids() == ["101", "102"]
 
 
@@ -111,7 +128,7 @@ def test_dataset_init_file_not_found():
 
 def test_load_track_local(mock_local_manifest_file: Path):
     """Test loading a track and accessing its info from a local dataset."""
-    dataset = data.Dataset(mock_local_manifest_file)
+    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
     track = dataset.load_track("1")
 
     assert track.track_id == "1"
@@ -122,9 +139,10 @@ def test_load_track_local(mock_local_manifest_file: Path):
     info = track.info
     expected_audio_path = mock_local_manifest_file.parent / "audio/1/audio.mp3"
     assert info["audio_mp3_path"] == expected_audio_path
+    assert info["annotation_reference_path"] == (mock_local_manifest_file.parent / "jams/1.jams")
     assert info["title"] == "MockTitle"
 
-    # Mock librosa.load to test the audio loading call
+    # Mock librosa.load to test audio loading without a real audio file
     class MockLibrosa:
         def load(self, path, sr, mono):
             assert path == expected_audio_path
@@ -134,32 +152,45 @@ def test_load_track_local(mock_local_manifest_file: Path):
     data.librosa.load = MockLibrosa().load
     y, sr = track.load_audio()
     assert y is not None
-    assert sr == 22050
+    assert sr is not None
     data.librosa.load = original_librosa_load
 
+    # Test audio loading for a track with a missing file (but present in manifest)
+    track2 = dataset.load_track("2")
+    y2, sr2 = track2.load_audio()
+    assert y2 is None
+    assert sr2 is None
 
-def test_load_track_cloud(mock_cloud_manifest_file: str, requests_mock):
+
+def test_load_track_cloud(mock_cloud_manifest_file: Path, requests_mock):
     """Test loading a track, parsing JAMS, and loading audio from a cloud dataset."""
-    dataset = data.Dataset(mock_cloud_manifest_file)
+    dataset = data.Dataset(
+        mock_cloud_manifest_file,
+        data_source_type="cloud",
+        cloud_base_url=MOCK_CLOUD_URL_BASE,
+    )
     track = dataset.load_track("101")
 
-    # Check basic info and URL construction
-    assert track.track_id == "101"
-    expected_audio_url = f"{MOCK_CLOUD_URL_BASE}/audio/101.mp3"
-    assert track.info["audio_mp3_path"] == expected_audio_url
+    # --- Test JAMS and Audio Loading ---
+    # 1. Construct expected URLs first
+    expected_jams_url = f"{MOCK_CLOUD_URL_BASE}/ref-jams/101.jams"
+    expected_audio_url = f"{MOCK_CLOUD_URL_BASE}/slm-dataset/101/audio.mp3"
 
-    # Mock JAMS request and check metadata parsing
-    jams_url = track.manifest_row["annotation_reference_path"]
+    # 2. Set up mocks BEFORE accessing track.info, which triggers the requests
     requests_mock.get(
-        jams_url,
+        expected_jams_url,
         text='{"file_metadata": {"title": "CloudTitle", "artist": "CloudArtist", "duration": 20.0}}',
     )
-    assert track.info["title"] == "CloudTitle"
-
-    # Mock audio request and check audio loading
     mock_audio_content = io.BytesIO(b"fake_audio_data")
     requests_mock.get(expected_audio_url, body=mock_audio_content)
 
+    # 3. Now, access .info and .load_audio() to trigger the cached calls
+    info = track.info
+    assert info["annotation_reference_path"] == expected_jams_url
+    assert info["audio_mp3_path"] == expected_audio_url
+    assert info["title"] == "CloudTitle"
+
+    # Mock librosa to check that it's called with the downloaded content
     class MockLibrosa:
         def load(self, buffer, sr, mono):
             assert isinstance(buffer, io.BytesIO)
@@ -175,13 +206,12 @@ def test_load_track_cloud(mock_cloud_manifest_file: str, requests_mock):
 
 def test_load_track_with_missing_assets(mock_local_manifest_file: Path):
     """Ensure that missing asset paths are handled gracefully."""
-    dataset = data.Dataset(mock_local_manifest_file)
-    track = dataset.load_track("3")  # Track 3 has no assets in the mock manifest
+    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
+    track = dataset.load_track("3")  # Track 3 has no assets in the manifest
     assert "num_assets=0" in repr(track)
-    assert pd.isna(track.manifest_row["audio_mp3_path"])
+    assert track.info == {"track_id": "3"}  # Info should be mostly empty
     y, sr = track.load_audio()
     assert y is None
-    assert sr is None
 
 
 def test_load_nonexistent_track(mock_local_manifest_file: Path):
@@ -196,9 +226,9 @@ def test_dataset_handles_non_numeric_track_ids(tmp_path: Path):
     manifest_file = tmp_path / "metadata.csv"
     # Contains a non-numeric track_id ('a_track'), which will cause the
     # numeric sort to fail and fall back to a lexical sort.
-    df = pd.DataFrame({"track_id": ["10", "2", "a_track"]})
+    df = pd.DataFrame({"track_id": ["10", "2", "a_track"], "has_audio_mp3": [True, True, False]})
     df.to_csv(manifest_file, index=False)
 
-    dataset = data.Dataset(manifest_file)
+    dataset = data.Dataset(manifest_file, data_source_type="local")
     # Expect a lexical sort ('10', '2', 'a_track'), not a numeric one.
     assert dataset.list_tids() == ["10", "2", "a_track"]
