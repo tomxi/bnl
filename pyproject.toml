@@ -46,7 +46,7 @@ Homepage = "https://github.com/tomxi/bnl"
 where = ["src"]
 
 [tool.ruff]
-line-length = 96
+line-length = 120
 target-version = "py312"
 
 [tool.ruff.format]

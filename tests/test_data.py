@@ -1,71 +1,70 @@
-"""Tests for the manifest-based data loading core with boolean flags and path reconstruction."""
+"""Tests for the manifest-based data loading core (path-based)."""
 
+import io
 from pathlib import Path
 
 import pandas as pd
 import pytest
 
-# import requests_mock  # type: ignore # Removed as per plan
 from bnl import data
 
 # --- Constants for Mocking ---
-MOCK_CLOUD_BASE_URL = "https://mock-r2-bucket.com"
+MOCK_CLOUD_URL_BASE = "https://mock-r2-bucket.com"
 MOCK_LOCAL_DATA_ROOT = "test_data_root"
 
 
 # --- Helper Functions ---
-def create_mock_manifest_df(track_ids: list[str], assets_info: dict) -> pd.DataFrame:
-    """
-    Creates a mock DataFrame for a boolean manifest.
-    assets_info = {
-        "1": {"has_audio_mp3": True, "has_annotation_ref": True},
-        "2": {"has_audio_wav": True}
-    }
-    """
+def create_mock_manifest_df(
+    track_ids: list[str], assets_info: dict[str, dict[str, str]]
+) -> pd.DataFrame:
+    """Creates a mock DataFrame for a path-based manifest."""
     records = []
-    all_cols = {"track_id"}  # Initialize with track_id
-    for _tid, track_assets in assets_info.items():  # Use _tid for unused loop var
-        all_cols.update(track_assets.keys())
+    all_cols = {"track_id"}
+    for assets in assets_info.values():
+        all_cols.update(assets.keys())
 
-    for tid_val in track_ids:  # Use a different name for the loop variable
-        record = {"track_id": str(tid_val)}  # Corrected: use tid_val
-        track_specific_assets = assets_info.get(str(tid_val), {})  # Corrected: use tid_val
-        for col in all_cols:
-            if col != "track_id":
-                record[col] = track_specific_assets.get(col, False)
+    for tid in track_ids:
+        record = {"track_id": str(tid), **assets_info.get(str(tid), {})}
         records.append(record)
 
+    df = pd.DataFrame(records)
+
+    # Ensure all columns are present, filling missing with None (pd.NA)
+    for col in all_cols:
+        if col not in df.columns:
+            df[col] = pd.NA
+
     # Ensure consistent column order
-    sorted_cols = ["track_id"] + sorted([col for col in all_cols if col != "track_id"])
-    return pd.DataFrame(records, columns=sorted_cols)
+    sorted_cols = ["track_id"] + sorted(
+        [col for col in df.columns if col != "track_id"]
+    )
+    return df[sorted_cols]
 
 
+# --- Fixtures ---
 @pytest.fixture
 def mock_local_manifest_file(tmp_path: Path) -> Path:
-    """Creates a mock local boolean manifest CSV file."""
+    """Creates a mock local path-based manifest and corresponding dummy files."""
     manifest_dir = tmp_path / MOCK_LOCAL_DATA_ROOT
     manifest_dir.mkdir(parents=True, exist_ok=True)
     manifest_file = manifest_dir / "metadata.csv"
 
-    # Create dummy asset files that the manifest will point to
+    # Create dummy asset files
     (manifest_dir / "audio" / "1").mkdir(parents=True, exist_ok=True)
     (manifest_dir / "audio" / "1" / "audio.mp3").touch()
     jams_dir = manifest_dir / "jams"
     jams_dir.mkdir(parents=True, exist_ok=True)
-    jams_file_1 = jams_dir / "1.jams"
-    with open(jams_file_1, "w") as f:
+    with open(jams_dir / "1.jams", "w") as f:
         f.write(
             '{"file_metadata": {"title": "MockTitle", "artist": "MockArtist", "duration": 10.0}}'
         )
-    (manifest_dir / "audio" / "2").mkdir(parents=True, exist_ok=True)
-    (manifest_dir / "audio" / "2" / "audio.wav").touch()
 
     assets_info = {
-        "1": {"has_audio_mp3": True, "has_annotation_reference": True},
-        "2": {
-            "has_audio_wav": True,
-            "has_annotation_reference": False,
-        },  # Track 2 has no reference JAMS
+        "1": {
+            "audio_mp3_path": "audio/1/audio.mp3",
+            "annotation_reference_path": "jams/1.jams",
+        },
+        "2": {"audio_mp3_path": "audio/2/audio.wav"},
     }
     df = create_mock_manifest_df(track_ids=["1", "2", "3"], assets_info=assets_info)
     df.to_csv(manifest_file, index=False)
@@ -73,214 +72,133 @@ def mock_local_manifest_file(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def mock_cloud_manifest_url() -> str:
-    return f"{MOCK_CLOUD_BASE_URL}/manifest_cloud.csv"
+def mock_cloud_manifest_file(requests_mock) -> str:
+    """Mocks a cloud-based manifest file served via HTTP."""
+    manifest_url = f"{MOCK_CLOUD_URL_BASE}/manifest.csv"
+    assets_info = {
+        "101": {
+            "audio_mp3_path": f"{MOCK_CLOUD_URL_BASE}/audio/101.mp3",
+            "annotation_reference_path": f"{MOCK_CLOUD_URL_BASE}/jams/101.jams",
+        },
+        "102": {"audio_mp3_path": f"{MOCK_CLOUD_URL_BASE}/audio/102.mp3"},
+    }
+    df = create_mock_manifest_df(track_ids=["101", "102"], assets_info=assets_info)
+    requests_mock.get(manifest_url, text=df.to_csv(index=False))
+    return manifest_url
 
 
-# --- Test Track Class ---
-def test_track_repr(mock_local_manifest_file: Path):
-    """Test `Track` representation with boolean manifest."""
-    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
-    track = dataset.load_track("1")
-    # print(f"\nDEBUG: Track 1 manifest_row for repr test:\n{track.manifest_row}") # Debugging done
-    # print(f"DEBUG: Sum of filter: {track.manifest_row.filter(like='has_').sum()}") # Debugging done
-    # print(f"DEBUG: Track repr: {repr(track)}") # Debugging done
-    assert "Track(track_id='1'" in repr(track)
-    assert "source='local'" in repr(track)
-    assert "num_assets=2" in repr(track)  # has_audio_mp3 and has_annotation_reference
+# --- Test Core Functionality ---
+def test_dataset_init_local(mock_local_manifest_file: Path):
+    """Test initializing a Dataset from a local manifest."""
+    dataset = data.Dataset(mock_local_manifest_file)
+    assert dataset.data_source_type == "local"
+    assert dataset.dataset_root == mock_local_manifest_file.parent
+    assert dataset.list_tids() == ["1", "2", "3"]
 
 
-# --- Test Dataset Class ---
-def test_dataset_init_local_file_not_found():
+def test_dataset_init_cloud(mock_cloud_manifest_file: str):
+    """Test initializing a Dataset from a cloud manifest URL."""
+    dataset = data.Dataset(mock_cloud_manifest_file)
+    assert dataset.data_source_type == "cloud"
+    assert hasattr(dataset, "dataset_root") is False  # No local root for cloud
+    assert dataset.list_tids() == ["101", "102"]
+
+
+def test_dataset_init_file_not_found():
     with pytest.raises(FileNotFoundError):
-        data.Dataset(Path("non/existent/manifest.csv"), data_source_type="local")
+        data.Dataset("non/existent/manifest.csv")
 
 
-def test_dataset_init_cloud_url_error(mock_cloud_manifest_url: str):  # Removed requests_mock
-    # This test might now pass if the mock_cloud_manifest_url is a real 404,
-    # or fail differently if it's a valid URL but bad content.
-    # For now, we assume it will raise ConnectionError or similar for a bad URL.
-    # A more robust test would use a truly non-existent domain or specific error.
-    with pytest.raises(Exception):  # General exception, as specific error might change
-        data.Dataset(
-            "https://this.is.a.non.existent.domain/manifest.csv",  # Guaranteed non-existent
-            data_source_type="cloud",
-            cloud_base_url="https://this.is.a.non.existent.domain",
-        )
+def test_load_track_local(mock_local_manifest_file: Path):
+    """Test loading a track and accessing its info from a local dataset."""
+    dataset = data.Dataset(mock_local_manifest_file)
+    track = dataset.load_track("1")
+
+    assert track.track_id == "1"
+    assert "Track(track_id='1'" in repr(track)
+    assert "num_assets=2" in repr(track)
+
+    # Check that info resolves relative paths and parses JAMS metadata
+    info = track.info
+    expected_audio_path = mock_local_manifest_file.parent / "audio/1/audio.mp3"
+    assert info["audio_mp3_path"] == expected_audio_path
+    assert info["title"] == "MockTitle"
+
+    # Mock librosa.load to test the audio loading call
+    class MockLibrosa:
+        def load(self, path, sr, mono):
+            assert path == expected_audio_path
+            return (pd.Series([1, 2, 3]), 22050)
+
+    original_librosa_load = data.librosa.load
+    data.librosa.load = MockLibrosa().load
+    y, sr = track.load_audio()
+    assert y is not None
+    assert sr == 22050
+    data.librosa.load = original_librosa_load
 
 
-def test_dataset_init_invalid_source_type():
-    with pytest.raises(ValueError, match="Unsupported data_source_type"):
-        data.Dataset("dummy_path", data_source_type="invalid")  # type: ignore
+def test_load_track_cloud(mock_cloud_manifest_file: str, requests_mock):
+    """Test loading a track, parsing JAMS, and loading audio from a cloud dataset."""
+    dataset = data.Dataset(mock_cloud_manifest_file)
+    track = dataset.load_track("101")
+
+    # Check basic info and URL construction
+    assert track.track_id == "101"
+    expected_audio_url = f"{MOCK_CLOUD_URL_BASE}/audio/101.mp3"
+    assert track.info["audio_mp3_path"] == expected_audio_url
+
+    # Mock JAMS request and check metadata parsing
+    jams_url = track.manifest_row["annotation_reference_path"]
+    requests_mock.get(
+        jams_url,
+        text='{"file_metadata": {"title": "CloudTitle", "artist": "CloudArtist", "duration": 20.0}}',
+    )
+    assert track.info["title"] == "CloudTitle"
+
+    # Mock audio request and check audio loading
+    mock_audio_content = io.BytesIO(b"fake_audio_data")
+    requests_mock.get(expected_audio_url, body=mock_audio_content)
+
+    class MockLibrosa:
+        def load(self, buffer, sr, mono):
+            assert isinstance(buffer, io.BytesIO)
+            return (pd.Series([1, 2, 3]), 44100)
+
+    original_librosa_load = data.librosa.load
+    data.librosa.load = MockLibrosa().load
+    y, sr = track.load_audio()
+    assert y is not None
+    assert sr == 44100
+    data.librosa.load = original_librosa_load
 
 
-# --- Test Local Dataset Operations ---
-@pytest.fixture
-def local_dataset(mock_local_manifest_file: Path) -> data.Dataset:
-    return data.Dataset(mock_local_manifest_file, data_source_type="local")
+def test_load_track_with_missing_assets(mock_local_manifest_file: Path):
+    """Ensure that missing asset paths are handled gracefully."""
+    dataset = data.Dataset(mock_local_manifest_file)
+    track = dataset.load_track("3")  # Track 3 has no assets in the mock manifest
+    assert "num_assets=0" in repr(track)
+    assert pd.isna(track.manifest_row["audio_mp3_path"])
+    y, sr = track.load_audio()
+    assert y is None
+    assert sr is None
 
 
-class TestLocalDataset:
-    def test_init(self, local_dataset: data.Dataset, mock_local_manifest_file: Path):
-        assert local_dataset is not None
-        assert local_dataset.data_source_type == "local"
-        assert local_dataset.dataset_root == mock_local_manifest_file.parent
-        assert len(local_dataset.track_ids) == 3  # From create_mock_manifest_df
-
-    def test_list_tids(self, local_dataset: data.Dataset):
-        tids = local_dataset.list_tids()
-        assert tids == ["1", "2", "3"]
-
-    def test_load_track_local(
-        self, local_dataset: data.Dataset, mock_local_manifest_file: Path
-    ):
-        track1 = local_dataset.load_track("1")
-        assert isinstance(track1, data.Track)
-        assert track1.track_id == "1"
-        assert track1.dataset == local_dataset
-        assert track1.manifest_row["has_audio_mp3"] == True
-        assert track1.manifest_row["has_annotation_reference"] == True
-
-        # Check path reconstruction
-        expected_audio_path = mock_local_manifest_file.parent / "audio" / "1" / "audio.mp3"
-        assert track1.info["audio_mp3_path"] == expected_audio_path
-        expected_jams_path = mock_local_manifest_file.parent / "jams" / "1.jams"
-        assert track1.info["annotation_reference_path"] == expected_jams_path
-
-        # Test loading audio (mock actual librosa.load if needed, here we just check path).
-        # To fully test load_audio, we'd need dummy audio files and mock librosa
-        # or use real small files.
-        # For now, assume path reconstruction is the main thing to test here.
-        # We created dummy files, so librosa.load should find them.
-        # JAMS file content is now written in the fixture.
-        # with open(expected_jams_path, "w") as f:  # Create dummy JAMS content for metadata
-        #     f.write(
-        #         '{"file_metadata": {"title": "MockTitle", "artist": "MockArtist", '
-        #         '"duration": 10.0}}'
-        #     )
-
-        waveform, sr = track1.load_audio()
-        # assert waveform is not None  # Temporarily commented out due to empty audio file
-        # assert sr is not None       # Temporarily commented out
-        assert "title" in track1.info  # Check JAMS metadata loaded into info
-
-    def test_load_track_local_no_reference_jams(self, local_dataset: data.Dataset):
-        track2 = local_dataset.load_track("2")
-        assert track2.manifest_row["has_annotation_reference"] == False
-        assert "annotation_reference_path" not in track2.info  # Path shouldn't be reconstructed
-        assert "title" not in track2.info  # JAMS metadata shouldn't be loaded
-
-    def test_load_nonexistent_track_local(self, local_dataset: data.Dataset):
-        with pytest.raises(ValueError, match="Track ID 'nonexistent' not found"):
-            local_dataset.load_track("nonexistent")
+def test_load_nonexistent_track(mock_local_manifest_file: Path):
+    """Test that loading a track_id not in the manifest raises a ValueError."""
+    dataset = data.Dataset(mock_local_manifest_file)
+    with pytest.raises(ValueError, match="Track ID 'nonexistent' not found"):
+        dataset.load_track("nonexistent")
 
 
-# --- Constants for Live Cloud Tests ---
-# Using the actual production URLs as per user confirmation.
-LIVE_CLOUD_MANIFEST_URL = (
-    "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev/manifest_cloud.csv"
-)
-LIVE_R2_BUCKET_PUBLIC_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
+def test_dataset_handles_non_numeric_track_ids(tmp_path: Path):
+    """Ensure Dataset correctly sorts non-numeric track IDs lexically."""
+    manifest_file = tmp_path / "metadata.csv"
+    # Contains a non-numeric track_id ('a_track'), which will cause the
+    # numeric sort to fail and fall back to a lexical sort.
+    df = pd.DataFrame({"track_id": ["10", "2", "a_track"]})
+    df.to_csv(manifest_file, index=False)
 
-
-# --- Test Cloud Dataset Operations (Live) ---
-@pytest.fixture(scope="module")  # Load once for all cloud tests
-def live_cloud_dataset() -> data.Dataset | None:
-    """Fixture to load the live cloud dataset. Skips if manifest is unreachable."""
-    try:
-        dataset = data.Dataset(
-            LIVE_CLOUD_MANIFEST_URL,
-            data_source_type="cloud",
-            cloud_base_url=LIVE_R2_BUCKET_PUBLIC_URL,
-        )
-        # Quick check to see if any tracks were loaded
-        if not dataset.list_tids():
-            pytest.skip("Live cloud manifest loaded but is empty or failed to parse tracks.")
-            return None
-        return dataset
-    except Exception as e:  # Catch any error during dataset init (network, parsing)
-        pytest.skip(
-            f"Skipping live cloud tests: Failed to load dataset from {LIVE_CLOUD_MANIFEST_URL}. Error: {e}"
-        )
-        return None
-
-
-@pytest.mark.skipif(
-    live_cloud_dataset is None, reason="Live cloud dataset not available or failed to load."
-)
-class TestLiveCloudDataset:
-    def test_init(self, live_cloud_dataset: data.Dataset):
-        assert live_cloud_dataset is not None
-        assert live_cloud_dataset.data_source_type == "cloud"
-        assert live_cloud_dataset.base_url == LIVE_R2_BUCKET_PUBLIC_URL
-        assert str(live_cloud_dataset.manifest_path) == LIVE_CLOUD_MANIFEST_URL
-        assert len(live_cloud_dataset.track_ids) > 0  # Check if manifest has entries
-
-    def test_list_tids_cloud(self, live_cloud_dataset: data.Dataset):
-        tids = live_cloud_dataset.list_tids()
-        assert isinstance(tids, list)
-        assert len(tids) > 0
-        # Potentially check if a known track ID exists, e.g. '1' or 'SALAMI_1'
-        # This depends on the actual content of the live manifest.
-        # For now, just checking if list is not empty.
-
-    def test_load_track_cloud_and_check_paths(self, live_cloud_dataset: data.Dataset):
-        # Attempt to load the first track ID from the live manifest
-        # This assumes the first track has standard assets for path checking.
-        # A more robust test would pick a known track_id.
-        # For now, let's use '1' and '2' as placeholders, assuming they exist.
-        # User confirmed manifest is working, so we expect some tracks.
-
-        test_track_ids = []
-        if "1" in live_cloud_dataset.track_ids:
-            test_track_ids.append("1")
-        if "2" in live_cloud_dataset.track_ids:  # Example, another known track
-            test_track_ids.append("2")
-
-        if not test_track_ids:  # Fallback if '1' or '2' are not present
-            if live_cloud_dataset.track_ids:
-                test_track_ids.append(live_cloud_dataset.track_ids[0])  # Get first available
-            else:
-                pytest.skip(
-                    "No tracks available in live cloud manifest to test path reconstruction."
-                )
-
-        for track_id_to_test in test_track_ids:
-            track = live_cloud_dataset.load_track(track_id_to_test)
-            assert isinstance(track, data.Track)
-            assert track.track_id == track_id_to_test
-
-            # Check for expected assets based on the boolean flags in its manifest_row
-            # This is more dynamic than hardcoding expected assets for specific mock tracks.
-            if track.manifest_row.get("has_audio_mp3"):
-                expected_audio_url = (
-                    f"{LIVE_R2_BUCKET_PUBLIC_URL}/slm-dataset/{track_id_to_test}/audio.mp3"
-                )
-                assert track.info.get("audio_mp3_path") == expected_audio_url
-                # Optionally, try to load audio if small test files are guaranteed
-                # y, sr = track.load_audio()
-                # assert y is not None, f"Failed to load audio for track {track_id_to_test}"
-
-            if track.manifest_row.get("has_annotation_ref"):
-                expected_jams_url = (
-                    f"{LIVE_R2_BUCKET_PUBLIC_URL}/ref-jams/{track_id_to_test}.jams"
-                )
-                assert track.info.get("annotation_reference_path") == expected_jams_url
-                # Check if JAMS metadata (title, artist) gets parsed from the live JAMS file
-                # This will make a real HTTP request for the JAMS file.
-                assert "title" in track.info, f"JAMS title missing for track {track_id_to_test}"
-                assert "artist" in track.info, (
-                    f"JAMS artist missing for track {track_id_to_test}"
-                )
-
-            # Add more checks for other asset types if necessary, e.g., adobe annotations
-            # if track.manifest_row.get("has_annotation_adobe-mu1gamma1"):
-            #     expected_adobe_url = (
-            #         f"{LIVE_R2_BUCKET_PUBLIC_URL}/adobe21-est/def_mu_0.1_gamma_0.1/"
-            #         f"{track_id_to_test}.mp3.msdclasscsnmagic.json"
-            #     )
-            #     assert track.info.get("annotation_adobe-mu1gamma1_path") == expected_adobe_url
-
-    def test_load_nonexistent_track_cloud(self, live_cloud_dataset: data.Dataset):
-        with pytest.raises(ValueError, match="Track ID 'nonexistent_cloud_id_12345' not found"):
-            live_cloud_dataset.load_track("nonexistent_cloud_id_12345")
+    dataset = data.Dataset(manifest_file)
+    # Expect a lexical sort ('10', '2', 'a_track'), not a numeric one.
+    assert dataset.list_tids() == ["10", "2", "a_track"]

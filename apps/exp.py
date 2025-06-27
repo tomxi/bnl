@@ -41,9 +41,7 @@ st.title("SALAMI Explorer")
 # --- Data Source Configuration ---
 R2_BUCKET_PUBLIC_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
 CLOUD_MANIFEST_URL = f"{R2_BUCKET_PUBLIC_URL}/manifest_cloud_boolean.csv"
-LOCAL_DATASET_ROOT = (
-    "~/data/salami"  # Example local path, user might need to change this
-)
+LOCAL_DATASET_ROOT = "~/data/salami"  # Example local path, user might need to change this
 LOCAL_MANIFEST_PATH = os.path.expanduser(f"{LOCAL_DATASET_ROOT}/metadata.csv")
 
 # Let user choose data source
@@ -88,13 +86,8 @@ def get_dataset(source_type: str):
             return bnl.data.Dataset(manifest_path, data_source_type="local")
         except FileNotFoundError:
             st.error(f"Local manifest not found at: {manifest_path}")
-            st.error(
-                "Ensure your local SALAMI dataset is structured correctly and manifest exists."
-            )
-            st.info(
-                f"Expected structure: \n{LOCAL_DATASET_ROOT}/\n"
-                "  ├── audio/\n  ├── jams/\n  └── metadata.csv"
-            )
+            st.error("Ensure your local SALAMI dataset is structured correctly and manifest exists.")
+            st.info(f"Expected structure: \n{LOCAL_DATASET_ROOT}/\n  ├── audio/\n  ├── jams/\n  └── metadata.csv")
             st.stop()
         except Exception as e:
             st.error(f"Failed to load LOCAL manifest from: {manifest_path}")
@@ -132,9 +125,7 @@ def create_audio_analysis_plot(waveform, sr):
     if waveform is None or sr is None:
         return None
 
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1, figsize=(6, 4), sharex=True, constrained_layout=True
-    )
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 4), sharex=True, constrained_layout=True)
     librosa.display.waveshow(waveform, sr=sr, ax=ax1)
     ax1.set_title("Waveform")
     ax1.set_ylabel("Amplitude")
@@ -173,10 +164,7 @@ with st.sidebar:
     )
 
     # Initialize track_id if not set
-    if (
-        "track_id" not in st.session_state
-        or st.session_state.track_id not in available_tids
-    ):
+    if "track_id" not in st.session_state or st.session_state.track_id not in available_tids:
         st.session_state.track_id = available_tids[0]
         reset_track_state()
 
@@ -184,9 +172,7 @@ with st.sidebar:
     st.write(f"📊 **Data source:** {st.session_state.data_source_choice}")
     st.write(f"🎯 **Track:** {st.session_state.track_id}")
 
-    if st.session_state.get("track_loaded", False) and hasattr(
-        st.session_state, "track"
-    ):
+    if st.session_state.get("track_loaded", False) and hasattr(st.session_state, "track"):
         tinfo = st.session_state.track.info
         st.write(f"Title: {tinfo.get('title', 'N/A')}")  # Use .get for safety
         st.write(f"Artist: {tinfo.get('artist', 'N/A')}")
@@ -212,9 +198,7 @@ if not st.session_state.track_loaded:
             st.session_state.track_id,
             st.session_state.data_source_choice,
         )
-        analysis_plot = (
-            create_audio_analysis_plot(waveform, sr) if waveform is not None else None
-        )
+        analysis_plot = create_audio_analysis_plot(waveform, sr) if waveform is not None else None
 
     st.session_state.track = track
     st.session_state.waveform = waveform
@@ -250,12 +234,8 @@ if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
         else:
             st.warning("Could not generate audio analysis plot (no waveform data).")
     else:
-        st.warning(
-            f"No audio asset found for track {st.session_state.track_id} in the manifest."
-        )
-        st.json(
-            track.manifest_row.to_dict()
-        )  # Display what assets the manifest says it has
+        st.warning(f"No audio asset found for track {st.session_state.track_id} in the manifest.")
+        st.json(track.manifest_row.to_dict())  # Display what assets the manifest says it has
 
 else:
     st.warning("Please select a track or wait for data to load.")

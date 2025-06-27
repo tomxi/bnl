@@ -33,9 +33,7 @@ class TimeSpan:
 
     def __post_init__(self) -> None:
         if self.start > self.end:
-            raise ValueError(
-                f"Start time ({self.start}) must be less than end time ({self.end})"
-            )
+            raise ValueError(f"Start time ({self.start}) must be less than end time ({self.end})")
         if self.name is None:
             self.name = str(self)
 
@@ -190,10 +188,7 @@ class Segmentation(TimeSpan):
         if labels is None:
             labels = [None] * len(intervals)
 
-        time_spans = [
-            TimeSpan(start=itvl[0], end=itvl[1], name=label)
-            for itvl, label in zip(intervals, labels)
-        ]
+        time_spans = [TimeSpan(start=itvl[0], end=itvl[1], name=label) for itvl, label in zip(intervals, labels)]
         return cls(segments=time_spans, name=name)
 
     @classmethod

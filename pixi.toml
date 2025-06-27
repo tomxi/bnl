@@ -49,6 +49,7 @@ pytest-cov = "*"
 ruff = "*"
 mypy = "*"
 types-requests = "*"
+requests-mock = "*"
 
 [feature.notebooks.dependencies]
 # Notebook dependencies

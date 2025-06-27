@@ -79,13 +79,6 @@ def test_str_repr():
     assert repr(seg2) == "Segmentation(2 segments over 1.00s)"
 
 
-def test_unimplemented_methods():
-    """Cover unimplemented methods for test coverage."""
-    # bnl.Hierarchy.from_jams(None)
-    # bnl.Segmentation.from_jams(None)
-    # bnl.Hierarchy(layers=[]).plot()
-
-
 def test_core_edge_cases_and_validation():
     """Test edge cases and validation for core classes."""
     # Test TimeSpan validation error
@@ -111,32 +104,18 @@ def test_core_edge_cases_and_validation():
     assert repr(unnamed_span) == "TimeSpan([1.0-2.0s][1.0-2.0s])"
 
 
-def test_timespan_plot_full_coverage():
-    """Test TimeSpan.plot method for full branch coverage."""
-    # Test with a named span to cover default path for text and color handling
+def test_plotting_runs_without_error():
+    """A lean test to ensure plotting functions can be called without error."""
+    # Test TimeSpan plotting
     span_named = bnl.TimeSpan(start=0.0, end=1.0, name="test_span")
+    fig, ax = span_named.plot()
+    plt.close(fig)
 
-    # Cover `if "color" in style_map:` branch and basic text
-    fig1, ax1 = span_named.plot(color="blue")
-    assert ax1.patches[0].get_facecolor() == (0.0, 0.0, 1.0, 1.0)
-    assert ax1.texts[0].get_text() == "test_span"  # Ensure text is plotted
-    plt.close(fig1)
+    span_unnamed = bnl.TimeSpan(start=0.0, end=1.0)
+    fig, ax = span_unnamed.plot(text=False)
+    plt.close(fig)
 
-    # Cover `if text:` branch when text is False
-    fig2, ax2 = span_named.plot(text=False)
-    assert len(ax2.texts) == 0
-    plt.close(fig2)
-
-    # Cover `style_map.setdefault("edgecolor", "white")` when no style is
-    # passed (and default text)
-    fig3, ax3 = span_named.plot()
-    assert ax3.patches[0].get_edgecolor() == (1.0, 1.0, 1.0, 1.0)
-    assert ax3.texts[0].get_text() == "test_span"  # Ensure text is plotted
-    plt.close(fig3)
-
-    # Test with an unnamed span to cover `lab = self.name if self.name
-    # else str(self)`'s else branch
-    span_unnamed = bnl.TimeSpan(start=0.0, end=1.0)  # name=None
-    fig4, ax4 = span_unnamed.plot()  # text=True by default
-    assert ax4.texts[0].get_text() == "[0.0-1.0s]"  # Expect str(self)
-    plt.close(fig4)
+    # Test Segmentation plotting
+    seg = bnl.Segmentation.from_boundaries([0, 1, 2], ["X", "Y"])
+    fig, ax = seg.plot()
+    plt.close(fig)

@@ -36,9 +36,7 @@ def label_style_dict(
         'edgecolor', 'linewidth', 'hatch', and 'label'.
     """
     # Extract unique labels from potentially nested structure
-    unique_labels = np.unique(
-        np.concatenate([np.atleast_1d(label) for label in labels if label is not None])
-    )
+    unique_labels = np.unique(np.concatenate([np.atleast_1d(label) for label in labels if label is not None]))
 
     # More hatch patterns for more labels
     hatchs = ["", "..", "O.", "*", "xx", "xxO", "\\O", "oo", "\\"]
@@ -58,11 +56,7 @@ def label_style_dict(
     seg_map = {}
     for lab, properties in zip(unique_labels, p_cycler):
         # Extract relevant style properties
-        style = {
-            k: v
-            for k, v in properties.items()
-            if k in ["color", "facecolor", "edgecolor", "linewidth", "hatch"]
-        }
+        style = {k: v for k, v in properties.items() if k in ["color", "facecolor", "edgecolor", "linewidth", "hatch"]}
 
         # Convert color to facecolor to preserve edgecolor on rectangles
         if "color" in style:

@@ -12,14 +12,12 @@ data
     Data loading and management for musical structure datasets.
 ops
     Operations and transformations on BNL objects.
-metrics
-    Evaluation metrics for segmentations.
 """
 
 __version__ = "0.2.1"
 
 # --- Import submodules for explicit, namespaced access ---
-from . import data, metrics, ops, viz
+from . import data, ops, viz
 
 # --- Promote the core data structures to the top level ---
 from .core import Hierarchy, Segmentation, TimeSpan
@@ -34,5 +32,4 @@ __all__ = [
     "viz",
     "data",
     "ops",
-    "metrics",
 ]
