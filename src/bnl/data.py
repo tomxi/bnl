@@ -3,7 +3,7 @@
 import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast, Union # Union was missing for Path | str
+from typing import Any, cast, Union  # Union was missing for Path | str
 from urllib.parse import urlparse
 
 import jams
@@ -52,26 +52,12 @@ class Track:
     """
 
     track_id: str
-    # dataset_root: Path | str # Replaced by dataset.dataset_root or dataset.base_url
-    # assets: dict[tuple[str, str], dict[str, Any]] # Replaced by manifest_row
     manifest_row: pd.Series  # Stores the boolean flags for this track's assets
     dataset: "Dataset"  # Reference to the parent dataset to access source type, root path/URL
 
     def __post_init__(self) -> None:
         """Initializes cache attributes after the object is created."""
         self._info_cache: dict[str, Any] | None = None
-
-    # @classmethod
-    # def from_assets_list(
-    #     cls, track_id: str, dataset_root: Path | str, assets: list[dict[str, Any]]
-    # ) -> "Track":
-    #     """Create a `Track` from a list of asset dictionaries."""
-    #     # Flatten to composite keys for simple O(1) access
-    #     assets_dict = {}
-    #     for asset in assets:
-    #         key = (asset["asset_type"], asset.get("asset_subtype", "default"))
-    #         assets_dict[key] = asset
-    #     return cls(track_id, dataset_root, assets_dict)
 
     def __repr__(self) -> str:
         # Count how many 'has_*' columns are True
@@ -84,39 +70,57 @@ class Track:
 
     @property
     def info(self) -> dict[str, Any]:
-        """A cached dictionary of essential track information, including reconstructed paths/URLs."""
+        """A cached dictionary of essential track information, including paths/URLs and metadata."""
         if self._info_cache is not None:
             return self._info_cache
 
         info: dict[str, Any] = {"track_id": self.track_id}
 
-        # Reconstruct paths/URLs based on boolean flags
-        for col_name, has_asset in self.manifest_row.items():
-            if col_name.startswith("has_") and has_asset:
-                # e.g., has_audio_mp3 -> audio, mp3
-                parts = col_name.replace("has_", "").split("_", 1)
-                asset_type = parts[0]
-                asset_subtype = parts[1] if len(parts) > 1 else None
-                # Subtype might be absent if original spec didn't have it
+        # Check if manifest uses boolean flags (has_*) or direct paths (*_path)
+        has_boolean_format = any(
+            col.startswith("has_") for col in self.manifest_row.index
+        )
 
-                path_or_url = self._reconstruct_path(asset_type, asset_subtype)
+        if has_boolean_format:
+            # Legacy format: Reconstruct paths/URLs based on boolean flags
+            for col_name, has_asset in self.manifest_row.items():
+                if col_name.startswith("has_") and has_asset:
+                    # e.g., has_audio_mp3 -> audio, mp3
+                    parts = col_name.replace("has_", "").split("_", 1)
+                    asset_type = parts[0]
+                    asset_subtype = parts[1] if len(parts) > 1 else None
 
-                # Store the path/URL in info dict, e.g., info['audio_mp3_path'] or
-                # info['annotation_reference_path']
-                info_key_suffix = f"_{asset_subtype}_path" if asset_subtype else "_path"
-                info[f"{asset_type}{info_key_suffix}"] = path_or_url
+                    path_or_url = self._reconstruct_path(asset_type, asset_subtype)
 
-        # Add JAMS metadata if reference annotation exists and its path/URL was reconstructed.
-        # Assumes 'reference' is the subtype for the main JAMS file.
-        # The column name would be 'has_annotation_reference'.
-        jams_info_key = "annotation_reference_path"  # Must match reconstruction
+                    # Store the path/URL in info dict, e.g., info['audio_mp3_path'] or
+                    # info['annotation_reference_path']
+                    info_key_suffix = (
+                        f"_{asset_subtype}_path" if asset_subtype else "_path"
+                    )
+                    info[f"{asset_type}{info_key_suffix}"] = path_or_url
+        else:
+            # Direct path format: Copy all path columns directly
+            for col_name, path_value in self.manifest_row.items():
+                if col_name.endswith("_path") and path_value is not None:
+                    info[col_name] = path_value
+
+        # Add JAMS metadata if reference annotation exists
+        jams_info_key = "annotation_reference_path"  # Boolean format
         if jams_path_or_url := info.get(jams_info_key):
             info.update(_parse_jams_metadata(jams_path_or_url))
+
+        # Also check for direct path manifest format
+        elif "annotation_ref_path" in self.manifest_row:
+            ref_path = self.manifest_row["annotation_ref_path"]
+            if ref_path is not None:
+                info.update(_parse_jams_metadata(ref_path))
 
         self._info_cache = info
         return self._info_cache
 
-    def _reconstruct_path(self, asset_type: str, asset_subtype: str | None) -> Path | str:
+    def _reconstruct_path(
+        self, asset_type: str, asset_subtype: str | None
+    ) -> Path | str:
         """Reconstructs the full path or URL for an asset."""
         # This logic needs to align with manifest builders and storage layout.
         if self.dataset.data_source_type == "local":
@@ -124,9 +128,13 @@ class Track:
         elif self.dataset.data_source_type == "cloud":
             return self._reconstruct_cloud_url(asset_type, asset_subtype)
         else:
-            raise ValueError(f"Invalid data_source_type: {self.dataset.data_source_type}")
+            raise ValueError(
+                f"Invalid data_source_type: {self.dataset.data_source_type}"
+            )
 
-    def _reconstruct_local_path(self, asset_type: str, asset_subtype: str | None) -> Path:
+    def _reconstruct_local_path(
+        self, asset_type: str, asset_subtype: str | None
+    ) -> Path:
         """Helper to reconstruct local file paths."""
         base_path = cast(Path, self.dataset.dataset_root)
         # Example local structure:
@@ -134,7 +142,12 @@ class Track:
         # <dataset_root>/jams/<track_id>.jams
         if asset_type == "audio":
             # Assumes audio files are <track_id>/audio.<subtype> in 'audio' folder
-            return base_path / asset_type / self.track_id / f"audio.{asset_subtype or 'mp3'}"
+            return (
+                base_path
+                / asset_type
+                / self.track_id
+                / f"audio.{asset_subtype or 'mp3'}"
+            )
         elif asset_type == "annotation":
             if asset_subtype == "reference":
                 return base_path / "jams" / f"{self.track_id}.jams"
@@ -142,7 +155,12 @@ class Track:
             return base_path / asset_type / f"{self.track_id}.{asset_subtype}.json"
         else:
             # Generic fallback
-            return base_path / asset_type / self.track_id / f"asset.{asset_subtype or 'dat'}"
+            return (
+                base_path
+                / asset_type
+                / self.track_id
+                / f"asset.{asset_subtype or 'dat'}"
+            )
 
     def _reconstruct_cloud_url(self, asset_type: str, asset_subtype: str | None) -> str:
         """Helper to reconstruct cloud URLs."""
@@ -153,7 +171,7 @@ class Track:
         # {base_url}/adobe21-est/.../{track_id}.mp3.msdclasscsnmagic.json
         if asset_type == "audio" and asset_subtype == "mp3":
             return f"{base_url}/slm-dataset/{self.track_id}/audio.mp3"
-        elif asset_type == "annotation" and asset_subtype == "ref":
+        elif asset_type == "annotation" and asset_subtype in ["ref", "reference"]:
             return f"{base_url}/ref-jams/{self.track_id}.jams"
         elif asset_type == "annotation" and asset_subtype == "adobe-mu1gamma1":
             return (
@@ -174,27 +192,6 @@ class Track:
             raise ValueError(
                 f"Unknown cloud asset structure for type '{asset_type}', subtype '{asset_subtype}'"
             )
-
-    # def get_asset(
-    #     self, asset_type: str, asset_subtype: str = "default"
-    # ) -> dict[str, Any] | None:
-    #     """Get an asset by its type and subtype.
-    #     If the exact subtype is not found, it falls back to the first asset
-    #     of the specified `asset_type`.
-    #     """
-    #     # This method needs to be re-thought with boolean flags.
-    #     # It should probably return the reconstructed path/URL if the flag is True.
-    #     column_name = f"has_{asset_type}_{asset_subtype}"
-    #     if self.manifest_row.get(column_name, False):
-    #         return self._reconstruct_path(asset_type, asset_subtype)
-    #
-    #     # Fallback logic might be more complex: find any 'has_audio_*' that is True.
-    #     if asset_subtype == "default": # Generic request
-    #         for col_name, has_asset in self.manifest_row.filter(like=f"has_{asset_type}_").items():
-    #             if has_asset:
-    #                 actual_subtype = col_name.replace(f"has_{asset_type}_", "")
-    #                 return self._reconstruct_path(asset_type, actual_subtype)
-    #     return None
 
     def load_audio(self) -> tuple[np.ndarray | None, float | None]:
         """Loads the audio waveform and sample rate for this track."""
@@ -265,8 +262,9 @@ class Dataset:
         The path to the dataset's `metadata.csv` manifest file.
         Can be a local file path or a URL for cloud-based manifests.
     """
+
     dataset_root: Path | str  # Explicitly type hint at class level
-    base_url: str | None      # Explicitly type hint at class level
+    base_url: str | None  # Explicitly type hint at class level
     manifest: pd.DataFrame
     track_ids: list[str]
     is_cloud_manifest: bool
@@ -281,9 +279,14 @@ class Dataset:
         self.data_source_type = data_source_type  # 'local' or 'cloud'
 
         if self.data_source_type == "cloud":
-            self.is_cloud_manifest = urlparse(str(manifest_path)).scheme in ("http", "https")
+            self.is_cloud_manifest = urlparse(str(manifest_path)).scheme in (
+                "http",
+                "https",
+            )
             if not self.is_cloud_manifest:
-                raise ValueError("For cloud data_source_type, manifest_path must be a URL.")
+                raise ValueError(
+                    "For cloud data_source_type, manifest_path must be a URL."
+                )
             # Base URL for reconstructing asset URLs, e.g., R2 public URL
             self.base_url = cloud_base_url or str(manifest_path).rsplit("/", 1)[0]
             self.dataset_root = self.base_url  # For cloud, dataset_root is the base URL
@@ -301,7 +304,9 @@ class Dataset:
             manifest_path_obj = Path(manifest_path)
             if not manifest_path_obj.exists():
                 raise FileNotFoundError(f"Manifest file not found: {manifest_path_obj}")
-            self.dataset_root = manifest_path_obj.parent  # Root directory for local files
+            self.dataset_root = (
+                manifest_path_obj.parent
+            )  # Root directory for local files
             self.base_url = None  # No base_url for local data
             self.manifest = pd.read_csv(manifest_path_obj)  # Assumes boolean manifest
         else:
@@ -373,4 +378,6 @@ class Dataset:
             raise ValueError(f"No manifest entry found for track ID '{track_id}'.")
 
         # Pass the single row (as a Series) to the Track constructor
-        return Track(track_id=track_id, manifest_row=track_manifest_row.iloc[0], dataset=self)
+        return Track(
+            track_id=track_id, manifest_row=track_manifest_row.iloc[0], dataset=self
+        )

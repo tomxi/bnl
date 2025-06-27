@@ -20,6 +20,8 @@ mir_eval = "*"
 # Runtime dependencies
 python = "3.12.*"
 boto3 = ">=1.38.44,<2"
+requests = ">=2.32.4,<3"
+ffmpeg = ">=7.1.1,<8"
 
 [host-dependencies]
 pip = "*"
@@ -113,6 +115,9 @@ docs-clean = "rm -rf docs/_build"
 
 # Builds the data manifest required for your project.
 build-manifest = "python scripts/build_manifest.py"
+
+# Builds the cloud boolean manifest for R2 deployment.
+build-cloud-manifest = "python scripts/build_cloud_manifest.py"
 
 # Runs the Streamlit experiment app.
 exp = "streamlit run ./apps/exp.py"
