@@ -16,7 +16,7 @@ metrics
     Evaluation metrics for segmentations.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 
 # --- Import submodules for explicit, namespaced access ---
 from . import data, metrics, ops, viz

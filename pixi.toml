@@ -1,6 +1,6 @@
 [project]
 name = "bnl"
-version = "0.2.0"
+version = "0.2.1"
 description = "Boundary and Labeling: Tools for Hierarchical Music Structure Analysis"
 authors = ["tomxi <tom.xi@nyu.edu>"]
 channels = ["conda-forge"]
@@ -41,12 +41,11 @@ sphinx-autobuild = "*"
 
 [feature.dev.dependencies]
 # Development dependencies
+# We've removed pylint to consolidate on ruff for speed and simplicity.
 pytest = "*"
 pytest-cov = "*"
-black = "*"
-isort = "*"
+ruff = "*"
 mypy = "*"
-pylint = "*"
 
 [feature.notebooks.dependencies]
 # Notebook dependencies
@@ -66,35 +65,52 @@ notebooks = ["notebooks"]
 apps = ["apps"]
 
 [tasks]
-# Install the package in development mode
-install-dev = "pip install -e ."
+# ===================================================================
+# Primary Workflow: Format, Fix, Check, Test
+# ===================================================================
 
-# Testing tasks
+# Auto-formats all code in the project. Run this often.
+format = "ruff format ."
+
+# Lints the code and automatically fixes any safe violations.
+fix = "ruff check . --fix"
+
+# Verifies code is formatted and passes linting checks (ideal for CI).
+check = "ruff format --check . && ruff check ."
+
+# Runs all tests using pytest.
 test = "pytest"
-test-cov = "pytest --cov=src --cov-report=html --cov-report=term"
 
-# Linting and formatting
-lint = "pylint src/"
-format = "black src/ tests/"
-format-check = "black --check src/ tests/"
-isort = "isort src/ tests/"
-isort-check = "isort --check-only src/ tests/"
-typecheck = "mypy src/"
+# ===================================================================
+# In-depth & Optional Tasks
+# ===================================================================
 
-# Documentation tasks
+# Runs tests and generates a code coverage report in the terminal.
+test-cov = "pytest --cov=bnl --cov-report=term-missing"
+
+# Runs mypy for static type analysis. Can be slow on large codebases.
+# Kept separate from the main 'check' task for a faster core loop.
+types = "mypy src/ --ignore-missing-imports"
+
+# ===================================================================
+# Documentation
+# ===================================================================
+
+# Builds the Sphinx documentation into the docs/_build/html directory.
 docs-build = "sphinx-build -b html docs docs/_build/html"
-docs = "sphinx-autobuild docs docs/_build/html --host 0.0.0.0 --port 8000"
+
+# Serves the documentation with live-reloading for easy editing.
+docs-serve = "sphinx-autobuild docs docs/_build/html --host 127.0.0.1"
+
+# Cleans out the built documentation files.
 docs-clean = "rm -rf docs/_build"
 
-# Combined tasks
-check-all = { depends-on = ["format-check", "isort-check", "typecheck", "lint", "test"] }
-format-all = { depends-on = ["format", "isort"] }
-docs-all = { depends-on = ["docs-clean", "docs"]}
+# ===================================================================
+# Scripts & Apps
+# ===================================================================
 
-# Jupyter tasks
-notebook = "jupyter notebook"
-lab = "jupyter lab" 
+# Builds the data manifest required for your project.
+build-manifest = "python scripts/build_manifest.py"
 
-# App tasks
-sr = "streamlit run"
+# Runs the Streamlit experiment app.
 exp = "streamlit run ./apps/exp.py"
