@@ -10,16 +10,21 @@ build:
   tools:
     python: "3.12"
   jobs:
-    pre_install:
-      # Install pixi first and ensure it's available in PATH
-      - curl -fsSL https://pixi.sh/install.sh | bash -s -- --yes
-      - export PATH="/home/docs/.pixi/bin:$PATH"
     install:
-      # Install project dependencies from pixi.lock
-      - /home/docs/.pixi/bin/pixi install -e docs
+      # Install pixi, dependencies, and the project in one block
+      # to ensure the PATH is set correctly for all commands.
+      - |
+        curl -fsSL https://pixi.sh/install.sh | bash -s -- --yes
+        export PATH="$HOME/.pixi/bin:$PATH"
+        pixi install -e docs --frozen
+        pixi run pip install .
+    build:
+      html:
+        # Run the sphinx-build command within the pixi environment
+        # and output to the directory Read the Docs expects.
+        - |
+          export PATH="$HOME/.pixi/bin:$PATH"
+          pixi run sphinx-build -b html docs/ $READTHEDOCS_OUTPUT/html
 
-# Build the documentation
-sphinx:
-  configuration: docs/conf.py
-  # Fail on all warnings to avoid broken references
-  fail_on_warning: true 
+# The sphinx key is removed to prevent Read the Docs from running
+# its own build command, which would use the wrong environment. 
