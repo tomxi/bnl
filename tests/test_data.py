@@ -138,7 +138,7 @@ def test_load_track_local(mock_local_manifest_file: Path):
     # Check that info resolves relative paths and parses JAMS metadata
     info = track.info
     expected_audio_path = mock_local_manifest_file.parent / "audio/1/audio.mp3"
-    assert info["audio_mp3_path"] == expected_audio_path
+    assert info["audio_mp3_path"] == str(expected_audio_path)
     assert info["annotation_reference_path"] == (mock_local_manifest_file.parent / "jams/1.jams")
     assert info["title"] == "MockTitle"
 
