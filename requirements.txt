@@ -21,3 +21,4 @@ requests
 streamlit
 
 # Note: The local 'bnl' package will be installed from source by Streamlit Cloud 
+.
