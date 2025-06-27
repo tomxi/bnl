@@ -1,88 +1,228 @@
-"""Tests for the manifest-based data loading core."""
+"""Tests for the manifest-based data loading core (path-based)."""
 
+import io
 from pathlib import Path
 
+import pandas as pd
 import pytest
 
 from bnl import data
 
-# Define the manifest path for tests. Assumes the manifest has been generated.
-SALAMI_MANIFEST_PATH = Path.home() / "data/salami/metadata.csv"
-SALAMI_DATA_AVAILABLE = SALAMI_MANIFEST_PATH.exists()
+# --- Constants for Mocking ---
+MOCK_CLOUD_URL_BASE = "https://mock-r2-bucket.com"
+MOCK_LOCAL_DATA_ROOT = "test_data_root"
 
 
-def test_track_repr() -> None:
-    """Test `Track` representation doesn't crash."""
-    track = data.Track(track_id="999", assets={}, dataset_root=Path("."))
-    assert "999" in repr(track)
+# --- Helper Functions ---
+def create_mock_manifest_df(track_ids: list[str], assets_info: dict[str, dict[str, str]]) -> pd.DataFrame:
+    """Creates a mock DataFrame for a path-based manifest."""
+    records = []
+    all_cols = {"track_id"}
+    for assets in assets_info.values():
+        all_cols.update(assets.keys())
+
+    for tid in track_ids:
+        record = {"track_id": str(tid), **assets_info.get(str(tid), {})}
+        records.append(record)
+
+    df = pd.DataFrame(records)
+
+    # Ensure all columns are present, filling missing with None (pd.NA)
+    for col in all_cols:
+        if col not in df.columns:
+            df[col] = pd.NA
+
+    # Ensure consistent column order
+    sorted_cols = ["track_id"] + sorted([col for col in df.columns if col != "track_id"])
+    return df[sorted_cols]
 
 
-def test_dataset_init_file_not_found() -> None:
-    """Test `Dataset` raises an error for a bad path."""
+def create_mock_boolean_manifest_df(track_ids: list[str], assets_info: dict[str, list[str]]) -> pd.DataFrame:
+    """Creates a mock DataFrame for a boolean manifest."""
+    records = []
+    all_cols = {"track_id"}
+    # From the assets_info values (lists of column names), find all possible columns
+    for track_assets in assets_info.values():
+        all_cols.update(track_assets)
+
+    for tid in track_ids:
+        record = {"track_id": str(tid)}
+        # For each possible asset column, mark it True if it's in this track's list
+        for col in all_cols:
+            if col != "track_id":
+                record[col] = col in assets_info.get(str(tid), [])
+        records.append(record)
+
+    df = pd.DataFrame(records)
+
+    # Ensure consistent column order
+    sorted_cols = ["track_id"] + sorted([col for col in df.columns if col != "track_id"])
+    return df[sorted_cols]
+
+
+# --- Fixtures ---
+@pytest.fixture
+def mock_local_manifest_file(tmp_path: Path) -> Path:
+    """Creates a mock local BOOLEAN manifest and corresponding dummy files."""
+    manifest_dir = tmp_path / MOCK_LOCAL_DATA_ROOT
+    manifest_dir.mkdir(parents=True, exist_ok=True)
+    manifest_file = manifest_dir / "metadata.csv"
+
+    # Create dummy asset files that the loader will try to find
+    (manifest_dir / "audio" / "1").mkdir(parents=True, exist_ok=True)
+    (manifest_dir / "audio" / "1" / "audio.mp3").touch()
+    jams_dir = manifest_dir / "jams"
+    jams_dir.mkdir(parents=True, exist_ok=True)
+    with open(jams_dir / "1.jams", "w") as f:
+        f.write('{"file_metadata": {"title": "MockTitle", "artist": "MockArtist", "duration": 10.0}}')
+
+    # Define which assets EXIST for each track_id via boolean flags
+    assets_info = {
+        "1": ["has_audio_mp3", "has_annotation_reference"],
+        "2": ["has_audio_mp3"],  # Note: The actual file audio/2/audio.mp3 doesn't exist
+        "3": [],  # Track with no assets
+    }
+    df = create_mock_boolean_manifest_df(track_ids=["1", "2", "3"], assets_info=assets_info)
+    df.to_csv(manifest_file, index=False)
+    return manifest_file
+
+
+@pytest.fixture
+def mock_cloud_manifest_file(tmp_path: Path) -> Path:
+    """Creates a mock local BOOLEAN manifest for testing cloud logic."""
+    manifest_file = tmp_path / "manifest_cloud.csv"
+    assets_info = {
+        "101": ["has_audio_mp3", "has_annotation_reference"],
+        "102": ["has_audio_mp3"],
+    }
+    df = create_mock_boolean_manifest_df(track_ids=["101", "102"], assets_info=assets_info)
+    df.to_csv(manifest_file, index=False)
+    return manifest_file
+
+
+# --- Test Core Functionality ---
+def test_dataset_init_local(mock_local_manifest_file: Path):
+    """Test initializing a Dataset from a local manifest."""
+    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
+    assert dataset.data_source_type == "local"
+    assert dataset.dataset_root == mock_local_manifest_file.parent
+    assert dataset.list_tids() == ["1", "2", "3"]
+
+
+def test_dataset_init_cloud(mock_cloud_manifest_file: Path):
+    """Test initializing a Dataset for cloud usage with a local boolean manifest."""
+    dataset = data.Dataset(
+        mock_cloud_manifest_file,
+        data_source_type="cloud",
+        cloud_base_url=MOCK_CLOUD_URL_BASE,
+    )
+    assert dataset.data_source_type == "cloud"
+    assert dataset.base_url == MOCK_CLOUD_URL_BASE
+    assert dataset.list_tids() == ["101", "102"]
+
+
+def test_dataset_init_file_not_found():
     with pytest.raises(FileNotFoundError):
-        data.Dataset(Path("non/existent/manifest.csv"))
+        data.Dataset("non/existent/manifest.csv")
 
 
-@pytest.fixture(scope="module")
-def salami_dataset() -> data.Dataset:
-    """Fixture to load the SALAMI dataset once for all tests in this module."""
-    if not SALAMI_DATA_AVAILABLE:
-        pytest.skip("SALAMI test data not available.")
-    return data.Dataset(SALAMI_MANIFEST_PATH)
+def test_load_track_local(mock_local_manifest_file: Path, monkeypatch):
+    """Test loading a track and accessing its info from a local dataset."""
+    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
+    track = dataset.load_track("1")
+
+    assert track.track_id == "1"
+    assert "Track(track_id='1'" in repr(track)
+    assert "num_assets=2" in repr(track)
+
+    # Check that info resolves relative paths and parses JAMS metadata
+    info = track.info
+    expected_audio_path = mock_local_manifest_file.parent / "audio/1/audio.mp3"
+    assert info["audio_mp3_path"] == expected_audio_path
+    assert info["annotation_reference_path"] == (mock_local_manifest_file.parent / "jams/1.jams")
+    assert info["title"] == "MockTitle"
+
+    # Mock librosa.load to test audio loading without a real audio file
+    def mock_load(path, sr, mono):
+        assert path == expected_audio_path
+        return (pd.Series([1, 2, 3]), 22050)
+
+    monkeypatch.setattr(data.librosa, "load", mock_load)
+    y, sr = track.load_audio()
+    assert y is not None
+    assert sr is not None
+
+    # Test audio loading for a track with a missing file (but present in manifest)
+    track2 = dataset.load_track("2")
+    y2, sr2 = track2.load_audio()
+    assert y2 is None
+    assert sr2 is None
 
 
-@pytest.mark.skipif(not SALAMI_DATA_AVAILABLE, reason="SALAMI data not available")
-class TestSalamiDataset:
-    """Test suite for the `Dataset` class using SALAMI data."""
+def test_load_track_cloud(mock_cloud_manifest_file: Path, requests_mock, monkeypatch):
+    """Test loading a track, parsing JAMS, and loading audio from a cloud dataset."""
+    dataset = data.Dataset(
+        mock_cloud_manifest_file,
+        data_source_type="cloud",
+        cloud_base_url=MOCK_CLOUD_URL_BASE,
+    )
+    track = dataset.load_track("101")
 
-    def test_init(self, salami_dataset: data.Dataset) -> None:
-        """Test dataset initialization."""
-        assert salami_dataset is not None
-        assert len(salami_dataset.track_ids) > 0
+    # --- Test JAMS and Audio Loading ---
+    # 1. Construct expected URLs first
+    expected_jams_url = f"{MOCK_CLOUD_URL_BASE}/ref-jams/101.jams"
+    expected_audio_url = f"{MOCK_CLOUD_URL_BASE}/slm-dataset/101/audio.mp3"
 
-    def test_list_tids(self, salami_dataset: data.Dataset) -> None:
-        """Test track ID listing."""
-        tids = salami_dataset.list_tids()
-        assert isinstance(tids, list)
-        assert len(tids) > 0
-        assert all(isinstance(tid, str) and tid.isdigit() for tid in tids)
+    # 2. Set up mocks BEFORE accessing track.info, which triggers the requests
+    requests_mock.get(
+        expected_jams_url,
+        text='{"file_metadata": {"title": "CloudTitle", "artist": "CloudArtist", "duration": 20.0}}',
+    )
+    mock_audio_content = io.BytesIO(b"fake_audio_data")
+    requests_mock.get(expected_audio_url, body=mock_audio_content)
 
-    def test_load_track(self, salami_dataset: data.Dataset) -> None:
-        """Test single track loading."""
-        tids = salami_dataset.list_tids()
-        track = salami_dataset.load_track(tids[0])
-        assert isinstance(track, data.Track)
-        assert track.track_id == tids[0]
-        assert track.get_asset("annotation", "reference") is not None
+    # 3. Now, access .info and .load_audio() to trigger the cached calls
+    info = track.info
+    assert info["annotation_reference_path"] == expected_jams_url
+    assert info["audio_mp3_path"] == expected_audio_url
+    assert info["title"] == "CloudTitle"
 
-    def test_load_nonexistent_track(self, salami_dataset: data.Dataset) -> None:
-        """Test loading a non-existent track raises an error."""
-        with pytest.raises(ValueError):
-            salami_dataset.load_track("nonexistent_id")
+    # Mock librosa to check that it's called with the downloaded content
+    def mock_load(buffer, sr, mono):
+        assert isinstance(buffer, io.BytesIO)
+        return (pd.Series([1, 2, 3]), 44100)
 
-    def test_track_audio_and_info(self, salami_dataset: data.Dataset) -> None:
-        """Test that track audio and metadata can be loaded."""
-        track = salami_dataset.load_track("2")  # A track known to have data
-        info = track.info
-        assert "artist" in info and "title" in info and "duration" in info
-        y, sr = track.load_audio()
-        assert y is not None
-        assert sr > 0
+    monkeypatch.setattr(data.librosa, "load", mock_load)
+    y, sr = track.load_audio()
+    assert y is not None
+    assert sr == 44100
 
-    def test_load_audio_file_not_found(
-        self, salami_dataset: data.Dataset, tmp_path: Path
-    ) -> None:
-        """Test loading audio when the file is missing."""
-        track_assets = [{"track_id": "1", "asset_type": "audio", "file_path": "missing.wav"}]
-        track = data.Track.from_assets_list("1", tmp_path, track_assets)
-        with pytest.raises(FileNotFoundError):
-            track.load_audio()
 
-    def test_load_audio_no_asset(self, salami_dataset: data.Dataset) -> None:
-        """Test loading audio when no audio asset exists."""
-        track_assets = [
-            {"track_id": "1", "asset_type": "annotation", "file_path": "dummy.jams"}
-        ]
-        track = data.Track.from_assets_list("1", Path("."), track_assets)
-        with pytest.raises(ValueError, match="No audio asset found"):
-            track.load_audio()
+def test_load_track_with_missing_assets(mock_local_manifest_file: Path):
+    """Ensure that missing asset paths are handled gracefully."""
+    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
+    track = dataset.load_track("3")  # Track 3 has no assets in the manifest
+    assert "num_assets=0" in repr(track)
+    assert track.info == {"track_id": "3"}  # Info should be mostly empty
+    y, sr = track.load_audio()
+    assert y is None
+
+
+def test_load_nonexistent_track(mock_local_manifest_file: Path):
+    """Test that loading a track_id not in the manifest raises a ValueError."""
+    dataset = data.Dataset(mock_local_manifest_file)
+    with pytest.raises(ValueError, match="Track ID 'nonexistent' not found"):
+        dataset.load_track("nonexistent")
+
+
+def test_dataset_handles_non_numeric_track_ids(tmp_path: Path):
+    """Ensure Dataset correctly sorts non-numeric track IDs lexically."""
+    manifest_file = tmp_path / "metadata.csv"
+    # Contains a non-numeric track_id ('a_track'), which will cause the
+    # numeric sort to fail and fall back to a lexical sort.
+    df = pd.DataFrame({"track_id": ["10", "2", "a_track"], "has_audio_mp3": [True, True, False]})
+    df.to_csv(manifest_file, index=False)
+
+    dataset = data.Dataset(manifest_file, data_source_type="local")
+    # Expect a lexical sort ('10', '2', 'a_track'), not a numeric one.
+    assert dataset.list_tids() == ["10", "2", "a_track"]

@@ -19,7 +19,8 @@ mir_eval = "*"
 
 # Runtime dependencies
 python = "3.12.*"
-boto3 = ">=1.38.44,<2"
+requests = ">=2.32.4,<3"
+ffmpeg = ">=7.1.1,<8"
 
 [host-dependencies]
 pip = "*"
@@ -47,6 +48,8 @@ pytest = "*"
 pytest-cov = "*"
 ruff = "*"
 mypy = "*"
+types-requests = "*"
+requests-mock = "*"
 
 [feature.notebooks.dependencies]
 # Notebook dependencies
@@ -57,6 +60,9 @@ ipykernel = "*"
 # Dependencies for running some interactive apps or widgets
 streamlit = "*"
 
+[feature.cloud.dependencies]
+boto3 = ">=1.38.44,<2"
+
 [environments]
 default = ["docs", "dev", "notebooks", "apps"]
 minimal = []
@@ -64,6 +70,7 @@ docs = ["docs"]
 dev = ["dev"]
 notebooks = ["notebooks"]
 apps = ["apps"]
+cloud = ["cloud"]
 
 [tasks]
 # ===================================================================
@@ -80,7 +87,7 @@ fix = "ruff check . --fix"
 check = "ruff format --check . && ruff check ."
 
 # Runs all tests using pytest.
-test = "pytest"
+test = "pip install -e . && pytest"
 
 # ===================================================================
 # In-depth & Optional Tasks
@@ -92,6 +99,17 @@ test-cov = "pytest --cov=bnl --cov-report=term-missing"
 # Runs mypy for static type analysis. Can be slow on large codebases.
 # Kept separate from the main 'check' task for a faster core loop.
 types = "mypy src/ --ignore-missing-imports"
+
+# Builds the cloud manifest with full asset URLs for R2 deployment.
+# This task now requires the 'cloud' environment.
+# Run with: pixi run -e cloud build-cloud-manifest
+build-cloud-manifest = "python scripts/build_cloud_manifest.py"
+
+# Runs the Streamlit experiment app.
+exp = "streamlit run ./apps/exp.py"
+
+# Builds the local manifest for your project.
+build-local-manifest = "python scripts/build_local_manifest.py"
 
 # ===================================================================
 # Documentation
@@ -105,13 +123,3 @@ docs-serve = "sphinx-autobuild docs docs/_build/html --host 127.0.0.1"
 
 # Cleans out the built documentation files.
 docs-clean = "rm -rf docs/_build"
-
-# ===================================================================
-# Scripts & Apps
-# ===================================================================
-
-# Builds the data manifest required for your project.
-build-manifest = "python scripts/build_manifest.py"
-
-# Runs the Streamlit experiment app.
-exp = "streamlit run ./apps/exp.py"

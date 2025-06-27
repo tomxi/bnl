@@ -1,4 +1,32 @@
-import random
+"""
+SALAMI Explorer - Streamlit App using BNL
+
+An interactive web application for exploring the SALAMI music dataset with audio playback,
+visualization, and metadata browsing; powered by BNL.
+
+Features:
+- Browse 1,400+ music tracks with rich metadata (title, artist, duration)
+- Stream MP3 audio directly from cloud storage (Cloudflare R2)
+- Real-time waveform and MFCC visualization
+- Dual data source support: Cloud (default) or local filesystem
+- Cached data loading for optimal performance
+
+Usage:
+    pixi run exp
+
+Data Sources:
+- Cloud: Uses a path-based manifest with full URLs to assets.
+- Local: Supports SALAMI-style datasets with a path-based manifest containing relative asset paths.
+
+Architecture:
+- Cloud-native: Streams data from R2 bucket without local storage
+- Efficient caching: Uses Streamlit's @st.cache_data and @st.cache_resource
+- Robust error handling: Graceful fallbacks for missing assets
+- Real-time analysis: On-demand audio processing with librosa
+"""
+
+import os
+from pathlib import Path
 
 import librosa
 import librosa.display
@@ -8,40 +36,93 @@ import streamlit as st
 import bnl
 
 # --- Page and Data Configuration ---
-# st.set_page_config(layout="wide")
-st.title("Monotonicity Casting Explorer")
+st.set_page_config(layout="wide")
+st.title("SALAMI Explorer")
 
-# Define the path to the dataset manifest.
-# This makes the data source explicit and easy to change.
-R2_BUCKET_BASE = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
-SALAMI_MANIFEST_PATH = f"{R2_BUCKET_BASE}/manifest_cloud.csv"
+# --- Data Source and Path Configuration ---
+R2_BUCKET_PUBLIC_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
+# The cloud manifest is now a local resource, bundled with the app
+CLOUD_MANIFEST_PATH = Path(__file__).parent.parent / "src/bnl/resources/manifest_cloud_boolean.csv"
+LOCAL_DATASET_ROOT = "~/data/salami"  # Example local path, user might need to change this
+LOCAL_MANIFEST_PATH = os.path.expanduser(f"{LOCAL_DATASET_ROOT}/metadata.csv")
+
+# Let user choose data source
+data_source_option = st.sidebar.radio(
+    "Select Data Source:",
+    ("Cloud (R2)", "Local Filesystem"),
+)
+
+# Manual session state management for data source
+if "data_source_choice" not in st.session_state:
+    st.session_state.data_source_choice = data_source_option
+elif data_source_option != st.session_state.data_source_choice:
+    st.session_state.data_source_choice = data_source_option
+    # Clear everything when data source changes
+    preserve_keys = ["data_source_choice"]  # Add other critical keys here if needed
+    for key in list(st.session_state.keys()):
+        if key not in preserve_keys:
+            del st.session_state[key]
+    st.cache_data.clear()
+    st.rerun()
 
 
 # --- Data Loading Functions (Cached for performance) ---
 @st.cache_resource
-def get_dataset():
-    """Loads and caches the dataset object."""
-    try:
-        return bnl.data.Dataset(SALAMI_MANIFEST_PATH)
-    except Exception as e:
-        st.error(f"Failed to load cloud manifest from: {SALAMI_MANIFEST_PATH}")
-        st.error(f"Error: {e}")
+def get_dataset(source_type: str):
+    """Loads and caches the dataset object based on selected source."""
+    if source_type == "Cloud (R2)":
+        if not CLOUD_MANIFEST_PATH.exists():
+            st.error(f"Cloud manifest not found at: {CLOUD_MANIFEST_PATH}")
+            st.error("Please ensure the `manifest_cloud_boolean.csv` file is in `src/bnl/resources/`.")
+            st.stop()
+        try:
+            # Load from the local resource, but treat it as a cloud source for path reconstruction
+            return bnl.data.Dataset(
+                CLOUD_MANIFEST_PATH,
+                data_source_type="cloud",
+                cloud_base_url=R2_BUCKET_PUBLIC_URL,
+            )
+        except Exception as e:
+            st.error(f"Failed to load CLOUD manifest: {e}")
+            st.stop()
+
+    elif source_type == "Local Filesystem":
+        manifest_path = LOCAL_MANIFEST_PATH
+        try:
+            # The Dataset class now infers the source type from the local path
+            return bnl.data.Dataset(manifest_path, data_source_type="local")
+        except FileNotFoundError:
+            st.error(f"Local manifest not found at: {manifest_path}")
+            st.error("Ensure your local SALAMI dataset is structured correctly and manifest exists.")
+            st.info(f"Expected structure: \n{LOCAL_DATASET_ROOT}/\n  ├── audio/\n  ├── jams/\n  └── metadata.csv")
+            st.stop()
+        except Exception as e:
+            st.error(f"Failed to load LOCAL manifest from: {manifest_path}")
+            st.error(f"Error: {e}")
+            st.stop()
+    else:
+        st.error("Invalid data source selected.")
         st.stop()
 
 
-@st.cache_data
-def get_tids():
+# Get the current dataset based on user's choice
+current_dataset = get_dataset(st.session_state.data_source_choice)
+
+
+@st.cache_data  # Cache based on the dataset object's identity (implicitly via current_dataset)
+def get_tids(_dataset):  # Pass dataset to make caching aware of it
     """Fetches the list of all available track IDs."""
-    dataset = get_dataset()
-    return dataset.list_tids()
+    return _dataset.list_tids()
 
 
 @st.cache_data
-def load_track_data(track_id):
-    """Loads the track object, audio waveform, and sample rate for a given ID."""
-    dataset = get_dataset()
-    track = dataset.load_track(track_id)
+def load_track_data(_dataset, track_id, data_source_type):
+    """Loads track data and populates track.info with metadata like title/artist."""
+    track = _dataset.load_track(track_id)
+
+    # Load audio using the Track's built-in method
     waveform, sr = track.load_audio()
+
     return track, waveform, sr
 
 
@@ -51,9 +132,7 @@ def create_audio_analysis_plot(waveform, sr):
     if waveform is None or sr is None:
         return None
 
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1, figsize=(6, 4), sharex=True, constrained_layout=True
-    )
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 4), sharex=True, constrained_layout=True)
     librosa.display.waveshow(waveform, sr=sr, ax=ax1)
     ax1.set_title("Waveform")
     ax1.set_ylabel("Amplitude")
@@ -78,37 +157,55 @@ def reset_track_state():
 # Define this before the logic that uses its state.
 with st.sidebar:
     # This selectbox initializes `st.session_state.track_id` on the first run.
+    # Pass current_dataset to get_tids
+    available_tids = get_tids(current_dataset)
+    if not available_tids:
+        st.warning("No track IDs found in the selected dataset.")
+        st.stop()
+
     st.selectbox(
         "Select a SALAMI track id:",
-        get_tids(),
+        available_tids,
         key="track_id",
         on_change=reset_track_state,
     )
-    if st.session_state.track_loaded:
+
+    # Initialize track_id if not set
+    if "track_id" not in st.session_state or st.session_state.track_id not in available_tids:
+        st.session_state.track_id = available_tids[0]
+        reset_track_state()
+
+    # Show current status
+    st.write(f"📊 **Data source:** {st.session_state.data_source_choice}")
+    st.write(f"🎯 **Track:** {st.session_state.track_id}")
+
+    if st.session_state.get("track_loaded", False) and hasattr(st.session_state, "track"):
         tinfo = st.session_state.track.info
-        st.write(f"{tinfo['title']}")
-        st.write(f"*by* {tinfo['artist']}")
-    st.header("Tuning Parameters")
+        st.write(f"Title: {tinfo.get('title', 'N/A')}")  # Use .get for safety
+        st.write(f"Artist: {tinfo.get('artist', 'N/A')}")
+
+    st.header("Tuning Parameters (Placeholder)")
     bw_peak = st.slider("Bandwidth for Peak Picking", 0.1, 5.0, 1.0, 0.1)
     bw_group = st.slider("Bandwidth for Depth Grouping", 0.1, 5.0, 1.0, 0.1)
 
 
 # --- Core Logic ---
-# Initialize state for first run.
-# This ensures the keys exist before they are accessed.
+# Initialize state for first run if they don't exist.
 if "track_loaded" not in st.session_state:
     st.session_state.track_loaded = False
-if "is_stabilized" not in st.session_state:
+if "is_stabilized" not in st.session_state:  # May not be needed anymore
     st.session_state.is_stabilized = False
 
-# Primary logic flow for loading and stabilizing data.
+
+# Load track data when needed
 if not st.session_state.track_loaded:
-    # A new track has been selected, or it's the first run.
-    with st.spinner("Loading track data from cloud..."):
-        track, waveform, sr = load_track_data(st.session_state.track_id)
-        analysis_plot = (
-            create_audio_analysis_plot(waveform, sr) if waveform is not None else None
+    with st.spinner(f"Loading track {st.session_state.track_id}..."):
+        track, waveform, sr = load_track_data(
+            current_dataset,
+            st.session_state.track_id,
+            st.session_state.data_source_choice,
         )
+        analysis_plot = create_audio_analysis_plot(waveform, sr) if waveform is not None else None
 
     st.session_state.track = track
     st.session_state.waveform = waveform
@@ -125,25 +222,27 @@ if st.session_state.track_loaded and not st.session_state.is_stabilized:
 
 
 # Main content area.
-if st.session_state.get("track_loaded"):
-    # Display track metadata and the pre-computed analysis plot.
+if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
     track = st.session_state.track
-    st.header(f"Track {st.session_state.track.info['title']}")
+    st.header(f"Track: {track.info.get('title', st.session_state.track_id)}")
 
-    # Audio player
-    if audio_url := track.info.get("audio_path"):
-        st.audio(audio_url)
+    # Audio player: find the audio path from track.info
+    audio_url_or_path = None
+    for key, value in track.info.items():
+        if key.startswith("audio_") and key.endswith("_path"):
+            audio_url_or_path = value
+            break
 
-        # Display audio analysis if available
+    if audio_url_or_path:
+        st.audio(str(audio_url_or_path))  # Ensure it's a string for st.audio
+
         if st.session_state.analysis_plot:
             st.pyplot(st.session_state.analysis_plot)
         else:
-            st.warning("Could not generate audio analysis plot.")
+            st.warning("Could not generate audio analysis plot (no waveform data).")
     else:
-        st.warning("No audio file found for this track.")
-
+        st.warning(f"No audio asset found for track {st.session_state.track_id} in the manifest.")
+        st.json(track.manifest_row.to_dict())  # Display what assets the manifest says it has
 
 else:
-    # This part should ideally not be reached if initialization works correctly,
-    # but serves as a fallback.
-    st.warning("Please select a track to begin.")
+    st.warning("Please select a track or wait for data to load.")

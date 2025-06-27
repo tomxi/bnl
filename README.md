@@ -1,83 +1,101 @@
 # BNL: Boundaries and Labels
 
-A Python library for working with hierarchical Music Structure Analysis.
+A Python library for hierarchical Music Structure Analysis with cloud-native dataset management.
 
-> This repo is co-authored with LLMs in their various forms.
+> This repo is co-authored with LLMs.
 
 ## Quick Start
-
-```python
-import numpy as np
-from bnl import Segment, plot_segment
-
-# Create a segment
-boundaries = {0.0, 2.5, 5.0, 7.5, 10.0}  # Set of boundary times
-labels = ['A', 'B', 'A', 'C']
-seg = Segment(boundaries, labels)
-
-# Visualize
-fig, ax = plot_segment(seg, text=True)
-```
-
-## Installation & Setup
-
-This project is managed by [Pixi](https://pixi.sh/).
 
 ```bash
 git clone https://github.com/tomxi/bnl.git
 cd bnl
 pixi install
-pixi run install-dev
 ```
 
-This command installs all dependencies into a local `.pixi` environment and makes the `bnl` package available for use.
+## Core Functionality
 
-## Data Management
+```python
+import bnl
 
-The data loading system relies on a central `metadata.csv` manifest file to index all dataset assets. This file must be generated before you can load data.
+# Load cloud dataset (default)
+dataset = bnl.data.Dataset("https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev/manifest_cloud_boolean.csv",
+                           data_source_type="cloud",
+                           cloud_base_url="https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev")
 
-### Building the Manifest
+# Load a track with metadata and audio
+track = dataset.load_track("2")
+print(f"Now playing: \"{track.info['title']}\" by {track.info['artist']}")
 
-A flexible script is provided to scan your dataset directory and create the manifest.
+waveform, sr = track.load_audio()  # Load MP3 from cloud
+```
 
-1.  **Organize your data**: Ensure your dataset (e.g., SALAMI) is stored in a structured way. The default configuration expects a layout like:
-    ```
-    <dataset_root>/
-    ├── audio/
-    │   └── <track_id>/
-    │       └── audio.mp3
-    └── jams/
-        └── <track_id>.jams
-    ```
+## Interactive Data Explorer
 
-2.  **Run the script**: Point the script to your dataset's root directory.
+Launch the Streamlit app to explore the dataset:
 
-    ```bash
-    pixi run build-manifest -- <path_to_your_dataset_root>
-    ```
+```bash
+pixi run exp
+```
 
-    For example, if your SALAMI dataset is in `~/data/salami`:
-    ```bash
-    pixi run build-manifest -- ~/data/salami
-    ```
+The app provides:
+- **Track browser**: Browse 1,400+ music tracks with metadata
+- **Audio playback**: Stream MP3s directly from cloud storage  
+- **Visualization**: Waveform and MFCC analysis
+- **Dual mode**: Cloud (default) or local dataset support
 
-This will create a `metadata.csv` file inside that directory, which can then be used by the data loaders. The script is configurable within `scripts/build_manifest.py` to support other datasets and file layouts.
+Access at: http://localhost:8502
+
+## Dataset Management
+
+### Cloud Datasets (Recommended)
+
+Cloud datasets use boolean manifests with automatic URL reconstruction:
+
+```bash
+# Generate boolean manifest from existing cloud data
+pixi run build-cloud-manifest
+```
+
+### Local Datasets
+
+For local SALAMI datasets:
+
+```bash
+# Generate manifest for local dataset
+pixi run build-local-manifest -- ~/data/salami
+```
+
+Expected structure:
+```
+dataset_root/
+├── audio/<track_id>/audio.mp3
+├── jams/<track_id>.jams
+└── metadata.csv (generated)
+```
 
 ## Development
 
-All development tasks are managed via `pixi run`.
+Core tasks:
+```bash
+pixi run format    # Format code
+pixi run check     # Lint code  
+pixi run test      # Run tests
+pixi run types     # Type check
+```
 
-- **Format code**: `pixi run format-all`
-- **Run all checks (format, lint, types, tests)**: `pixi run check-all`
-- **Serve docs (live-reload)**: `pixi run docs-serve`
-- **Run tests with coverage**: `pixi run test-cov`
-- **See all available tasks**: `pixi run`
+Documentation:
+```bash
+pixi run docs-build  # Build docs
+pixi run docs-serve  # Serve with hot reload
+```
 
-## Features
+## Deployment
 
-- **Core**: Hierarchical text segmentation with `Segment` class
-- **Visualization**: Rich plotting with customizable styling  
-- **Integration**: Compatible with mir_eval and MIR tools
+### Streamlit Community Cloud
+
+The project includes a `requirements.txt` file specifically for Streamlit Community Cloud hosting. While local development uses pixi for dependency management, Streamlit Cloud requires a traditional requirements.txt file.
+
+> **Note**: Do not delete `requirements.txt` - it's essential for cloud deployment, even though we use pixi locally.
 
 ## License
 
