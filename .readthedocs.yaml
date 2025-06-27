@@ -10,9 +10,9 @@ build:
   tools:
     python: "mambaforge-22.9"
   jobs:
-    pre_install:
+    install:
       # Install pixi, then install project dependencies from pixi.lock
-      - conda install -c conda-forge pixi
+      - conda install -c conda-forge pixi --yes
       - pixi install --frozen
       # Install the project itself so Sphinx can read its version
       - pixi run pip install .
