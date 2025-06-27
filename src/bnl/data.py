@@ -99,9 +99,7 @@ class Track:
         self._info_cache = info
         return self._info_cache
 
-    def _reconstruct_path(
-        self, asset_type: str, asset_subtype: str | None
-    ) -> Path | str:
+    def _reconstruct_path(self, asset_type: str, asset_subtype: str | None) -> Path | str:
         """Reconstructs the full path or URL for an asset."""
         # This logic needs to align with manifest builders and storage layout.
         if self.dataset.data_source_type == "local":
@@ -109,13 +107,9 @@ class Track:
         elif self.dataset.data_source_type == "cloud":
             return self._reconstruct_cloud_url(asset_type, asset_subtype)
         else:
-            raise ValueError(
-                f"Invalid data_source_type: {self.dataset.data_source_type}"
-            )
+            raise ValueError(f"Invalid data_source_type: {self.dataset.data_source_type}")
 
-    def _reconstruct_local_path(
-        self, asset_type: str, asset_subtype: str | None
-    ) -> Path:
+    def _reconstruct_local_path(self, asset_type: str, asset_subtype: str | None) -> Path:
         """Helper to reconstruct local file paths."""
         base_path = cast(Path, self.dataset.dataset_root)
         # Example local structure:
@@ -123,12 +117,7 @@ class Track:
         # <dataset_root>/jams/<track_id>.jams
         if asset_type == "audio":
             # Assumes audio files are <track_id>/audio.<subtype> in 'audio' folder
-            return (
-                base_path
-                / asset_type
-                / self.track_id
-                / f"audio.{asset_subtype or 'mp3'}"
-            )
+            return base_path / asset_type / self.track_id / f"audio.{asset_subtype or 'mp3'}"
         elif asset_type == "annotation":
             if asset_subtype == "reference":
                 return base_path / "jams" / f"{self.track_id}.jams"
@@ -136,12 +125,7 @@ class Track:
             return base_path / asset_type / f"{self.track_id}.{asset_subtype}.json"
         else:
             # Generic fallback
-            return (
-                base_path
-                / asset_type
-                / self.track_id
-                / f"asset.{asset_subtype or 'dat'}"
-            )
+            return base_path / asset_type / self.track_id / f"asset.{asset_subtype or 'dat'}"
 
     def _reconstruct_cloud_url(self, asset_type: str, asset_subtype: str | None) -> str:
         """Helper to reconstruct cloud URLs."""
@@ -243,9 +227,7 @@ class Dataset:
                 "https",
             )
             if not self.is_cloud_manifest:
-                raise ValueError(
-                    "For cloud data_source_type, manifest_path must be a URL."
-                )
+                raise ValueError("For cloud data_source_type, manifest_path must be a URL.")
             # Base URL for reconstructing asset URLs, e.g., R2 public URL
             self.base_url = cloud_base_url or str(manifest_path).rsplit("/", 1)[0]
             self.dataset_root = self.base_url  # For cloud, dataset_root is the base URL
@@ -263,9 +245,7 @@ class Dataset:
             manifest_path_obj = Path(manifest_path)
             if not manifest_path_obj.exists():
                 raise FileNotFoundError(f"Manifest file not found: {manifest_path_obj}")
-            self.dataset_root = (
-                manifest_path_obj.parent
-            )  # Root directory for local files
+            self.dataset_root = manifest_path_obj.parent  # Root directory for local files
             self.base_url = None  # No base_url for local data
             self.manifest = pd.read_csv(manifest_path_obj)  # Assumes boolean manifest
         else:
@@ -301,6 +281,4 @@ class Dataset:
             raise ValueError(f"No manifest entry found for track ID '{track_id}'.")
 
         # Pass the single row (as a Series) to the Track constructor
-        return Track(
-            track_id=track_id, manifest_row=track_manifest_row.iloc[0], dataset=self
-        )
+        return Track(track_id=track_id, manifest_row=track_manifest_row.iloc[0], dataset=self)

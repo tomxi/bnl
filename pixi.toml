@@ -19,7 +19,6 @@ mir_eval = "*"
 
 # Runtime dependencies
 python = "3.12.*"
-boto3 = ">=1.38.44,<2"
 requests = ">=2.32.4,<3"
 ffmpeg = ">=7.1.1,<8"
 
@@ -60,6 +59,9 @@ ipykernel = "*"
 # Dependencies for running some interactive apps or widgets
 streamlit = "*"
 
+[feature.cloud.dependencies]
+boto3 = ">=1.38.44,<2"
+
 [environments]
 default = ["docs", "dev", "notebooks", "apps"]
 minimal = []
@@ -67,6 +69,7 @@ docs = ["docs"]
 dev = ["dev"]
 notebooks = ["notebooks"]
 apps = ["apps"]
+cloud = ["cloud"]
 
 [tasks]
 # ===================================================================
@@ -96,6 +99,17 @@ test-cov = "pytest --cov=bnl --cov-report=term-missing"
 # Kept separate from the main 'check' task for a faster core loop.
 types = "mypy src/ --ignore-missing-imports"
 
+# Builds the cloud boolean manifest for R2 deployment.
+# This task now requires the 'cloud' environment.
+# Run with: pixi run -e cloud build-cloud-manifest
+build-cloud-manifest = "python scripts/build_cloud_manifest.py"
+
+# Runs the Streamlit experiment app.
+exp = "streamlit run ./apps/exp.py"
+
+# Builds the local manifest for your project.
+build-local-manifest = "python scripts/build_local_manifest.py"
+
 # ===================================================================
 # Documentation
 # ===================================================================
@@ -108,16 +122,3 @@ docs-serve = "sphinx-autobuild docs docs/_build/html --host 127.0.0.1"
 
 # Cleans out the built documentation files.
 docs-clean = "rm -rf docs/_build"
-
-# ===================================================================
-# Scripts & Apps
-# ===================================================================
-
-# Builds the data manifest required for your project.
-build-manifest = "python scripts/build_manifest.py"
-
-# Builds the cloud boolean manifest for R2 deployment.
-build-cloud-manifest = "python scripts/build_cloud_manifest.py"
-
-# Runs the Streamlit experiment app.
-exp = "streamlit run ./apps/exp.py"

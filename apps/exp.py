@@ -25,12 +25,11 @@ Architecture:
 - Real-time analysis: On-demand audio processing with librosa
 """
 
-import io
+import os
 
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
-import requests
 import streamlit as st
 
 import bnl
@@ -45,15 +44,25 @@ CLOUD_MANIFEST_URL = f"{R2_BUCKET_PUBLIC_URL}/manifest_cloud_boolean.csv"
 LOCAL_DATASET_ROOT = (
     "~/data/salami"  # Example local path, user might need to change this
 )
-LOCAL_MANIFEST_PATH = f"{LOCAL_DATASET_ROOT}/metadata.csv"
+LOCAL_MANIFEST_PATH = os.path.expanduser(f"{LOCAL_DATASET_ROOT}/metadata.csv")
 
 # Let user choose data source
 data_source_option = st.sidebar.radio(
     "Select Data Source:",
     ("Cloud (R2)", "Local Filesystem"),
-    key="data_source_choice",
-    on_change=lambda: st.session_state.clear(),  # Clear cache on source change
 )
+
+# Manual session state management for data source
+if "data_source_choice" not in st.session_state:
+    st.session_state.data_source_choice = data_source_option
+elif data_source_option != st.session_state.data_source_choice:
+    st.session_state.data_source_choice = data_source_option
+    # Clear everything when data source changes
+    for key in list(st.session_state.keys()):
+        if key != "data_source_choice":
+            del st.session_state[key]
+    st.cache_data.clear()
+    st.rerun()
 
 
 # --- Data Loading Functions (Cached for performance) ---
@@ -97,8 +106,7 @@ def get_dataset(source_type: str):
 
 
 # Get the current dataset based on user's choice
-with st.spinner(f"Loading dataset from {st.session_state.data_source_choice}..."):
-    current_dataset = get_dataset(st.session_state.data_source_choice)
+current_dataset = get_dataset(st.session_state.data_source_choice)
 
 
 @st.cache_data  # Cache based on the dataset object's identity (implicitly via current_dataset)
@@ -108,37 +116,12 @@ def get_tids(_dataset):  # Pass dataset to make caching aware of it
 
 
 @st.cache_data
-def load_track_data(_dataset, track_id):  # Pass dataset
-    """
-    Loads track data and populates track.info with metadata like title/artist.
-    """
+def load_track_data(_dataset, track_id, data_source_type):
+    """Loads track data and populates track.info with metadata like title/artist."""
     track = _dataset.load_track(track_id)
 
-    # First, load annotations to populate track.info with metadata like title/artist
-    try:
-        track.load_annotations()
-    except Exception as e:
-        st.warning(f"Could not load annotations for track {track_id}: {e}")
-
-    # Find the audio URL from track.info (boolean format with reconstructed paths)
-    audio_url_or_path = None
-    for key, value in track.info.items():
-        if key.startswith("audio_") and key.endswith("_path"):
-            audio_url_or_path = value
-            break
-
-    waveform, sr = (None, None)
-    if audio_url_or_path:
-        try:
-            # Load directly from URL using requests and BytesIO - Cloudflare-compatible
-            response = requests.get(str(audio_url_or_path))
-            response.raise_for_status()
-            waveform, sr = librosa.load(
-                io.BytesIO(response.content), sr=None, mono=True
-            )
-        except Exception as e:
-            st.warning(f"Librosa failed to load audio from: {audio_url_or_path}")
-            st.error(f"Error: {e}")
+    # Load audio using the Track's built-in method
+    waveform, sr = track.load_audio()
 
     return track, waveform, sr
 
@@ -185,17 +168,21 @@ with st.sidebar:
     st.selectbox(
         "Select a SALAMI track id:",
         available_tids,
-        key="track_id",  # This will be reset if available_tids changes due to source switch
+        key="track_id",
         on_change=reset_track_state,
     )
 
-    # Ensure track_id is valid for the current dataset, select first if not
+    # Initialize track_id if not set
     if (
         "track_id" not in st.session_state
         or st.session_state.track_id not in available_tids
     ):
         st.session_state.track_id = available_tids[0]
-        reset_track_state()  # Ensure data reloads for the new default track
+        reset_track_state()
+
+    # Show current status
+    st.write(f"📊 **Data source:** {st.session_state.data_source_choice}")
+    st.write(f"🎯 **Track:** {st.session_state.track_id}")
 
     if st.session_state.get("track_loaded", False) and hasattr(
         st.session_state, "track"
@@ -217,14 +204,13 @@ if "is_stabilized" not in st.session_state:  # May not be needed anymore
     st.session_state.is_stabilized = False
 
 
-# Primary logic flow for loading and stabilizing data.
+# Load track data when needed
 if not st.session_state.track_loaded:
-    # A new track has been selected, or it's the first run, or data source changed.
-    spinner_message = f"Loading track data ({st.session_state.data_source_choice})..."
-    with st.spinner(spinner_message):
-        # Pass current_dataset to load_track_data
+    with st.spinner(f"Loading track {st.session_state.track_id}..."):
         track, waveform, sr = load_track_data(
-            current_dataset, st.session_state.track_id
+            current_dataset,
+            st.session_state.track_id,
+            st.session_state.data_source_choice,
         )
         analysis_plot = (
             create_audio_analysis_plot(waveform, sr) if waveform is not None else None
