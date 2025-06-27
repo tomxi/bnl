@@ -8,14 +8,17 @@ version: 2
 build:
   os: ubuntu-22.04
   tools:
-    python: "mambaforge-22.9"
+    python: "3.12"
   jobs:
     install:
-      # Install pixi, then install project dependencies from pixi.lock
-      - conda install -c conda-forge pixi --yes
-      - pixi install --frozen
-      # Install the project itself so Sphinx can read its version
-      - pixi run pip install .
+      # Install pixi using the official installer script
+      - curl -fsSL https://pixi.sh/install.sh | bash -s -- --yes
+      # Add pixi to the PATH and install project dependencies and the project itself.
+      # This is run as a single command to ensure the PATH is set correctly.
+      - |
+        export PATH="$HOME/.pixi/bin:$PATH"
+        pixi install --frozen
+        pixi run pip install .
 
 # Build the documentation
 sphinx:
