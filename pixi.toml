@@ -19,6 +19,7 @@ mir_eval = "*"
 
 # Runtime dependencies
 python = "3.12.*"
+boto3 = ">=1.38.44,<2"
 
 [host-dependencies]
 pip = "*"

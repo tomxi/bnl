@@ -1,5 +1,4 @@
 import random
-from pathlib import Path
 
 import librosa
 import librosa.display
@@ -14,7 +13,8 @@ st.title("Monotonicity Casting Explorer")
 
 # Define the path to the dataset manifest.
 # This makes the data source explicit and easy to change.
-SALAMI_MANIFEST_PATH = Path.home() / "data/salami/metadata.csv"
+R2_BUCKET_BASE = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
+SALAMI_MANIFEST_PATH = f"{R2_BUCKET_BASE}/manifest_cloud.csv"
 
 
 # --- Data Loading Functions (Cached for performance) ---
@@ -23,9 +23,9 @@ def get_dataset():
     """Loads and caches the dataset object."""
     try:
         return bnl.data.Dataset(SALAMI_MANIFEST_PATH)
-    except FileNotFoundError:
-        st.error(f"SALAMI manifest not found at: {SALAMI_MANIFEST_PATH}")
-        st.info("Please run `python scripts/build_manifest.py ~/data/salami` to generate it.")
+    except Exception as e:
+        st.error(f"Failed to load cloud manifest from: {SALAMI_MANIFEST_PATH}")
+        st.error(f"Error: {e}")
         st.stop()
 
 
@@ -48,7 +48,12 @@ def load_track_data(track_id):
 @st.cache_data
 def create_audio_analysis_plot(waveform, sr):
     """Creates a matplotlib figure with waveform and MFCC plots."""
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(6, 4), sharex=True, constrained_layout=True)
+    if waveform is None or sr is None:
+        return None
+
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(6, 4), sharex=True, constrained_layout=True
+    )
     librosa.display.waveshow(waveform, sr=sr, ax=ax1)
     ax1.set_title("Waveform")
     ax1.set_ylabel("Amplitude")
@@ -62,25 +67,52 @@ def create_audio_analysis_plot(waveform, sr):
     return fig
 
 
-# --- App State & Core Logic ---
-def reset_app_state():
+# --- UI Layout & App State ---
+def reset_track_state():
     """Resets flags when a new track is selected, triggering a data reload."""
     st.session_state.track_loaded = False
     st.session_state.is_stabilized = False
 
 
-# Initialize state on the first run.
-if "track_id" not in st.session_state:
-    st.session_state.track_id = random.choice(get_tids())
-    reset_app_state()
+# Sidebar for parameter tuning.
+# Define this before the logic that uses its state.
+with st.sidebar:
+    # This selectbox initializes `st.session_state.track_id` on the first run.
+    st.selectbox(
+        "Select a SALAMI track id:",
+        get_tids(),
+        key="track_id",
+        on_change=reset_track_state,
+    )
+    if st.session_state.track_loaded:
+        tinfo = st.session_state.track.info
+        st.write(f"{tinfo['title']}")
+        st.write(f"*by* {tinfo['artist']}")
+    st.header("Tuning Parameters")
+    bw_peak = st.slider("Bandwidth for Peak Picking", 0.1, 5.0, 1.0, 0.1)
+    bw_group = st.slider("Bandwidth for Depth Grouping", 0.1, 5.0, 1.0, 0.1)
+
+
+# --- Core Logic ---
+# Initialize state for first run.
+# This ensures the keys exist before they are accessed.
+if "track_loaded" not in st.session_state:
+    st.session_state.track_loaded = False
+if "is_stabilized" not in st.session_state:
+    st.session_state.is_stabilized = False
 
 # Primary logic flow for loading and stabilizing data.
 if not st.session_state.track_loaded:
-    # A new track has been selected; load its data.
-    track, waveform, sr = load_track_data(st.session_state.track_id)
-    analysis_plot = create_audio_analysis_plot(waveform, sr)
+    # A new track has been selected, or it's the first run.
+    with st.spinner("Loading track data from cloud..."):
+        track, waveform, sr = load_track_data(st.session_state.track_id)
+        analysis_plot = (
+            create_audio_analysis_plot(waveform, sr) if waveform is not None else None
+        )
 
     st.session_state.track = track
+    st.session_state.waveform = waveform
+    st.session_state.sr = sr
     st.session_state.analysis_plot = analysis_plot
     st.session_state.track_loaded = True
 
@@ -92,43 +124,24 @@ if st.session_state.track_loaded and not st.session_state.is_stabilized:
     st.rerun()
 
 
-# --- UI Layout ---
-
-# Sidebar for parameter tuning.
-with st.sidebar:
-    st.selectbox(
-        "Select a SALAMI track id:",
-        get_tids(),
-        key="track_id",
-        on_change=reset_app_state,
-    )
-    st.header("Tuning Parameters")
-    bw_peak = st.slider("Bandwidth for Peak Picking", 0.1, 5.0, 1.0, 0.1)
-    bw_group = st.slider("Bandwidth for Depth Grouping", 0.1, 5.0, 1.0, 0.1)
-
 # Main content area.
-
-
 if st.session_state.get("track_loaded"):
     # Display track metadata and the pre-computed analysis plot.
     track = st.session_state.track
-    st.header(f"{st.session_state.track_id}: {track.info.get('title', 'N/A')}")
+    st.header(f"Track {st.session_state.track.info['title']}")
 
-    if "audio_path" in track.info:
-        st.audio(str(track.info["audio_path"]))
+    # Audio player
+    if audio_url := track.info.get("audio_path"):
+        st.audio(audio_url)
+
+        # Display audio analysis if available
+        if st.session_state.analysis_plot:
+            st.pyplot(st.session_state.analysis_plot)
+        else:
+            st.warning("Could not generate audio analysis plot.")
     else:
         st.warning("No audio file found for this track.")
 
-    st.write(
-        f"**Artist:** {track.info.get('artist', 'N/A')} | "
-        f"**Duration:** {track.info.get('duration', 'N/A')}s"
-    )
-    st.pyplot(st.session_state.analysis_plot)
-
-    # Placeholder for the downstream analysis UI.
-    st.header("Downstream Analysis")
-    st.info("This section updates when you move the sliders.")
-    # Your core logic that uses bw_peak and bw_group goes here.
 
 else:
     # This part should ideally not be reached if initialization works correctly,
