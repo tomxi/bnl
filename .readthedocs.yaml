@@ -13,8 +13,7 @@ build:
     pre_install:
       # Install pixi first and ensure it's available in PATH
       - curl -fsSL https://pixi.sh/install.sh | bash -s -- --yes
-      - echo 'export PATH="$HOME/.pixi/bin:$PATH"' >> $HOME/.bashrc
-      - source $HOME/.bashrc
+      - export PATH="/home/docs/.pixi/bin:$PATH"
     install:
       # Install project dependencies from pixi.lock
       - pixi install -e docs
