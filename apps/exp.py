@@ -1,8 +1,8 @@
 """
-BNL Data Explorer - Streamlit App
+SALAMI Explorer - Streamlit App using BNL
 
-An interactive web application for exploring the BNL music dataset with audio playback,
-visualization, and metadata browsing.
+An interactive web application for exploring the SALAMI music dataset with audio playback,
+visualization, and metadata browsing; powered by BNL.
 
 Features:
 - Browse 1,400+ music tracks with rich metadata (title, artist, duration)
@@ -13,8 +13,6 @@ Features:
 
 Usage:
     pixi run exp
-
-Access at: http://localhost:8502
 
 Data Sources:
 - Cloud: Uses boolean manifest with automatic URL reconstruction
@@ -39,7 +37,7 @@ import bnl
 
 # --- Page and Data Configuration ---
 st.set_page_config(layout="wide")
-st.title("BNL Data Explorer")
+st.title("SALAMI Explorer")
 
 # --- Data Source Configuration ---
 R2_BUCKET_PUBLIC_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
@@ -112,35 +110,22 @@ def get_tids(_dataset):  # Pass dataset to make caching aware of it
 @st.cache_data
 def load_track_data(_dataset, track_id):  # Pass dataset
     """
-    Loads track data, handling cloud/local paths and populating necessary info.
+    Loads track data and populates track.info with metadata like title/artist.
     """
     track = _dataset.load_track(track_id)
 
     # First, load annotations to populate track.info with metadata like title/artist
-    # This is necessary because the cloud manifest may not contain this info directly.
     try:
         track.load_annotations()
     except Exception as e:
         st.warning(f"Could not load annotations for track {track_id}: {e}")
-        # Even if annotations fail, try to proceed. Populate info from manifest.
-        if not track.info:
-            track.info = track.manifest_row.to_dict()
 
-    # Find the audio URL from track.info (works for both boolean and direct path formats)
+    # Find the audio URL from track.info (boolean format with reconstructed paths)
     audio_url_or_path = None
-
-    # Try track.info first (boolean format with reconstructed paths)
     for key, value in track.info.items():
         if key.startswith("audio_") and key.endswith("_path"):
             audio_url_or_path = value
             break
-
-    # Fallback to manifest_row (direct path format)
-    if not audio_url_or_path:
-        for key, value in track.manifest_row.items():
-            if key.startswith("audio_") and key.endswith("_path"):
-                audio_url_or_path = value
-                break
 
     waveform, sr = (None, None)
     if audio_url_or_path:
@@ -218,6 +203,7 @@ with st.sidebar:
         tinfo = st.session_state.track.info
         st.write(f"Title: {tinfo.get('title', 'N/A')}")  # Use .get for safety
         st.write(f"Artist: {tinfo.get('artist', 'N/A')}")
+
     st.header("Tuning Parameters (Placeholder)")
     bw_peak = st.slider("Bandwidth for Peak Picking", 0.1, 5.0, 1.0, 0.1)
     bw_group = st.slider("Bandwidth for Depth Grouping", 0.1, 5.0, 1.0, 0.1)
@@ -263,21 +249,12 @@ if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
     track = st.session_state.track
     st.header(f"Track: {track.info.get('title', st.session_state.track_id)}")
 
-    # Audio player: find the audio path from track.info or manifest_row
+    # Audio player: find the audio path from track.info
     audio_url_or_path = None
-
-    # Try track.info first (boolean format with reconstructed paths)
     for key, value in track.info.items():
         if key.startswith("audio_") and key.endswith("_path"):
             audio_url_or_path = value
             break
-
-    # Fallback to manifest_row (direct path format)
-    if not audio_url_or_path:
-        for key in track.manifest_row.keys():
-            if key.startswith("audio_") and key.endswith("_path"):
-                audio_url_or_path = track.manifest_row[key]
-                break
 
     if audio_url_or_path:
         st.audio(str(audio_url_or_path))  # Ensure it's a string for st.audio

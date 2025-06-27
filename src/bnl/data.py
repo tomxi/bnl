@@ -76,44 +76,25 @@ class Track:
 
         info: dict[str, Any] = {"track_id": self.track_id}
 
-        # Check if manifest uses boolean flags (has_*) or direct paths (*_path)
-        has_boolean_format = any(
-            col.startswith("has_") for col in self.manifest_row.index
-        )
+        # Reconstruct paths/URLs based on boolean flags
+        for col_name, has_asset in self.manifest_row.items():
+            if col_name.startswith("has_") and has_asset:
+                # e.g., has_audio_mp3 -> audio, mp3
+                parts = col_name.replace("has_", "").split("_", 1)
+                asset_type = parts[0]
+                asset_subtype = parts[1] if len(parts) > 1 else None
 
-        if has_boolean_format:
-            # Legacy format: Reconstruct paths/URLs based on boolean flags
-            for col_name, has_asset in self.manifest_row.items():
-                if col_name.startswith("has_") and has_asset:
-                    # e.g., has_audio_mp3 -> audio, mp3
-                    parts = col_name.replace("has_", "").split("_", 1)
-                    asset_type = parts[0]
-                    asset_subtype = parts[1] if len(parts) > 1 else None
+                path_or_url = self._reconstruct_path(asset_type, asset_subtype)
 
-                    path_or_url = self._reconstruct_path(asset_type, asset_subtype)
-
-                    # Store the path/URL in info dict, e.g., info['audio_mp3_path'] or
-                    # info['annotation_reference_path']
-                    info_key_suffix = (
-                        f"_{asset_subtype}_path" if asset_subtype else "_path"
-                    )
-                    info[f"{asset_type}{info_key_suffix}"] = path_or_url
-        else:
-            # Direct path format: Copy all path columns directly
-            for col_name, path_value in self.manifest_row.items():
-                if col_name.endswith("_path") and path_value is not None:
-                    info[col_name] = path_value
+                # Store the path/URL in info dict, e.g., info['audio_mp3_path'] or
+                # info['annotation_reference_path']
+                info_key_suffix = f"_{asset_subtype}_path" if asset_subtype else "_path"
+                info[f"{asset_type}{info_key_suffix}"] = path_or_url
 
         # Add JAMS metadata if reference annotation exists
-        jams_info_key = "annotation_reference_path"  # Boolean format
+        jams_info_key = "annotation_reference_path"
         if jams_path_or_url := info.get(jams_info_key):
             info.update(_parse_jams_metadata(jams_path_or_url))
-
-        # Also check for direct path manifest format
-        elif "annotation_ref_path" in self.manifest_row:
-            ref_path = self.manifest_row["annotation_ref_path"]
-            if ref_path is not None:
-                info.update(_parse_jams_metadata(ref_path))
 
         self._info_cache = info
         return self._info_cache
@@ -171,7 +152,7 @@ class Track:
         # {base_url}/adobe21-est/.../{track_id}.mp3.msdclasscsnmagic.json
         if asset_type == "audio" and asset_subtype == "mp3":
             return f"{base_url}/slm-dataset/{self.track_id}/audio.mp3"
-        elif asset_type == "annotation" and asset_subtype in ["ref", "reference"]:
+        elif asset_type == "annotation" and asset_subtype == "reference":
             return f"{base_url}/ref-jams/{self.track_id}.jams"
         elif asset_type == "annotation" and asset_subtype == "adobe-mu1gamma1":
             return (
@@ -229,28 +210,6 @@ class Track:
         except Exception as e:
             print(f"Warning: Failed to load audio from {audio_path}: {e}")
             return None, None
-
-    # TODO: Add similar load_annotation(subtype) method
-    # def load_reference_annotation(self) -> Optional[jams.JAMS]:
-    #     ref_jams_path_key = "annotation_reference_path"
-    #     if not self.info.get(ref_jams_path_key):
-    #         print(f"Warning: No reference annotation found for track {self.track_id}")
-    #         return None
-
-    #     jams_path = self.info[ref_jams_path_key]
-    #     try:
-    #         if isinstance(jams_path, str) and jams_path.startswith("http"):
-    #             response = requests.get(jams_path)
-    #             response.raise_for_status()
-    #             jam = jams.load(io.StringIO(response.text))
-    #         elif Path(jams_path).exists():
-    #             jam = jams.load(str(jams_path))
-    #         else:
-    #             return None
-    #         return jam
-    #     except Exception as e:
-    #         print(f"Warning: Failed to load JAMS from {jams_path}: {e}")
-    #         return None
 
 
 class Dataset:
@@ -325,42 +284,6 @@ class Dataset:
             self.track_ids = sorted(unique_tids, key=lambda x: int(x))
         except (ValueError, TypeError):
             self.track_ids = sorted(unique_tids)
-
-    # def _reshape_cloud_manifest(self, df: pd.DataFrame) -> pd.DataFrame:
-    #     """Transforms a wide cloud manifest into a long format.
-    #     NOTE: This is no longer needed as manifests are expected to be boolean.
-    #     """
-    #     id_vars = [col for col in df.columns if not col.endswith("_path")]
-    #     path_cols = [col for col in df.columns if col.endswith("_path")]
-
-    #     if not path_cols:
-    #         return df  # Return original df if no path columns found
-
-    #     long_df = df.melt(
-    #         id_vars=id_vars,
-    #         value_vars=path_cols,
-    #         var_name="asset_key",
-    #         value_name="file_path",
-    #     ).dropna(subset=["file_path"])
-
-    #     def parse_asset_key(key: str) -> tuple[str, str]:
-    #         key_no_path = key.removesuffix("_path")
-    #         parts = key_no_path.split("_", 1)
-    #         asset_type = parts[0]
-    #         subtype = parts[1] if len(parts) > 1 else "default"
-
-    #         if asset_type == "audio":
-    #             subtype = "default"
-    #         elif subtype == "ref":
-    #             subtype = "reference"
-    #         return asset_type, subtype
-
-    #     parsed_keys = long_df["asset_key"].apply(parse_asset_key)
-    #     long_df[["asset_type", "asset_subtype"]] = pd.DataFrame(
-    #         parsed_keys.tolist(), index=long_df.index
-    #     )
-
-    #     return long_df.drop(columns=["asset_key"])
 
     def list_tids(self) -> list[str]:
         """A list of all track IDs in the dataset."""
