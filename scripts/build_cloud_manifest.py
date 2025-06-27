@@ -8,11 +8,13 @@ based on a flexible configuration of asset types.
 Usage:
 python scripts/build_cloud_manifest.py [--track-ids 1,2,3]
 """
+
+import argparse
 import os
 import re
-import argparse
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
+
 import pandas as pd
 
 # --- R2 Configuration ---
@@ -44,20 +46,35 @@ ASSET_SPECS: list[dict[str, Any]] = [
     {
         "asset_type": "annotation",
         "asset_subtype": "adobe-mu1gamma1",
-        "path_pattern": r"adobe21-est/def_mu_0\.1_gamma_0\.1/.*\.mp3\.msdclasscsnmagic\.json$",
-        "track_id_pattern": r"adobe21-est/def_mu_0\.1_gamma_0\.1/(?P<track_id>\d+)\.mp3\.msdclasscsnmagic\.json",
+        "path_pattern": (
+            r"adobe21-est/def_mu_0\.1_gamma_0\.1/.*\.mp3\.msdclasscsnmagic\.json$"
+        ),
+        "track_id_pattern": (
+            r"adobe21-est/def_mu_0\.1_gamma_0\.1/"
+            r"(?P<track_id>\d+)\.mp3\.msdclasscsnmagic\.json"
+        ),
     },
     {
         "asset_type": "annotation",
         "asset_subtype": "adobe-mu5gamma5",
-        "path_pattern": r"adobe21-est/def_mu_0\.5_gamma_0\.5/.*\.mp3\.msdclasscsnmagic\.json$",
-        "track_id_pattern": r"adobe21-est/def_mu_0\.5_gamma_0\.5/(?P<track_id>\d+)\.mp3\.msdclasscsnmagic\.json",
+        "path_pattern": (
+            r"adobe21-est/def_mu_0\.5_gamma_0\.5/.*\.mp3\.msdclasscsnmagic\.json$"
+        ),
+        "track_id_pattern": (
+            r"adobe21-est/def_mu_0\.5_gamma_0\.5/"
+            r"(?P<track_id>\d+)\.mp3\.msdclasscsnmagic\.json"
+        ),
     },
     {
         "asset_type": "annotation",
         "asset_subtype": "adobe-mu1gamma9",
-        "path_pattern": r"adobe21-est/def_mu_0\.1_gamma_0\.9/.*\.mp3\.msdclasscsnmagic\.json$",
-        "track_id_pattern": r"adobe21-est/def_mu_0\.1_gamma_0\.9/(?P<track_id>\d+)\.mp3\.msdclasscsnmagic\.json",
+        "path_pattern": (
+            r"adobe21-est/def_mu_0\.1_gamma_0\.9/.*\.mp3\.msdclasscsnmagic\.json$"
+        ),
+        "track_id_pattern": (
+            r"adobe21-est/def_mu_0\.1_gamma_0\.9/"
+            r"(?P<track_id>\d+)\.mp3\.msdclasscsnmagic\.json"
+        ),
     },
 ]
 
@@ -74,7 +91,8 @@ def build_cloud_manifest_authenticated(output_path: Path):
 
     if not all([ACCOUNT_ID, ACCESS_KEY_ID, SECRET_ACCESS_KEY]):
         print(
-            "Error: Missing R2 credentials. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, and R2_SECRET_ACCESS_KEY environment variables."
+            "Error: Missing R2 credentials. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, "
+            "and R2_SECRET_ACCESS_KEY environment variables."
         )
         return False
 
@@ -104,9 +122,7 @@ def build_cloud_manifest_authenticated(output_path: Path):
             # Add objects from this page
             objects = response.get("Contents", [])
             all_objects.extend(objects)
-            print(
-                f"Retrieved {len(objects)} objects (total so far: {len(all_objects)})"
-            )
+            print(f"Retrieved {len(objects)} objects (total so far: {len(all_objects)})")
 
             # Check if there are more objects
             if response.get("IsTruncated", False):
@@ -166,25 +182,63 @@ def process_paths(all_paths: list[str], output_path: Path) -> bool:
             # Ensure the track_id has an entry in our dictionary
             assets_by_track.setdefault(track_id, {"track_id": track_id})
 
-            # Define the column name, e.g., 'audio_path' or 'annotation_ref_path'
-            col_name = (
-                f"{spec['asset_type']}_{spec['asset_subtype']}_path"
-                if spec["asset_subtype"]
-                else f"{spec['asset_type']}_path"
-            )
+            # Define the boolean column name, e.g., 'has_audio_mp3' or 'has_annotation_ref'
+            col_name = f"has_{spec['asset_type']}_{spec['asset_subtype']}"
+            if not spec["asset_subtype"]:
+                # This case should ideally be avoided by ensuring asset_subtype is
+                # always set in ASSET_SPECS
+                print(
+                    f"Warning: asset_subtype is None for asset_type {spec['asset_type']}. "
+                    "Using default column name."
+                )
+                col_name = f"has_{spec['asset_type']}"
 
-            # Store the full public URL
-            assets_by_track[track_id][col_name] = f"{PUBLIC_URL_BASE}/{path_str}"
+            # Mark that this asset exists for the track
+            assets_by_track[track_id][col_name] = True
 
     if not assets_by_track:
         print("Warning: No assets matched the specs. Manifest will be empty.")
         return False
 
     # Convert to DataFrame and save as a "wide" CSV
-    manifest_df = pd.DataFrame(assets_by_track.values())
-    manifest_df.sort_values(
-        by="track_id", key=lambda col: col.astype(int), inplace=True
-    )
+    # Get all possible column names from ASSET_SPECS to ensure consistent CSV structure
+    all_possible_asset_cols = {"track_id"}
+    for spec in ASSET_SPECS:
+        col_name = (
+            f"has_{spec['asset_type']}_{spec['asset_subtype']}"
+            if spec["asset_subtype"]
+            else f"has_{spec['asset_type']}"
+        )
+        all_possible_asset_cols.add(col_name)
+
+    processed_records = []
+    for track_id, assets in assets_by_track.items():
+        record = {"track_id": track_id}
+        for col_name in all_possible_asset_cols:
+            if col_name != "track_id":  # track_id is already set
+                record[col_name] = assets.get(
+                    col_name, False
+                )  # Default to False if not present
+        processed_records.append(record)
+
+    if not processed_records:
+        print("Warning: No assets matched the specs after processing. Manifest will be empty.")
+        # Still create an empty manifest with headers if no records
+        manifest_df = pd.DataFrame(columns=sorted(list(all_possible_asset_cols)))
+    else:
+        manifest_df = pd.DataFrame(processed_records)
+        # Ensure all potential columns are present, even if all values are False
+        for col in all_possible_asset_cols:
+            if col not in manifest_df.columns:
+                manifest_df[col] = False
+
+        # Sort columns alphabetically, with track_id first
+        sorted_columns = ["track_id"] + sorted(
+            [col for col in manifest_df.columns if col != "track_id"]
+        )
+        manifest_df = manifest_df[sorted_columns]
+
+        manifest_df.sort_values(by="track_id", key=lambda col: col.astype(int), inplace=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_df.to_csv(output_path, index=False)
@@ -200,7 +254,10 @@ def main():
     parser.add_argument(
         "--track-ids",
         type=str,
-        help="Comma-separated list of track IDs (e.g., '1,2,3'). If not provided, will try authenticated bucket listing.",
+        help=(
+            "Comma-separated list of track IDs (e.g., '1,2,3'). "
+            "If not provided, will try authenticated bucket listing."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -222,7 +279,7 @@ def main():
             success = build_cloud_manifest_authenticated(args.output)
 
         if success:
-            print(f"\nTo upload this manifest to your R2 bucket, run:")
+            print("\nTo upload this manifest to your R2 bucket, run:")
             print(f"rclone copy {args.output} r2-bnl:{BUCKET_NAME}")
             return 0
         else:

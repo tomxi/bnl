@@ -27,10 +27,9 @@ This project is managed by [Pixi](https://pixi.sh/).
 git clone https://github.com/tomxi/bnl.git
 cd bnl
 pixi install
-pixi run install-dev
 ```
 
-This command installs all dependencies into a local `.pixi` environment and makes the `bnl` package available for use.
+This command installs all dependencies (including development tools) into a local `.pixi` environment and makes the `bnl` package available for use. If you encounter issues with the `bnl` module not being found during testing, ensure your project is installed in editable mode (e.g., by running `pip install -e .` within the pixi environment if `pixi install` doesn't handle it automatically, though typically it should for projects with `pyproject.toml`).
 
 ## Data Management
 
@@ -65,13 +64,28 @@ This will create a `metadata.csv` file inside that directory, which can then be 
 
 ## Development
 
-All development tasks are managed via `pixi run`.
+All development tasks are managed via `pixi run <task_name>`. See `pixi.toml` for the full list of tasks.
 
-- **Format code**: `pixi run format-all`
-- **Run all checks (format, lint, types, tests)**: `pixi run check-all`
-- **Serve docs (live-reload)**: `pixi run docs-serve`
-- **Run tests with coverage**: `pixi run test-cov`
-- **See all available tasks**: `pixi run`
+Key tasks include:
+- `pixi run format`: Auto-formats all code using Ruff.
+- `pixi run fix`: Lints and auto-fixes safe violations using Ruff.
+- `pixi run check`: Verifies formatting and linting (Ruff).
+- `pixi run test`: Runs all tests using pytest.
+- `pixi run types`: Runs mypy for static type analysis.
+- `pixi run test-cov`: Runs tests with code coverage.
+- `pixi run docs-build`: Builds Sphinx documentation.
+- `pixi run docs-serve`: Serves documentation with live-reloading.
+
+For a comprehensive check (format, lint, types, tests), you can run the individual commands or set up a combined task in `pixi.toml` if needed. The `pixi.toml` currently defines `check` for format and lint, and `test` for tests. `types` is separate.
+To run all critical checks, execute sequentially:
+```bash
+pixi run format
+pixi run check
+pixi run types
+pixi run test
+```
+
+You can see all available tasks by simply running `pixi run` in your terminal.
 
 ## Features
 
