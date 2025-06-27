@@ -1,171 +1,88 @@
-"""Tests for BNL data loading functionality."""
+"""Tests for the manifest-based data loading core."""
 
-import tempfile
 from pathlib import Path
 
 import pytest
 
-import bnl.data as data
-from bnl.data.base import DatasetConfig, get_config, set_config
-from bnl.data.salami import find_audio_file, list_tids
+from bnl import data
+
+# Define the manifest path for tests. Assumes the manifest has been generated.
+SALAMI_MANIFEST_PATH = Path.home() / "data/salami/metadata.csv"
+SALAMI_DATA_AVAILABLE = SALAMI_MANIFEST_PATH.exists()
 
 
-def test_config():
-    """Test basic configuration functionality."""
-    config = data.get_config()
-    assert config.data_root == Path.home() / "data"
-    assert config.salami_annotations_dir == Path.home() / "data" / "salami-jams"
-    assert config.salami_audio_dir == Path.home() / "data" / "salami" / "audio"
+def test_track_repr() -> None:
+    """Test `Track` representation doesn't crash."""
+    track = data.Track(track_id="999", assets={}, dataset_root=Path("."))
+    assert "999" in repr(track)
 
 
-def test_list_tids():
-    """Test track ID listing."""
-    tids = data.slm.list_tids()
-    assert isinstance(tids, list)
-    # If SALAMI data is available, should find tracks
-    if len(tids) > 0:
-        assert all(tid.isdigit() for tid in tids)
-        # Should be sorted numerically
-        assert tids == sorted(tids, key=int)
+def test_dataset_init_file_not_found() -> None:
+    """Test `Dataset` raises an error for a bad path."""
+    with pytest.raises(FileNotFoundError):
+        data.Dataset(Path("non/existent/manifest.csv"))
 
 
-@pytest.mark.skipif(
-    not (Path.home() / "data" / "salami-jams").exists(),
-    reason="SALAMI data not available",
-)
-def test_load_track():
-    """Test single track loading (requires SALAMI data)."""
-    tids = data.slm.list_tids()
-    if len(tids) == 0:
-        pytest.skip("No SALAMI tracks available")
-
-    track = data.slm.load_track(tids[0])
-
-    # Basic properties
-    assert track.track_id == tids[0]
-    assert track.jams_path is not None
-    assert track.jams_path.exists()
-
-    # Info should be accessible
-    info = track.info
-    assert isinstance(info, dict)
-    assert "artist" in info
-    assert "title" in info
-    assert "duration" in info
-
-    # JAMS object should be accessible
-    jams_obj = track.jams
-    assert hasattr(jams_obj, "file_metadata")
+@pytest.fixture(scope="module")
+def salami_dataset() -> data.Dataset:
+    """Fixture to load the SALAMI dataset once for all tests in this module."""
+    if not SALAMI_DATA_AVAILABLE:
+        pytest.skip("SALAMI test data not available.")
+    return data.Dataset(SALAMI_MANIFEST_PATH)
 
 
-@pytest.mark.skipif(
-    not (Path.home() / "data" / "salami-jams").exists(),
-    reason="SALAMI data not available",
-)
-def test_load_tracks():
-    """Test batch track loading (requires SALAMI data)."""
-    tids = data.slm.list_tids()[:3]  # Test with first 3 tracks
-    if len(tids) == 0:
-        pytest.skip("No SALAMI tracks available")
+@pytest.mark.skipif(not SALAMI_DATA_AVAILABLE, reason="SALAMI data not available")
+class TestSalamiDataset:
+    """Test suite for the `Dataset` class using SALAMI data."""
 
-    tracks = data.slm.load_tracks(tids)
+    def test_init(self, salami_dataset: data.Dataset) -> None:
+        """Test dataset initialization."""
+        assert salami_dataset is not None
+        assert len(salami_dataset.track_ids) > 0
 
-    assert len(tracks) <= len(tids)  # May be less if some fail to load
-    assert all(isinstance(track, data.slm.Track) for track in tracks)
-    assert all(track.track_id in tids for track in tracks)
+    def test_list_tids(self, salami_dataset: data.Dataset) -> None:
+        """Test track ID listing."""
+        tids = salami_dataset.list_tids()
+        assert isinstance(tids, list)
+        assert len(tids) > 0
+        assert all(isinstance(tid, str) and tid.isdigit() for tid in tids)
 
+    def test_load_track(self, salami_dataset: data.Dataset) -> None:
+        """Test single track loading."""
+        tids = salami_dataset.list_tids()
+        track = salami_dataset.load_track(tids[0])
+        assert isinstance(track, data.Track)
+        assert track.track_id == tids[0]
+        assert track.get_asset("annotation", "reference") is not None
 
-def test_track_repr():
-    """Test track representation doesn't crash."""
-    # Test with minimal track object
-    track = data.slm.Track(track_id="999")
-    repr_str = repr(track)
-    assert "SALAMI" in repr_str
-    assert "999" in repr_str
+    def test_load_nonexistent_track(self, salami_dataset: data.Dataset) -> None:
+        """Test loading a non-existent track raises an error."""
+        with pytest.raises(ValueError):
+            salami_dataset.load_track("nonexistent_id")
 
+    def test_track_audio_and_info(self, salami_dataset: data.Dataset) -> None:
+        """Test that track audio and metadata can be loaded."""
+        track = salami_dataset.load_track("2")  # A track known to have data
+        info = track.info
+        assert "artist" in info and "title" in info and "duration" in info
+        y, sr = track.load_audio()
+        assert y is not None
+        assert sr > 0
 
-def test_nonexistent_track():
-    """Test loading nonexistent track raises appropriate error."""
-    with pytest.raises(ValueError):  # Changed to ValueError for manifest-based loading
-        data.slm.load_track("999999")  # Very unlikely to exist
+    def test_load_audio_file_not_found(
+        self, salami_dataset: data.Dataset, tmp_path: Path
+    ) -> None:
+        """Test loading audio when the file is missing."""
+        track_assets = [{"track_id": "1", "asset_type": "audio", "file_path": "missing.wav"}]
+        track = data.Track.from_assets_list("1", tmp_path, track_assets)
+        with pytest.raises(FileNotFoundError):
+            track.load_audio()
 
-
-def test_module_structure():
-    """Test that the simplified module structure works."""
-    # Should have simplified namespace
-    assert hasattr(data, "slm")
-    assert hasattr(data, "get_config")
-    assert hasattr(data, "set_config")
-
-    # SALAMI functions should be in slm namespace
-    assert hasattr(data.slm, "load_track")
-    assert hasattr(data.slm, "load_tracks")
-    assert hasattr(data.slm, "list_tids")
-    assert hasattr(data.slm, "Track")
-
-
-def test_salami_edge_cases():
-    """Test edge cases for SALAMI module coverage."""
-    # Test load_tracks with non-existent track to trigger FileNotFoundError handling
-    tracks = data.slm.load_tracks(["999999"])  # Very unlikely to exist
-    assert tracks == []  # Should return empty list after catching error
-
-    # Test find_audio_file with non-existent track_id to cover line 26
-    fake_dir = Path("/non/existent/directory")
-    result = find_audio_file("nonexistent", fake_dir)
-    assert result is None
-
-
-def test_dataset_config_and_missing_paths():
-    """Test custom dataset config and handling of missing files/directories."""
-    original_config = get_config()
-
-    # Create config with custom non-existent paths (covers path conversion lines)
-    custom_config = DatasetConfig(
-        data_root="/tmp/nonexistent_data",
-        salami_annotations_dir="/tmp/nonexistent_jams",
-        salami_audio_dir="/tmp/nonexistent_audio",
-        adobe_estimations_dir="/tmp/nonexistent_adobe",
-    )
-
-    # Verify Path objects were created from string inputs
-    assert isinstance(custom_config.data_root, Path)
-    assert isinstance(custom_config.salami_annotations_dir, Path)
-    assert isinstance(custom_config.salami_audio_dir, Path)
-    assert isinstance(custom_config.adobe_estimations_dir, Path)
-
-    # Set the custom config globally
-    set_config(custom_config)
-    assert get_config() == custom_config
-
-    # Test missing directory scenarios - manifest-based loading bypasses config directories
-    # This test needs to be updated for the new manifest-based approach
-    try:
-        tids = (
-            list_tids()
-        )  # Will fail if manifest doesn't exist in the custom config location
-        # If it doesn't fail, it means the global dataset instance is still using the real manifest
-        # So we can't easily test the missing directory case anymore - this is actually a good thing!
-        assert len(tids) >= 0  # Just verify it returns something reasonable
-    except FileNotFoundError:
-        # This would happen if manifest doesn't exist at the configured location
-        pass
-
-    result = find_audio_file(
-        "test", Path("/tmp/nonexistent")
-    )  # Missing track directory
-    assert result is None
-
-    # Restore original config
-    set_config(original_config)
-
-
-def test_find_audio_file_branches():
-    """Test find_audio_file branches."""
-    with tempfile.TemporaryDirectory() as tmp:
-        p = Path(tmp)
-        assert find_audio_file("x", p) is None  # no dir
-        (p / "y").mkdir()
-        assert find_audio_file("y", p) is None  # no audio
-        (p / "y" / "audio.mp3").touch()
-        assert find_audio_file("y", p) is not None  # has audio
+    def test_load_audio_no_asset(self, salami_dataset: data.Dataset) -> None:
+        """Test loading audio when no audio asset exists."""
+        track_assets = [
+            {"track_id": "1", "asset_type": "annotation", "file_path": "dummy.jams"}
+        ]
+        track = data.Track.from_assets_list("1", Path("."), track_assets)
+        with pytest.raises(ValueError, match="No audio asset found"):
+            track.load_audio()

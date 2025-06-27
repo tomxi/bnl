@@ -1,29 +1,31 @@
 """Visualization utilities for segmentations."""
 
 import itertools
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any
 
 import librosa.display
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 from cycler import cycler
+from matplotlib.figure import Figure, SubFigure
 
 # Import Segmentation for type hinting only to avoid circular dependency
 if TYPE_CHECKING:
     from .core import Segmentation  # pragma: no cover
 
 
-def label_style_dict(labels, boundary_color="white", **kwargs):
-    """
-    Creates a mapping of labels to matplotlib style properties.
+def label_style_dict(
+    labels: list[Any] | np.ndarray, boundary_color: str = "white", **kwargs: Any
+) -> dict[str, dict[str, Any]]:
+    """Create a mapping of labels to matplotlib style properties.
 
     Parameters
     ----------
     labels : list or ndarray
-        List of labels (can be nested). Duplicates are processed once.
+        List of labels. Duplicates are processed once.
     boundary_color : str, default="white"
-        Color for segment boundaries (edgecolor).
+        Color for segment boundaries.
     **kwargs : dict
         Additional style properties to apply to all labels.
 
@@ -35,7 +37,7 @@ def label_style_dict(labels, boundary_color="white", **kwargs):
     """
     # Extract unique labels from potentially nested structure
     unique_labels = np.unique(
-        np.concatenate([np.atleast_1d(l) for l in labels if l is not None])
+        np.concatenate([np.atleast_1d(label) for label in labels if label is not None])
     )
 
     # More hatch patterns for more labels
@@ -44,13 +46,13 @@ def label_style_dict(labels, boundary_color="white", **kwargs):
 
     if len(unique_labels) <= 80:
         hatch_cycler = cycler(hatch=hatchs)
-        fc_cycler = cycler(color=plt.get_cmap("tab10").colors)
+        fc_cycler = cycler(color=plt.get_cmap("tab10").colors)  # type: ignore[attr-defined]
         p_cycler = hatch_cycler * fc_cycler
     else:
         hatch_cycler = cycler(hatch=hatchs + more_hatchs)
-        fc_cycler = cycler(color=plt.get_cmap("tab20").colors)
+        fc_cycler = cycler(color=plt.get_cmap("tab20").colors)  # type: ignore[attr-defined]
         # make it repeat...
-        p_cycler = itertools.cycle(hatch_cycler * fc_cycler)
+        p_cycler = itertools.cycle(hatch_cycler * fc_cycler)  # type: ignore[assignment]
 
     # Create style mapping for each unique label
     seg_map = {}
@@ -79,40 +81,33 @@ def label_style_dict(labels, boundary_color="white", **kwargs):
 
 def plot_segment(
     seg: "Segmentation",
-    ax: Optional[plt.Axes] = None,
+    ax: plt.Axes | None = None,
     label_text: bool = True,
     title: bool = True,
     ytick: str = "",
     time_ticks: bool = True,
-    style_map: Optional[Dict[str, Dict[str, Any]]] = None,
-) -> Tuple[plt.Figure, plt.Axes]:
-    """Plot a Segmentation object.
+    style_map: dict[str, dict[str, Any]] | None = None,
+) -> tuple[Figure | SubFigure, plt.Axes]:
+    """Plot a `Segmentation` object.
 
     Parameters
     ----------
     seg : bnl.core.Segmentation
-        The Segmentation object to plot.
+        The segmentation to plot.
     ax : matplotlib.axes.Axes, optional
-        Axes to plot on. If None, a new figure and axes are created.
+        An existing axes to plot on.
     label_text : bool, default=True
-        Whether to display segment labels as text on the plot.
+        Whether to display segment labels.
     title : bool, default=True
-        Whether to display a title on the axis.
-    ytick : str, default=""
-        Label for the y-axis. If empty, no label is shown.
+        Whether to display the segmentation's name as a title.
+    ytick : str, optional
+        A label for the y-axis.
     time_ticks : bool, default=True
-        Whether to display time ticks and labels on the x-axis.
+        Whether to display time ticks on the x-axis.
     style_map : dict, optional
         A precomputed mapping from labels to style properties.
-        If None, it will be generated using `label_style_dict`.
-
-    Returns
-    -------
-    fig : matplotlib.figure.Figure
-        The figure object containing the plot.
-    ax : matplotlib.axes.Axes
-        The axes object with the plot.
     """
+    fig: Figure | SubFigure
     if ax is None:
         fig, ax = plt.subplots(figsize=(6, 0.6))  # short and wide
     else:
@@ -126,8 +121,10 @@ def plot_segment(
 
         ax.set_xlim(seg.start, seg.end)
         for span in seg.segments:
+            # Get style for span, using a default if name is None or not in map
+            span_style = style_map.get(span.name if span.name is not None else "", {})
             # Plot the segment using TimeSpan interface
-            span.plot(ax=ax, text=label_text, **style_map[span.name])
+            span.plot(ax=ax, text=label_text, **span_style)
     else:
         ax.text(
             0.5,

@@ -1,10 +1,11 @@
 # Configuration file for the Sphinx documentation builder.
-import os
 import sys
 from pathlib import Path
 
 # Add src to path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from bnl import __version__
 
 # -- Project information -----------------------------------------------------
 project = "BNL"
@@ -12,7 +13,6 @@ copyright = "2025, Tom Xi"
 author = "Tom Xi"
 
 # The full version, including alpha/beta/rc tags
-from bnl import __version__
 
 release = __version__
 

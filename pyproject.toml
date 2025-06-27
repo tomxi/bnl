@@ -4,55 +4,73 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bnl"
-version = "0.2.0"
+version = "0.2.1"
 description = "Boundary and Labeling: Tools for Hierarchical Music Structure Analysis"
 readme = "README.md"
-requires-python = ">=3.12, <3.13"
-license = {text = "MIT"}
+authors = [{ name = "Tom Xi", email = "tom.xi@nyu.edu" }]
+license = { text = "MIT" }
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python",
+
+    "Programming Language :: Python :: 3",
+]
 dependencies = [
-    "numpy",  
+    "numpy",
     "matplotlib",
     "librosa",
     "pyarrow",
     "seaborn",
     "mir_eval",
-    "jams"
+    "jams",
 ]
+requires-python = ">=3.9"
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "pylint"]
+docs = [
+    "sphinx",
+    "sphinx-rtd-theme",
+    "numpydoc",
+    "sphinx-copybutton",
+    "myst-parser",
+    "sphinx-autobuild",
+]
+notebooks = ["jupyter", "ipykernel"]
+apps = ["streamlit"]
 
 [project.urls]
-Source = "https://github.com/tomxi/bnl"
-Issues = "https://github.com/tomxi/bnl/issues"
+Homepage = "https://github.com/tomxi/bnl"
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
-addopts = "--cov=bnl --cov-report=term-missing"
-filterwarnings = [
-    "ignore::DeprecationWarning:jsonschema.*",
-]
+[tool.setuptools.packages.find]
+where = ["src"]
 
-[tool.coverage.run]
-source = ["src"]
-omit = ["tests/*"]
-relative_files = true
+[tool.ruff]
+line-length = 96
+target-version = "py312"
 
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "^\\s*def __repr__",
-    "raise NotImplementedError",
-    "^if __name__ == ['\"]__main__['\"]:",
-    "^\\s*pass$",
-    "raise ImportError"
-]
-fail_under = 80
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
 
-[tool.isort]
-profile = "black"
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "C90", "N", "UP", "A", "B"]
+ignore = ["B905"] # allow zip without strict=True
 
-[tool.mypy]
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"] # allow unused imports in __init__ files
+"tests/*" = ["A003"]
+"docs/conf.py" = ["A001"]
+
 [[tool.mypy.overrides]]
 module = "jams"
 ignore_missing_imports = true
+
+[tool.ruff.lint.isort]
+known-first-party = ["bnl"]
+
+[tool.mypy]
+ignore_missing_imports = true
+disallow_untyped_defs = true

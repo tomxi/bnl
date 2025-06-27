@@ -1,9 +1,8 @@
 import librosa.display
 import matplotlib.pyplot as plt
-import numpy as np
 import pytest
 
-from bnl import Segmentation, TimeSpan, viz
+from bnl import Segmentation, viz
 
 
 @pytest.fixture(autouse=True)
@@ -60,7 +59,11 @@ def test_segmentation_plotting():
 
 
 def test_empty_segmentation_with_title_and_ytick():
-    """Test plotting empty segmentation with title and ytick to cover lines 162, 172, 184."""
+    """Test plotting empty segmentation with title and ytick.
+
+    This test is designed to cover specific lines in the plotting function
+    (lines 162, 172, 184 in the original implementation).
+    """
     # Create empty segmentation with a name
     empty_seg = Segmentation(name="empty")
 

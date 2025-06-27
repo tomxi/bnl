@@ -1,11 +1,13 @@
 """Core data structures and constructors."""
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any
 
 import jams
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure, SubFigure
 from mir_eval.util import boundaries_to_intervals
 
 __all__ = ["TimeSpan", "Segmentation", "Hierarchy"]
@@ -23,19 +25,13 @@ class TimeSpan:
         End time in seconds.
     name : str, optional
         Label for this time span.
-
-    Examples
-    --------
-    >>> span = TimeSpan(start=1.0, end=3.0, name='chorus')
-    >>> span.end - span.start  # duration
-    2.0
     """
 
     start: float = 0.0
     end: float = 0.0
-    name: Optional[str] = None
+    name: str | None = None
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.start > self.end:
             raise ValueError(
                 f"Start time ({self.start}) must be less than end time ({self.end})"
@@ -50,23 +46,13 @@ class TimeSpan:
     def __repr__(self) -> str:
         return f"TimeSpan({self})"
 
-    def plot(
+    def plot(  # type: ignore[override]
         self,
-        ax: Optional[plt.Axes] = None,
+        ax: Axes | None = None,
         text: bool = True,
-        **style_map,
-    ):
-        """Plot the time span as axvspan on the given axis.
-
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes, optional
-            Axes to plot on. If None, a new figure and axes are created.
-        text : bool, default=True
-            Whether to display the annotation text.
-        style_map : dict, optional
-            A dictionary of style properties for the axvspan.
-        """
+        **style_map: Any,
+    ) -> tuple[Figure | SubFigure, Axes]:
+        """Plot the time span as a vertical bar."""
         if ax is None:
             _, ax = plt.subplots()
 
@@ -80,9 +66,9 @@ class TimeSpan:
         # Get ymax for annotation positioning, default to 1 (top of axes)
         span_ymax = style_map.get("ymax", 1.0)  # get the top of the rect span
         if text:
-            lab = str(self) if self.name == "" else self.name
+            lab_text = self.name if self.name is not None else ""
             ann = ax.annotate(
-                lab,
+                lab_text,
                 xy=(self.start, span_ymax),
                 xycoords=ax.get_xaxis_transform(),
                 xytext=(8, -10),
@@ -102,20 +88,13 @@ class Segmentation(TimeSpan):
 
     Parameters
     ----------
-    segments : List[TimeSpan]
-        List of TimeSpan objects representing the segments.
-        Must be sorted, non-overlapping, and contiguous.
-
-    Examples
-    --------
-    >>> span1 = TimeSpan(start=0.0, end=2.0, name='A')
-    >>> span2 = TimeSpan(start=2.0, end=5.0, name='B')
-    >>> segmentation = Segmentation(segments=[span1, span2])
+    segments : list[TimeSpan]
+        A sorted, non-overlapping, and contiguous list of `TimeSpan` objects.
     """
 
-    segments: List[TimeSpan] = field(default_factory=list)
+    segments: list[TimeSpan] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # order the segments by start time
         self.segments = sorted(self.segments, key=lambda x: x.start)
         # I should check that the segments are non-overlapping and contiguous.
@@ -135,38 +114,20 @@ class Segmentation(TimeSpan):
         return self.segments[idx]
 
     @property
-    def labels(self) -> List[Optional[str]]:
-        """Get labels from all segments.
-
-        Returns
-        -------
-        List[Optional[str]]
-            List of labels from each segment.
-        """
+    def labels(self) -> list[str | None]:
+        """A list of labels from all segments."""
         return [seg.name for seg in self.segments]
 
     @property
     def itvls(self) -> np.ndarray:
-        """Get intervals as (start, end) pairs.
-
-        Returns
-        -------
-        np.ndarray
-            Array of interval start and end times, shape=(n_segments, 2).
-        """
+        """Intervals as an array of (start, end) pairs."""
         if not self.segments:
             return np.array([])
         return np.array([[seg.start, seg.end] for seg in self.segments])
 
     @property
-    def bdrys(self) -> List[float]:
-        """Get all boundaries from the segmentation.
-
-        Returns
-        -------
-        List[float]
-            Sorted list of all boundary times.
-        """
+    def bdrys(self) -> list[float]:
+        """A sorted list of all boundary times."""
         if not self.segments:
             return []
         boundaries = [self.segments[0].start]
@@ -177,47 +138,17 @@ class Segmentation(TimeSpan):
         dur = self.end - self.start
         return f"Segmentation({len(self)} segments over {dur:.2f}s)"
 
-    def plot(
+    def plot(  # type: ignore[override]
         self,
-        ax=None,
+        ax: Axes | None = None,
         text: bool = True,
         title: bool = True,
         ytick: str = "",
         time_ticks: bool = True,
-        style_map: Optional[Dict[str, Any]] = None,
-    ):
-        """Plot the segmentation boundaries and labels.
-
-        This is a convenience wrapper around `bnl.viz.plot_segment`.
-
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes, optional
-            Axes to plot on. If None, a new figure and axes are created.
-        text : bool, default=False
-            Whether to display segment labels as text on the plot.
-        title : bool, default=True
-            Whether to display a title on the axis.
-        ytick : str, default=""
-            Label for the y-axis. If empty, no label is shown.
-        time_ticks : bool, default=True
-            Whether to display time ticks and labels on the x-axis.
-        style_map : dict, optional
-            A precomputed mapping from labels to style properties.
-            If None, it will be generated using `bnl.viz.label_style_dict`.
-
-        Returns
-        -------
-        fig : matplotlib.figure.Figure
-            The figure object containing the plot.
-        ax : matplotlib.axes.Axes
-            The axes object with the plot.
-
-        See Also
-        --------
-        bnl.viz.plot_segment : The underlying plotting function.
-        bnl.viz.label_style_dict : Function to generate style maps.
-        """
+        style_map: dict[str, Any] | None = None,
+    ) -> tuple[Figure | SubFigure, Axes]:
+        """A convenience wrapper around `bnl.viz.plot_segment`."""
+        # Local import to avoid circular dependency at module level
         from .viz import plot_segment
 
         return plot_segment(
@@ -241,10 +172,20 @@ class Segmentation(TimeSpan):
     def from_intervals(
         cls,
         intervals: np.ndarray,
-        labels: Optional[List[str]] = None,
-        name: Optional[str] = None,
+        labels: list[str | None] | None = None,
+        name: str | None = None,
     ) -> "Segmentation":
-        """Create segmentation from an interval array."""
+        """Create segmentation from an interval array.
+
+        Parameters
+        ----------
+        intervals : np.ndarray, shape=(n, 2)
+            An array of (start, end) times.
+        labels : list of str, optional
+            A list of labels for each interval.
+        name : str, optional
+            A name for the segmentation.
+        """
         # Default labels is the interval string
         if labels is None:
             labels = [None] * len(intervals)
@@ -258,11 +199,21 @@ class Segmentation(TimeSpan):
     @classmethod
     def from_boundaries(
         cls,
-        boundaries: List[float],
-        labels: Optional[List[str]] = None,
-        name: Optional[str] = None,
+        boundaries: list[float],
+        labels: list[str | None] | None = None,
+        name: str | None = None,
     ) -> "Segmentation":
-        """Create segmentation from a list of boundaries."""
+        """Create segmentation from a list of boundaries.
+
+        Parameters
+        ----------
+        boundaries : list of float
+            A sorted list of boundary times.
+        labels : list of str, optional
+            A list of labels for each created segment.
+        name : str, optional
+            A name for the segmentation.
+        """
         intervals = boundaries_to_intervals(np.array(sorted(boundaries)))
         return cls.from_intervals(intervals, labels, name)
 
@@ -270,26 +221,22 @@ class Segmentation(TimeSpan):
     def from_jams(cls, anno: jams.Annotation) -> "Segmentation":
         """Create segmentation from a JAMS annotation. (Not yet implemented)"""
         # TODO: Implement JAMS open_segment annotation parsing
-        pass
+        raise NotImplementedError
 
 
 @dataclass
 class Hierarchy(TimeSpan):
     """A hierarchical structure of segmentations.
 
-    A Hierarchy is a TimeSpan containing multiple layers of Segmentation objects,
-    representing different levels of segmentation from coarsest to finest.
-
     Parameters
     ----------
-    layers : List[Segmentation]
-        An ordered list of Segmentation objects, from coarsest to finest levels.
-
+    layers : list[Segmentation]
+        An ordered list of `Segmentation` objects, from coarsest to finest.
     """
 
-    layers: List[Segmentation] = field(default_factory=list)
+    layers: list[Segmentation] = field(default_factory=list)
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         # Set start/end from layers if available
         if self.layers:
             self.start = self.layers[0].start
@@ -306,36 +253,18 @@ class Hierarchy(TimeSpan):
         return self.layers[lvl_idx]
 
     @property
-    def itvls(self) -> List[np.ndarray]:
-        """Get the intervals of the hierarchy.
-
-        Returns
-        -------
-        list of np.ndarray
-            A list of interval arrays for all levels.
-        """
+    def itvls(self) -> list[np.ndarray]:
+        """A list of interval arrays for all levels."""
         return [lvl.itvls for lvl in self.layers]
 
     @property
-    def labels(self) -> List[List[Optional[str]]]:
-        """Get the labels of the hierarchy.
-
-        Returns
-        -------
-        list of list of str
-            A list of label lists for all levels.
-        """
+    def labels(self) -> list[list[str | None]]:
+        """A list of label lists for all levels."""
         return [lvl.labels for lvl in self.layers]
 
     @property
-    def bdrys(self) -> List[List[float]]:
-        """Get the boundaries of the hierarchy.
-
-        Returns
-        -------
-        list of list of float
-            A list of boundary lists for all levels.
-        """
+    def bdrys(self) -> list[list[float]]:
+        """A list of boundary lists for all levels."""
         return [lvl.bdrys for lvl in self.layers]
 
     def __repr__(self) -> str:
@@ -347,12 +276,12 @@ class Hierarchy(TimeSpan):
 
         return f"Hierarchy({len(self)} levels over {self.start:.2f}s-{self.end:.2f}s)"
 
-    def plot(self, **kwargs):
+    def plot(self, **kwargs: Any) -> None:  # type: ignore[override]
         """Plots the hierarchy. (Not yet implemented)"""
-        pass  # TODO: Implement this
+        raise NotImplementedError
 
     @classmethod
-    def from_jams(cls, anno) -> "Hierarchy":
+    def from_jams(cls, anno: jams.Annotation) -> "Hierarchy":
         """Create hierarchy from a JAMS annotation. (Not yet implemented)"""
         # TODO: Implement JAMS multilevel annotation parsing
-        pass
+        raise NotImplementedError
