@@ -58,8 +58,9 @@ if "data_source_choice" not in st.session_state:
 elif data_source_option != st.session_state.data_source_choice:
     st.session_state.data_source_choice = data_source_option
     # Clear everything when data source changes
+    preserve_keys = ["data_source_choice"]  # Add other critical keys here if needed
     for key in list(st.session_state.keys()):
-        if key != "data_source_choice":
+        if key not in preserve_keys:
             del st.session_state[key]
     st.cache_data.clear()
     st.rerun()
