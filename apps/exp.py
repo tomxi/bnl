@@ -1,10 +1,39 @@
+"""
+BNL Data Explorer - Streamlit App
+
+An interactive web application for exploring the BNL music dataset with audio playback,
+visualization, and metadata browsing.
+
+Features:
+- Browse 1,400+ music tracks with rich metadata (title, artist, duration)
+- Stream MP3 audio directly from cloud storage (Cloudflare R2)
+- Real-time waveform and MFCC visualization
+- Dual data source support: Cloud (default) or local filesystem
+- Cached data loading for optimal performance
+
+Usage:
+    pixi run exp
+
+Access at: http://localhost:8502
+
+Data Sources:
+- Cloud: Uses boolean manifest with automatic URL reconstruction
+- Local: Supports SALAMI-style datasets with local manifest files
+
+Architecture:
+- Cloud-native: Streams data from R2 bucket without local storage
+- Efficient caching: Uses Streamlit's @st.cache_data and @st.cache_resource
+- Robust error handling: Graceful fallbacks for missing assets
+- Real-time analysis: On-demand audio processing with librosa
+"""
+
+import io
+
 import librosa
 import librosa.display
 import matplotlib.pyplot as plt
-import streamlit as st
-import io
 import requests
-from pathlib import Path
+import streamlit as st
 
 import bnl
 

@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-# import requests_mock  # type: ignore # Removed as per plan
 
+# import requests_mock  # type: ignore # Removed as per plan
 from bnl import data
 
 # --- Constants for Mocking ---
@@ -54,7 +54,9 @@ def mock_local_manifest_file(tmp_path: Path) -> Path:
     jams_dir.mkdir(parents=True, exist_ok=True)
     jams_file_1 = jams_dir / "1.jams"
     with open(jams_file_1, "w") as f:
-        f.write('{"file_metadata": {"title": "MockTitle", "artist": "MockArtist", "duration": 10.0}}')
+        f.write(
+            '{"file_metadata": {"title": "MockTitle", "artist": "MockArtist", "duration": 10.0}}'
+        )
     (manifest_dir / "audio" / "2").mkdir(parents=True, exist_ok=True)
     (manifest_dir / "audio" / "2" / "audio.wav").touch()
 
@@ -94,17 +96,18 @@ def test_dataset_init_local_file_not_found():
         data.Dataset(Path("non/existent/manifest.csv"), data_source_type="local")
 
 
-def test_dataset_init_cloud_url_error(mock_cloud_manifest_url: str): # Removed requests_mock
+def test_dataset_init_cloud_url_error(mock_cloud_manifest_url: str):  # Removed requests_mock
     # This test might now pass if the mock_cloud_manifest_url is a real 404,
     # or fail differently if it's a valid URL but bad content.
     # For now, we assume it will raise ConnectionError or similar for a bad URL.
     # A more robust test would use a truly non-existent domain or specific error.
-    with pytest.raises(Exception): # General exception, as specific error might change
+    with pytest.raises(Exception):  # General exception, as specific error might change
         data.Dataset(
-            "https://this.is.a.non.existent.domain/manifest.csv", # Guaranteed non-existent
+            "https://this.is.a.non.existent.domain/manifest.csv",  # Guaranteed non-existent
             data_source_type="cloud",
             cloud_base_url="https://this.is.a.non.existent.domain",
         )
+
 
 def test_dataset_init_invalid_source_type():
     with pytest.raises(ValueError, match="Unsupported data_source_type"):
@@ -174,11 +177,14 @@ class TestLocalDataset:
 
 # --- Constants for Live Cloud Tests ---
 # Using the actual production URLs as per user confirmation.
-LIVE_CLOUD_MANIFEST_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev/manifest_cloud.csv"
+LIVE_CLOUD_MANIFEST_URL = (
+    "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev/manifest_cloud.csv"
+)
 LIVE_R2_BUCKET_PUBLIC_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
 
+
 # --- Test Cloud Dataset Operations (Live) ---
-@pytest.fixture(scope="module") # Load once for all cloud tests
+@pytest.fixture(scope="module")  # Load once for all cloud tests
 def live_cloud_dataset() -> data.Dataset | None:
     """Fixture to load the live cloud dataset. Skips if manifest is unreachable."""
     try:
@@ -192,9 +198,12 @@ def live_cloud_dataset() -> data.Dataset | None:
             pytest.skip("Live cloud manifest loaded but is empty or failed to parse tracks.")
             return None
         return dataset
-    except Exception as e: # Catch any error during dataset init (network, parsing)
-        pytest.skip(f"Skipping live cloud tests: Failed to load dataset from {LIVE_CLOUD_MANIFEST_URL}. Error: {e}")
+    except Exception as e:  # Catch any error during dataset init (network, parsing)
+        pytest.skip(
+            f"Skipping live cloud tests: Failed to load dataset from {LIVE_CLOUD_MANIFEST_URL}. Error: {e}"
+        )
         return None
+
 
 @pytest.mark.skipif(
     live_cloud_dataset is None, reason="Live cloud dataset not available or failed to load."
@@ -205,7 +214,7 @@ class TestLiveCloudDataset:
         assert live_cloud_dataset.data_source_type == "cloud"
         assert live_cloud_dataset.base_url == LIVE_R2_BUCKET_PUBLIC_URL
         assert str(live_cloud_dataset.manifest_path) == LIVE_CLOUD_MANIFEST_URL
-        assert len(live_cloud_dataset.track_ids) > 0 # Check if manifest has entries
+        assert len(live_cloud_dataset.track_ids) > 0  # Check if manifest has entries
 
     def test_list_tids_cloud(self, live_cloud_dataset: data.Dataset):
         tids = live_cloud_dataset.list_tids()
@@ -225,15 +234,16 @@ class TestLiveCloudDataset:
         test_track_ids = []
         if "1" in live_cloud_dataset.track_ids:
             test_track_ids.append("1")
-        if "2" in live_cloud_dataset.track_ids: # Example, another known track
+        if "2" in live_cloud_dataset.track_ids:  # Example, another known track
             test_track_ids.append("2")
 
-        if not test_track_ids: # Fallback if '1' or '2' are not present
-             if live_cloud_dataset.track_ids:
-                 test_track_ids.append(live_cloud_dataset.track_ids[0]) # Get first available
-             else:
-                 pytest.skip("No tracks available in live cloud manifest to test path reconstruction.")
-
+        if not test_track_ids:  # Fallback if '1' or '2' are not present
+            if live_cloud_dataset.track_ids:
+                test_track_ids.append(live_cloud_dataset.track_ids[0])  # Get first available
+            else:
+                pytest.skip(
+                    "No tracks available in live cloud manifest to test path reconstruction."
+                )
 
         for track_id_to_test in test_track_ids:
             track = live_cloud_dataset.load_track(track_id_to_test)
@@ -243,19 +253,25 @@ class TestLiveCloudDataset:
             # Check for expected assets based on the boolean flags in its manifest_row
             # This is more dynamic than hardcoding expected assets for specific mock tracks.
             if track.manifest_row.get("has_audio_mp3"):
-                expected_audio_url = f"{LIVE_R2_BUCKET_PUBLIC_URL}/slm-dataset/{track_id_to_test}/audio.mp3"
+                expected_audio_url = (
+                    f"{LIVE_R2_BUCKET_PUBLIC_URL}/slm-dataset/{track_id_to_test}/audio.mp3"
+                )
                 assert track.info.get("audio_mp3_path") == expected_audio_url
                 # Optionally, try to load audio if small test files are guaranteed
                 # y, sr = track.load_audio()
                 # assert y is not None, f"Failed to load audio for track {track_id_to_test}"
 
             if track.manifest_row.get("has_annotation_ref"):
-                expected_jams_url = f"{LIVE_R2_BUCKET_PUBLIC_URL}/ref-jams/{track_id_to_test}.jams"
+                expected_jams_url = (
+                    f"{LIVE_R2_BUCKET_PUBLIC_URL}/ref-jams/{track_id_to_test}.jams"
+                )
                 assert track.info.get("annotation_reference_path") == expected_jams_url
                 # Check if JAMS metadata (title, artist) gets parsed from the live JAMS file
                 # This will make a real HTTP request for the JAMS file.
                 assert "title" in track.info, f"JAMS title missing for track {track_id_to_test}"
-                assert "artist" in track.info, f"JAMS artist missing for track {track_id_to_test}"
+                assert "artist" in track.info, (
+                    f"JAMS artist missing for track {track_id_to_test}"
+                )
 
             # Add more checks for other asset types if necessary, e.g., adobe annotations
             # if track.manifest_row.get("has_annotation_adobe-mu1gamma1"):
@@ -264,7 +280,6 @@ class TestLiveCloudDataset:
             #         f"{track_id_to_test}.mp3.msdclasscsnmagic.json"
             #     )
             #     assert track.info.get("annotation_adobe-mu1gamma1_path") == expected_adobe_url
-
 
     def test_load_nonexistent_track_cloud(self, live_cloud_dataset: data.Dataset):
         with pytest.raises(ValueError, match="Track ID 'nonexistent_cloud_id_12345' not found"):

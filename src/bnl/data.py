@@ -3,7 +3,7 @@
 import io
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast, Union  # Union was missing for Path | str
+from typing import Any, cast  # Union was missing for Path | str
 from urllib.parse import urlparse
 
 import jams
@@ -70,7 +70,7 @@ class Track:
 
     @property
     def info(self) -> dict[str, Any]:
-        """A cached dictionary of essential track information, including paths/URLs and metadata."""
+        """A cached dictionary of essential track information."""
         if self._info_cache is not None:
             return self._info_cache
 

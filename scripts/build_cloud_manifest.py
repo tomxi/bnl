@@ -122,9 +122,7 @@ def build_cloud_manifest_authenticated(output_path: Path):
             # Add objects from this page
             objects = response.get("Contents", [])
             all_objects.extend(objects)
-            print(
-                f"Retrieved {len(objects)} objects (total so far: {len(all_objects)})"
-            )
+            print(f"Retrieved {len(objects)} objects (total so far: {len(all_objects)})")
 
             # Check if there are more objects
             if response.get("IsTruncated", False):
@@ -214,9 +212,7 @@ def process_paths(all_paths: list[str], output_path: Path) -> bool:
             # Mark that this asset exists for the track
             assets_by_track[track_id][col_name] = True
 
-        print(
-            f"  {spec['asset_type']}_{spec['asset_subtype']}: {matched_paths} files matched"
-        )
+        print(f"  {spec['asset_type']}_{spec['asset_subtype']}: {matched_paths} files matched")
 
     if not assets_by_track:
         print("Warning: No assets matched the specs. Manifest will be empty.")
@@ -257,19 +253,15 @@ def process_paths(all_paths: list[str], output_path: Path) -> bool:
     manifest_df = manifest_df[sorted_columns]
 
     # Sort by track_id as integer
-    manifest_df.sort_values(
-        by="track_id", key=lambda col: col.astype(int), inplace=True
-    )
+    manifest_df.sort_values(by="track_id", key=lambda col: col.astype(int), inplace=True)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     manifest_df.to_csv(output_path, index=False)
-    print(
-        f"\nBoolean manifest with {len(manifest_df)} tracks written to: {output_path}"
-    )
+    print(f"\nBoolean manifest with {len(manifest_df)} tracks written to: {output_path}")
 
     # Show column summary and asset counts
     print(f"Columns in manifest: {list(manifest_df.columns)}")
-    print(f"\nAsset availability summary:")
+    print("\nAsset availability summary:")
     for col in sorted_columns[1:]:  # Skip track_id
         count = manifest_df[col].sum()
         percentage = (count / len(manifest_df)) * 100
@@ -279,9 +271,7 @@ def process_paths(all_paths: list[str], output_path: Path) -> bool:
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Generate a boolean cloud dataset manifest."
-    )
+    parser = argparse.ArgumentParser(description="Generate a boolean cloud dataset manifest.")
     parser.add_argument(
         "--track-ids",
         type=str,
@@ -319,9 +309,7 @@ def main():
             print(f"\n✅ Boolean manifest created successfully: {args.output}")
             print("\nTo upload this manifest to your R2 bucket, run:")
             print(f"  rclone copy {args.output} r2-bnl:{BUCKET_NAME}")
-            print(
-                "\nTo use this boolean format in your app, update the Dataset constructor:"
-            )
+            print("\nTo use this boolean format in your app, update the Dataset constructor:")
             print("  # Change data_source_type or use the boolean manifest URL")
             return 0
         else:
