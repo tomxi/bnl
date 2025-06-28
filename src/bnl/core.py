@@ -218,6 +218,12 @@ class Segmentation(TimeSpan):
         # TODO: Implement JAMS open_segment annotation parsing
         raise NotImplementedError
 
+    @classmethod
+    def from_json(cls, json_data: dict[str, Any]) -> "Segmentation":
+        """Create segmentation from a JAMS annotation. (Not yet implemented)"""
+        # TODO: Implement JSON open_segment annotation parsing
+        raise NotImplementedError
+
 
 @dataclass
 class Hierarchy(TimeSpan):
@@ -279,4 +285,10 @@ class Hierarchy(TimeSpan):
     def from_jams(cls, anno: jams.Annotation) -> "Hierarchy":
         """Create hierarchy from a JAMS annotation. (Not yet implemented)"""
         # TODO: Implement JAMS multilevel annotation parsing
+        raise NotImplementedError
+
+    @classmethod
+    def from_json(cls, json_data: dict[str, Any]) -> "Hierarchy":
+        """Create hierarchy from a JSON annotation. (Not yet implemented)"""
+        # TODO: Implement JSON multilevel annotation parsing
         raise NotImplementedError

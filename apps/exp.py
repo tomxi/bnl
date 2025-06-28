@@ -43,8 +43,7 @@ st.title("SALAMI Explorer")
 R2_BUCKET_PUBLIC_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
 # The cloud manifest is now a local resource, bundled with the app
 CLOUD_MANIFEST_PATH = Path(__file__).parent.parent / "src/bnl/resources/manifest_cloud_boolean.csv"
-LOCAL_DATASET_ROOT = "~/data/salami"  # Example local path, user might need to change this
-LOCAL_MANIFEST_PATH = os.path.expanduser(f"{LOCAL_DATASET_ROOT}/metadata.csv")
+LOCAL_MANIFEST_PATH = os.path.expanduser("~/data/salami/metadata.csv")
 
 # Let user choose data source
 data_source_option = st.sidebar.radio(
@@ -91,14 +90,8 @@ def get_dataset(source_type: str):
         try:
             # The Dataset class now infers the source type from the local path
             return bnl.data.Dataset(manifest_path, data_source_type="local")
-        except FileNotFoundError:
-            st.error(f"Local manifest not found at: {manifest_path}")
-            st.error("Ensure your local SALAMI dataset is structured correctly and manifest exists.")
-            st.info(f"Expected structure: \n{LOCAL_DATASET_ROOT}/\n  ├── audio/\n  ├── jams/\n  └── metadata.csv")
-            st.stop()
         except Exception as e:
-            st.error(f"Failed to load LOCAL manifest from: {manifest_path}")
-            st.error(f"Error: {e}")
+            st.error(f"Failed to load LOCAL manifest from: {manifest_path} \n Error: {e}")
             st.stop()
     else:
         st.error("Invalid data source selected.")
@@ -208,8 +201,6 @@ if not st.session_state.track_loaded:
         analysis_plot = create_audio_analysis_plot(waveform, sr) if waveform is not None else None
 
     st.session_state.track = track
-    st.session_state.waveform = waveform
-    st.session_state.sr = sr
     st.session_state.analysis_plot = analysis_plot
     st.session_state.track_loaded = True
 
@@ -226,7 +217,7 @@ if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
     track = st.session_state.track
     st.header(f"Track: {track.info.get('title', st.session_state.track_id)}")
 
-    # Audio player: find the audio path from track.info
+    # --- Audio player: find the audio path from track.info ---
     audio_url_or_path = None
     for key, value in track.info.items():
         if key.startswith("audio_") and key.endswith("_path"):
@@ -243,6 +234,16 @@ if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
     else:
         st.warning(f"No audio asset found for track {st.session_state.track_id} in the manifest.")
         st.json(track.manifest_row.to_dict())  # Display what assets the manifest says it has
+
+    # --- Annotation visualization ---
+    if track.has_annotations:
+        st.header("Annotations")
+        st.write(track.annotations)
+        test_anno = track.load_hierarchy("reference")
+        st.pyplot(test_anno.plot())
+
+    else:
+        st.warning("No annotations found for this track.")
 
 else:
     st.warning("Please select a track or wait for data to load.")

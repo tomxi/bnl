@@ -12,6 +12,10 @@ import numpy as np
 import pandas as pd
 import requests
 
+import bnl
+
+from .core import Hierarchy
+
 
 def _parse_jams_metadata(jams_path: Path | str) -> dict[str, Any]:
     """Load metadata from a JAMS file, returning a dictionary.
@@ -141,11 +145,6 @@ class Dataset:
         dataset, it's inferred from the manifest URL.
     """
 
-    dataset_root: Path | str
-    base_url: str | None
-    manifest: pd.DataFrame
-    track_ids: list[str]
-
     def __init__(
         self,
         manifest_path: Path | str,
@@ -163,8 +162,8 @@ class Dataset:
         if self.data_source_type == "local":
             if is_url:
                 raise ValueError("Cannot use a URL manifest with 'local' data_source_type.")
-            self.dataset_root = Path(manifest_path).parent
-            self.base_url = None
+            self.dataset_root: Path | str = Path(manifest_path).parent
+            self.base_url: str | None = None
         elif self.data_source_type == "cloud":
             if cloud_base_url:
                 self.base_url = cloud_base_url
