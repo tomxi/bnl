@@ -240,11 +240,15 @@ class Hierarchy(TimeSpan):
     def __post_init__(self) -> None:
         # Set start/end from layers if available
         if self.layers:
-            self.start = self.layers[0].start
-            self.end = self.layers[0].end
+            # Find the first non-empty layer to get start/end times
+            non_empty_layer = next((layer for layer in self.layers if layer.segments), None)
+            if non_empty_layer:
+                self.start = non_empty_layer.start
+                self.end = non_empty_layer.end
 
+        # Check that all non-empty layers have the same start and end time
         for layer in self.layers:
-            if layer.start != self.start or layer.end != self.end:
+            if layer.segments and (layer.start != self.start or layer.end != self.end):
                 raise ValueError("All layers must have the same start and end time.")
 
     def __len__(self) -> int:
@@ -533,7 +537,7 @@ class Hierarchy(TimeSpan):
             total_plot_height - (i * (layer_height + layer_gap) + layer_height / 2) for i in range(n_layers)
         ]
         ax.set_yticks(ytick_positions)
-        ax.set_yticklabels([f"Level {i}" for i in range(n_layers)])
+        ax.set_yticklabels([f"Level {i}" for i in reversed(range(n_layers))])
 
         return fig, ax
 
