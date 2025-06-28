@@ -5,13 +5,13 @@ This document provides guidance and preferences for AI agents working with this 
 ## General Principles
 
 - **Lean, Focused, and Healthy Codebase:** Strive to keep the codebase concise, well-organized, and maintainable. Avoid unnecessary complexity and ensure code is easy to understand and test.
-- **Test-Driven Development:** When practical, write tests before implementing new features or fixing bugs. Tests are crucial for verifying correctness and preventing regressions.
-- **Clear Documentation:** Document code clearly, especially for complex logic or public APIs. Use docstrings and comments where appropriate.
+- **Test Strategy:** When practical, keep tests up to date, without slowing down development.
+- **Clear Documentation:** Document code clearly, especially for complex logic or public APIs. Use docstrings and comments where appropriate, and sphinx-ify the codebase for RTD.
 
 ## Specific Preferences
 
-- **Hierarchy Plotting:** When adding new plotting methods for `Hierarchy` objects, consider both multi-axes (one per layer) and single-axis (all layers on one plot with visual distinction) representations. The single-axis plot is useful for comparing layer alignments directly.
-- **JSON Conversion:** For `Hierarchy.from_json`, the expected input format is a list of layers, where each layer is a list of segments, and each segment is a tuple of `(start_time, end_time, label_str)`.
+- **Use Core Classes:** This repo is built around the core classes `TimeSeries`, `Segmentation`, and `Hierarchy`. Use them as much as possible, and keep them robust.
+
 
 ## Future Considerations (Agent Notes)
 
