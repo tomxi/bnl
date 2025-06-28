@@ -26,6 +26,7 @@ Architecture:
 """
 
 import os
+from typing import Any
 
 import librosa
 import librosa.display
@@ -65,7 +66,7 @@ elif data_source_option != st.session_state.data_source_choice:
 
 # --- Data Loading Functions (Cached for performance) ---
 @st.cache_resource
-def get_dataset(source_type: str):
+def get_dataset(source_type: str) -> bnl.data.Dataset:
     """Loads and caches the dataset object based on selected source."""
     if source_type == "Cloud (R2)":
         try:
@@ -94,7 +95,7 @@ current_dataset = get_dataset(st.session_state.data_source_choice)
 
 
 @st.cache_data
-def load_track_data(_dataset, track_id):
+def load_track_data(_dataset: bnl.data.Dataset, track_id: str) -> tuple:
     """Loads track data and populates track.info with metadata like title/artist."""
     track = _dataset[track_id]
 
@@ -105,7 +106,7 @@ def load_track_data(_dataset, track_id):
 
 
 @st.cache_data
-def create_audio_analysis_plot(waveform, sr):
+def create_audio_analysis_plot(waveform: Any, sr: Any) -> plt.Figure | None:
     """Creates a matplotlib figure with waveform and MFCC plots."""
     if waveform is None or sr is None:
         return None
@@ -125,7 +126,7 @@ def create_audio_analysis_plot(waveform, sr):
 
 
 # --- UI Layout & App State ---
-def reset_track_state():
+def reset_track_state() -> None:
     """Resets flags when a new track is selected, triggering a data reload."""
     st.session_state.track_loaded = False
     st.session_state.is_stabilized = False

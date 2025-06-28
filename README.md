@@ -10,6 +10,7 @@ A Python library for hierarchical Music Structure Analysis with cloud-native dat
 git clone https://github.com/tomxi/bnl.git
 cd bnl
 pixi install
+pixi run pip install -e .[dev,docs]
 ```
 
 ## Core Functionality
@@ -18,7 +19,7 @@ pixi install
 import bnl
 
 # Load cloud dataset
-dataset = bnl.data.Dataset("https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev/manifest_cloud_boolean.csv")
+dataset = bnl.data.Dataset("https://pub-<username>.r2.dev/manifest_cloud_boolean.csv")
 
 # Load a track by ID (ensure "2" is in dataset.track_ids)
 track = dataset["2"]

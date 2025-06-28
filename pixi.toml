@@ -79,19 +79,19 @@ cloud = ["cloud"]
 # ===================================================================
 
 # Format source code (run frequently during development)
-format = "ruff format src/"
+format = "ruff format src/ apps/"
 
 # Check code style without fixing (useful for CI)
-lint = "ruff check src/"
+lint = "ruff check src/ apps/"
 
 # Fix code style issues automatically
-fix = "ruff check src/ --fix"
+fix = "ruff check src/ apps/ --fix"
 
 # Run all tests
 test = "pip install -e . && pytest"
 
 # Run full validation pipeline (format + lint + types + test)
-check = "pip install -e . && ruff format --check src/ && ruff check src/ && mypy src/ --ignore-missing-imports && pytest"
+check = "pip install -e . && ruff format --check src/ apps/ && ruff check src/ apps/ && mypy src/ apps/ --ignore-missing-imports && pytest"
 
 # ===================================================================
 # Extended Development Tasks
@@ -101,7 +101,7 @@ check = "pip install -e . && ruff format --check src/ && ruff check src/ && mypy
 test-cov = "pip install -e . && pytest --cov=bnl --cov-report=term-missing"
 
 # Type checking only (faster when you just need types)
-types = "mypy src/ --ignore-missing-imports"
+types = "mypy src/ apps/ --ignore-missing-imports"
 
 # Clean build artifacts and cache  
 clean = "rm -rf build/ dist/ .pytest_cache/ .coverage .mypy_cache/ src/**/__pycache__/ tests/**/__pycache__/ *.egg-info/ || true"
