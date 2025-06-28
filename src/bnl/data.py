@@ -1,6 +1,7 @@
 """Core data loading classes for manifest-based datasets."""
 
 import io
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -11,8 +12,6 @@ import librosa
 import numpy as np
 import pandas as pd
 import requests
-
-import bnl
 
 from .core import Hierarchy
 
@@ -66,8 +65,9 @@ class Track:
     def __repr__(self) -> str:
         # Count how many 'has_*' columns are True
         # Ensure the boolean columns are treated as bool for sum, then cast to int
-        num_assets = int(self.manifest_row.filter(like="has_").astype(bool).sum())
-        return f"Track(track_id='{self.track_id}', num_assets={num_assets}, source='{self.dataset.data_source_type}')"
+        has_columns = self.manifest_row.filter(like="has_").astype(bool)
+        num_assets = int(has_columns.values.sum()) if len(has_columns) > 0 else 0
+        return f"Track(track_id='{self.track_id}', num_assets={num_assets}, source='{self.dataset.data_location}')"
 
     @property
     def info(self) -> dict[str, Any]:
@@ -166,7 +166,7 @@ class Track:
         annotation_path = self.annotations[annotation_type]
 
         # Load the JAMS file
-        if self.dataset.data_source_type == "cloud":
+        if self.dataset.data_location == "cloud":
             # For cloud data, download and load
             response = requests.get(str(annotation_path))
             response.raise_for_status()
@@ -196,77 +196,51 @@ class Dataset:
     manifest_path : Path | str
         The path to the dataset's `metadata.csv` manifest file.
         Can be a local file path or a URL for cloud-based manifests.
-    data_source_type : str, optional
-        Specifies the data source type, either 'local' or 'cloud'. This
-        determines how asset paths are resolved. Defaults to 'cloud' if
-        `manifest_path` is a URL, otherwise 'local'.
-    cloud_base_url : str, optional
-        The base URL for cloud-hosted assets. If not provided for a cloud
-        dataset, it's inferred from the manifest URL.
     """
 
     def __init__(
         self,
         manifest_path: Path | str,
-        data_source_type: str | None = None,
-        cloud_base_url: str | None = None,
     ):
+        # --- Load the manifest ---
         self.manifest_path = manifest_path
+        self.data_location = "cloud" if urlparse(str(manifest_path)).scheme in ("http", "https") else "local"
 
-        is_url = urlparse(str(manifest_path)).scheme in ("http", "https")
-        if data_source_type:
-            self.data_source_type = data_source_type
-        else:
-            self.data_source_type = "cloud" if is_url else "local"
-
-        if self.data_source_type == "local":
-            if is_url:
-                raise ValueError("Cannot use a URL manifest with 'local' data_source_type.")
+        if self.data_location == "local":
             self.dataset_root: Path | str = Path(manifest_path).parent
             self.base_url: str | None = None
-        elif self.data_source_type == "cloud":
-            if cloud_base_url:
-                self.base_url = cloud_base_url
-            elif is_url:
-                self.base_url = str(manifest_path).rsplit("/", 1)[0]
-            else:
-                # Allows testing cloud logic with a local manifest file
-                # by manually providing cloud_base_url.
-                raise ValueError("For cloud data source with local manifest, 'cloud_base_url' must be set.")
+        elif self.data_location == "cloud":
             self.dataset_root = self.base_url
+            self.base_url = str(manifest_path).rsplit("/", 1)[0]
         else:
-            raise ValueError(f"Unsupported data_source_type: '{self.data_source_type}'")
+            raise ValueError(f"Unsupported data_location: '{self.data_location}'")
 
         try:
             self.manifest = pd.read_csv(manifest_path)
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Manifest file not found at: {manifest_path}") from e
 
-        # Standardize track_id to string
+        # --- Standardize track_id to string ---
         if "track_id" not in self.manifest.columns:
             raise ValueError("Manifest must contain a 'track_id' column.")
         self.manifest["track_id"] = self.manifest["track_id"].astype(str)
         self.manifest.set_index("track_id", inplace=True, drop=False)
-
         # Sort by track_id, handling numeric vs. lexical gracefully
-        try:
-            # Try a numeric sort first
-            sorted_tids = self.manifest["track_id"].astype(int).sort_values()
-            self.track_ids = sorted_tids.astype(str).tolist()
-        except ValueError:
-            # Fallback to lexical sort if conversion to int fails
-            self.track_ids = sorted(self.manifest["track_id"].tolist())
+        self.track_ids = sorted(self.manifest["track_id"].astype(str).unique(), key=lambda x: int(x))
 
-    def list_tids(self) -> list[str]:
-        """Return a sorted list of all track IDs in the dataset."""
-        return self.track_ids
-
-    def load_track(self, track_id: str) -> Track:
+    def __getitem__(self, track_id: str) -> Track:
         """Load a specific track by its ID."""
         track_id = str(track_id)  # Ensure track_id is a string
-        if track_id not in self.manifest.index:
+        if track_id not in self.track_ids:
             raise ValueError(f"Track ID '{track_id}' not found in manifest.")
         return Track(track_id, self.manifest.loc[track_id], self)
+
+    def __len__(self) -> int:
+        return len(self.track_ids)
+
+    def __iter__(self) -> Iterator[Track]:
+        for track_id in self.track_ids:
+            yield self[track_id]
 
     def _reconstruct_path(self, track_id: str, asset_type: str, asset_subtype: str) -> Path | str:
         """Reconstructs the full path or URL for an asset.
@@ -274,7 +248,7 @@ class Dataset:
         This logic must align with the conventions used by the manifest builders
         (e.g., `scripts/build_local_manifest.py`).
         """
-        if self.data_source_type == "local":
+        if self.data_location == "local":
             # --- Local Path Reconstruction ---
             # This logic mirrors the structure in `scripts/build_local_manifest.py`
             root = cast(Path, self.dataset_root)
@@ -290,7 +264,7 @@ class Dataset:
                     return root / subfolder / f"{track_id}.mp3.msdclasscsnmagic.json"
             raise ValueError(f"Unknown local asset structure for: {asset_type}/{asset_subtype}")
 
-        elif self.data_source_type == "cloud":
+        elif self.data_location == "cloud":
             # --- Cloud URL Reconstruction ---
             # This logic mirrors the structure in `scripts/build_cloud_manifest.py`
             base = cast(str, self.base_url)
@@ -304,4 +278,4 @@ class Dataset:
                 subfolder = f"adobe21-est/def_{mu_gamma.replace('.', '_', 1)}"
                 return f"{base}/{subfolder}/{track_id}.mp3.msdclasscsnmagic.json"
 
-        raise ValueError(f"Unknown asset structure for source type '{self.data_source_type}'")
+        raise ValueError(f"Unknown asset structure for source type '{self.data_location}'")
