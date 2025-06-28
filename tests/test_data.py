@@ -262,12 +262,10 @@ def test_load_hierarchy_no_multisegment_annotation(mock_local_manifest_file: Pat
 
     mocker.patch("jams.load", return_value=mock_jams_obj)
 
-    # Updated regex to be more flexible with the path and available namespaces list
     expected_error_match = (
-        r"Could not automatically determine which annotation to load from .*"
-        r"No 'multi_segment' or other default segmentation types \(e.g., \['segment_open'\]\) found. "
-        r"Available namespaces: \['pitch_contour'\]. "
-        r"Please specify an 'annotation_id' \(namespace, ann.id, or index\)."
+            r"Cannot auto-load from .*"
+            r"No default types \(e.g., multi_segment, \['segment_open'\]\) found. "
+            r"Available: \['pitch_contour'\]. Specify 'annotation_id'."
     )
     with pytest.raises(ValueError, match=expected_error_match):
         track.load_annotation("reference")
@@ -595,18 +593,21 @@ def annotation_fixtures_dir() -> Path:
 @pytest.fixture
 def load_annotation_test_manifest_path(tmp_path: Path, annotation_fixtures_dir: Path) -> Path:
     """Creates a manifest that points to the pre-made annotation fixtures."""
-    manifest_content = """track_id,has_annotation_hier_jams,has_annotation_seg_jams,has_annotation_multi_jams,has_annotation_hier_json,has_annotation_empty_jams,has_annotation_malformed_json,has_annotation_unsupported_txt,has_annotation_nonexistent_file
-track1,True,False,False,False,False,False,False,False
-track2,False,True,False,False,False,False,False,False
-track3,False,False,True,False,False,False,False,False
-track4,False,False,False,True,False,False,False,False
-track5,False,False,False,False,True,False,False,False
-track6,False,False,False,False,False,True,False,False
-track7,False,False,False,False,False,False,True,False
-track8,False,False,False,False,False,False,False,True
-"""
+    manifest_content = (
+        "track_id,has_annotation_hier_jams,has_annotation_seg_jams,has_annotation_multi_jams,"
+        "has_annotation_hier_json,has_annotation_empty_jams,has_annotation_malformed_json,"
+        "has_annotation_unsupported_txt,has_annotation_nonexistent_file\n"
+        "track1,True,False,False,False,False,False,False,False\n"
+        "track2,False,True,False,False,False,False,False,False\n"
+        "track3,False,False,True,False,False,False,False,False\n"
+        "track4,False,False,False,True,False,False,False,False\n"
+        "track5,False,False,False,False,True,False,False,False\n"
+        "track6,False,False,False,False,False,True,False,False\n"
+        "track7,False,False,False,False,False,False,True,False\n"
+        "track8,False,False,False,False,False,False,False,True\n"
+    )
     manifest_file = tmp_path / "test_load_annotation_manifest.csv"
-    manifest_file.write_text(manifest_content)
+    manifest_file.write_text(manifest_content.strip()) # Use strip() to remove potential leading/trailing newlines from multi-line string
     return manifest_file
 
 
@@ -663,9 +664,11 @@ def annotation_test_dataset(
         # and not for a handled fallback. This indicates a potential issue in
         # the test setup (e.g. manifest column vs fixture_path_map key mismatch)
         # or an unexpected path reconstruction request.
-        raise ValueError(
-            f"Mock _reconstruct_path explicitly unhandled in test: track_id='{track_id}', asset_type='{asset_type}', asset_subtype='{asset_subtype}'"
+        err_msg = (
+            f"Mock _reconstruct_path explicitly unhandled in test: "
+            f"track_id='{track_id}', asset_type='{asset_type}', asset_subtype='{asset_subtype}'"
         )
+        raise ValueError(err_msg)
 
     monkeypatch.setattr(dataset, "_reconstruct_path", mock_reconstruct_path)
     return dataset
@@ -827,7 +830,12 @@ def test_load_annotation_jams_no_default_found(
 
     track = annotation_test_dataset["track1"]  # Arbitrary track, its annotations prop is now globally mocked
 
-    with pytest.raises(ValueError, match="Could not automatically determine which annotation to load"):
+    expected_error_match_2 = (
+        r"Cannot auto-load from .*"
+        r"No default types \(e.g., multi_segment, \['segment_open'\]\) found. "
+        r"Available: \['tag_open'\]. Specify 'annotation_id'."
+    )
+    with pytest.raises(ValueError, match=expected_error_match_2):
         track.load_annotation("valid_non_default_jams")  # No annotation_id, should fail default search
 
     # Cleanup

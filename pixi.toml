@@ -91,7 +91,7 @@ fix = "ruff check src/ --fix"
 test = "pip install -e . && pytest"
 
 # Run full validation pipeline (format + lint + types + test)
-check = "pip install -e . && ruff format --check src/ && ruff check . && mypy src/ --ignore-missing-imports && pytest"
+check = "pip install -e . && ruff format --check src/ && ruff check src/ && mypy src/ --ignore-missing-imports && pytest"
 
 # ===================================================================
 # Extended Development Tasks

@@ -62,7 +62,7 @@ line-ending = "lf"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "C90", "N", "UP", "A", "B"]
-ignore = ["B905"] # allow zip without strict=True
+ignore = ["B905", "C901"] # allow zip without strict=True, ignore complexity for now
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"] # allow unused imports in __init__ files

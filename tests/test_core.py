@@ -1,6 +1,10 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
+import jams
+from pathlib import Path
+import json
+import requests
 
 import bnl
 
@@ -11,37 +15,89 @@ def test_segmentation_basic_init():
         segments=[
             bnl.TimeSpan(start=0.0, end=1.5, name="verse"),
             bnl.TimeSpan(start=1.5, end=3.0, name="chorus"),
-        ]
+        ],
+        name="song_structure",
     )
-    assert seg.bdrys == [0.0, 1.5, 3.0]
+    assert seg.boundaries == [0.0, 1.5, 3.0]
     assert seg.labels == ["verse", "chorus"]
     assert len(seg) == 2
+    assert seg.name == "song_structure"
+    assert seg.duration == 3.0
 
 
 def test_hierarchy_basic():
     """Test basic hierarchy functionality."""
-    seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0], ["A"])
-    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ["a", "b"])
-    hierarchy = bnl.Hierarchy(layers=[seg1, seg2])
+    seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0], ["A"], name="Coarse")
+    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ["a", "b"], name="Fine")
+    hierarchy = bnl.Hierarchy(layers=[seg1, seg2], name="MyHierarchy")
     assert len(hierarchy) == 2
     assert hierarchy[0] == seg1
+    assert hierarchy.name == "MyHierarchy"
+    assert hierarchy.duration == 2.0
+    assert hierarchy.layers[0].name == "Coarse"
 
 
 def test_post_init_errors():
     """Test that __post_init__ raises errors for malformed objects."""
-    # Test for non-contiguous segments
-    with pytest.raises(ValueError, match="Segments must be non-overlapping and contiguous."):
-        bnl.Segmentation(segments=[bnl.TimeSpan(0, 1), bnl.TimeSpan(2, 3)])
+    # Test TimeSpan errors
+    with pytest.raises(ValueError, match="Start time .* cannot be negative"):
+        bnl.TimeSpan(start=-1.0, end=1.0)
+    with pytest.raises(ValueError, match="End time .* cannot be negative"):
+        bnl.TimeSpan(start=0.0, end=-1.0)
+    with pytest.raises(ValueError, match="Start time .* must be less than or equal to end time"):
+        bnl.TimeSpan(start=2.0, end=1.0)
 
-    # Test for overlapping segments
-    with pytest.raises(ValueError, match="Segments must be non-overlapping and contiguous."):
-        bnl.Segmentation(segments=[bnl.TimeSpan(0, 1.5), bnl.TimeSpan(1, 2)])
+    # Test Segmentation errors for non-event types
+    with pytest.raises(ValueError, match="Segments must be contiguous for this segmentation type."):
+        bnl.Segmentation(segments=[bnl.TimeSpan(0, 1), bnl.TimeSpan(2, 3)], name="structural_segments")
+
+    # Test for segments that are non-contiguous AND overlapping. Contiguity error should be raised first.
+    with pytest.raises(ValueError, match="Segments must be contiguous for this segmentation type."):
+        bnl.Segmentation(segments=[bnl.TimeSpan(0, 1.5), bnl.TimeSpan(1.0, 2.0)], name="structural_segments_noncontig_overlap")
+
+    # Test for segments that are non-contiguous (gap after a valid segment). Contiguity error should be raised.
+    with pytest.raises(ValueError, match="Segments must be contiguous for this segmentation type."):
+        bnl.Segmentation(segments=[bnl.TimeSpan(0, 1.5), bnl.TimeSpan(1.5, 2.5), bnl.TimeSpan(2.0, 3.0)], name="structural_segments_gap")
+
+    # To properly test the "non-overlapping" error as currently implemented,
+    # segments must be non-contiguous in a way that self.segments[i].end > self.segments[i+1].start
+    # AND np.isclose(self.segments[i].end, self.segments[i+1].start) is false.
+    # Example: seg1=(0, 2.0), seg2=(1.99, 3.0)
+    # Here, 2.0 > 1.99 is true. np.isclose(2.0, 1.99, atol=1e-9) is false.
+    # This case should trigger the "non-overlapping" error *if* the contiguity check was designed differently
+    # or if the overlap check was primary.
+    # With current logic, this input would also fail contiguity first:
+    # isclose(2.0, 1.99) is false.
+    # The current "non-overlapping" check might be difficult to isolate.
+    # For now, we'll rely on the contiguity check catching most malformations for non-event types.
 
     # Test for inconsistent layer durations in Hierarchy
-    with pytest.raises(ValueError, match="All layers must have the same start and end time."):
-        seg1 = bnl.Segmentation.from_boundaries([0, 2])
-        seg2 = bnl.Segmentation.from_boundaries([0, 1, 3])
-        bnl.Hierarchy(layers=[seg1, seg2])
+    with pytest.raises(ValueError, match="All non-empty layers in a Hierarchy must span the same overall time range."):
+        seg_h1 = bnl.Segmentation.from_boundaries([0, 2], name="s1")
+        seg_h2 = bnl.Segmentation.from_boundaries([0, 1, 3], name="s2") # Different end time
+        bnl.Hierarchy(layers=[seg_h1, seg_h2])
+
+    # Test Hierarchy with one valid layer and one empty layer (should be fine) - This test is no longer valid
+    # as Segmentation cannot be empty, and Hierarchy layers are Segmentations.
+    # seg_valid = bnl.Segmentation.from_boundaries([0,2], name="valid_layer")
+    # # seg_empty = bnl.Segmentation(name="empty_layer") # This line would now raise ValueError
+    # # try:
+    # #     h = bnl.Hierarchy(layers=[seg_valid, seg_empty]) # This would fail if seg_empty could be created
+    # #     assert h.start == 0.0 and h.end == 2.0
+    # # except ValueError:
+    # #     pytest.fail("Hierarchy with one valid and one empty layer should not raise ValueError on init.")
+
+    # Test Hierarchy with layers of different start/end after some are empty
+    # This test also becomes more complex as empty segmentations are not allowed.
+    # The scenario of a hierarchy having "empty segmentations" as layers that affect overall duration calc
+    # is no longer possible. The existing test for inconsistent layer durations for *non-empty* layers
+    # (above) covers the primary validation.
+    # The following test is also invalid as seg_b_empty cannot be created.
+    # seg_a = bnl.Segmentation.from_intervals(np.array([[0.0, 5.0]]), name="A")
+    # # seg_b_empty = bnl.Segmentation(name="B_empty") # This would raise ValueError
+    # seg_c = bnl.Segmentation.from_intervals(np.array([[1.0, 6.0]]), name="C")
+    # with pytest.raises(ValueError, match="All non-empty layers in a Hierarchy must span the same overall time range."):
+    #     bnl.Hierarchy(layers=[seg_a, seg_b_empty, seg_c])
 
 
 @pytest.mark.parametrize(
@@ -57,51 +113,64 @@ def test_segmentation_constructors(constructor, data):
     seg1 = constructor(data, labels=["A", "B"], name="TestName")
     assert seg1.labels == ["A", "B"]
     assert seg1.name == "TestName"
-    np.testing.assert_array_equal(seg1.itvls, np.array([[0.0, 1.0], [1.0, 2.5]]))
+    np.testing.assert_array_equal(seg1.intervals, np.array([[0.0, 1.0], [1.0, 2.5]]))
 
-    # Test without labels (default labels)
-    seg2 = constructor(data)
-    assert seg2.labels == [None, None]  # If no labels are provided, TimeSpan.name will be None
-    assert seg2[0] == bnl.TimeSpan(start=0.0, end=1.0, name=None)  # name should be None
+    # Test without labels (default labels should be None)
+    seg2 = constructor(data, name="NoLabelsSeg") # Name the segmentation itself
+    assert seg2.labels == [None, None]
+    assert seg2[0].name is None # TimeSpan name should be None
+    assert seg2.name == "NoLabelsSeg" # Segmentation name
+    assert seg2[0] == bnl.TimeSpan(start=0.0, end=1.0, name=None)
 
 
 def test_str_repr():
     """Test string representation of core classes."""
-    seg = bnl.Segmentation(segments=[bnl.TimeSpan(start=0.0, end=1.0, name="A")])
-    seg2 = bnl.Segmentation.from_intervals(np.array([[0.0, 0.5], [0.5, 1.0]]), ["B", "C"])
-    hierarchy = bnl.Hierarchy(layers=[seg, seg2])
-    assert str(hierarchy) == "Hierarchy(2 levels over 0.00s-1.00s)"
-    assert repr(hierarchy) == "Hierarchy(2 levels over 0.00s-1.00s)"
+    ts = bnl.TimeSpan(start=0.0, end=1.0, name="A")
+    assert str(ts) == "TimeSpan([0.00s-1.00s], 1.00s: A)"
+    assert repr(ts) == "TimeSpan(start=0.0, end=1.0, name='A')"
 
-    assert str(seg) == "Segmentation(1 segments over 1.00s)"
-    assert repr(seg) == "Segmentation(1 segments over 1.00s)"
-    assert str(seg2) == "Segmentation(2 segments over 1.00s)"
-    assert repr(seg2) == "Segmentation(2 segments over 1.00s)"
+    ts_no_name = bnl.TimeSpan(start=0.5, end=1.5)
+    assert str(ts_no_name) == "TimeSpan([0.50s-1.50s], 1.00s)" # No ": name" part
+    assert repr(ts_no_name) == "TimeSpan(start=0.5, end=1.5, name='None')" # Explicit None for name in repr
+
+    seg = bnl.Segmentation(segments=[ts], name="MySeg")
+    seg_no_name = bnl.Segmentation(segments=[ts])
+    seg2 = bnl.Segmentation.from_intervals(np.array([[0.0, 0.5], [0.5, 1.0]]), ["B", "C"], name="MySeg2")
+
+    assert str(seg) == "Segmentation(name='MySeg', 1 segments, duration=1.00s)"
+    assert repr(seg) == "Segmentation(name='MySeg', 1 segments, duration=1.00s)"
+    assert str(seg_no_name) == "Segmentation(1 segments, duration=1.00s)" # No name part
+    assert repr(seg_no_name) == "Segmentation(1 segments, duration=1.00s)" # No name part
+
+    hierarchy = bnl.Hierarchy(layers=[seg, seg2], name="MyHier")
+    hierarchy_no_name = bnl.Hierarchy(layers=[seg, seg2])
+
+    assert str(hierarchy) == "Hierarchy(name='MyHier', 2 layers, duration=1.00s)"
+    assert repr(hierarchy) == "Hierarchy(name='MyHier', 2 layers, duration=1.00s)"
+    assert str(hierarchy_no_name) == "Hierarchy(name='None', 2 layers, duration=1.00s)" # name='None' if not provided
+    assert repr(hierarchy_no_name) == "Hierarchy(name='None', 2 layers, duration=1.00s)"
 
 
 def test_core_edge_cases_and_validation():
     """Test edge cases and validation for core classes."""
-    # Test TimeSpan validation error
-    with pytest.raises(ValueError):
-        bnl.TimeSpan(start=2.0, end=1.0)
+    # TimeSpan validation errors are covered in test_post_init_errors
 
-    # Test empty segmentation cases
-    empty_seg = bnl.Segmentation()
-    assert empty_seg.itvls.size == 0
-    assert empty_seg.bdrys == []
-    assert str(empty_seg) == "Segmentation(0 segments): []"
+    # Test empty segmentation cases - Now raises ValueError
+    with pytest.raises(ValueError, match="Segmentation must contain at least one segment."):
+        bnl.Segmentation(name="EmptyTestSeg") # Was: empty_seg = ...
+    with pytest.raises(ValueError, match="Segmentation must contain at least one segment."):
+        bnl.Segmentation() # Test case for init without name
 
-    # Test empty hierarchy cases
-    empty_hierarchy = bnl.Hierarchy()
-    assert str(empty_hierarchy) == "Hierarchy(0 levels)"
-    assert empty_hierarchy.itvls == []
-    assert empty_hierarchy.labels == []
-    assert empty_hierarchy.bdrys == []
+    # Test empty hierarchy cases - Now raises ValueError
+    with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
+        bnl.Hierarchy(name="EmptyTestHier") # Was: empty_hierarchy = ...
+    with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
+        bnl.Hierarchy() # Test case for init without name
 
-    # Test TimeSpan without name
-    unnamed_span = bnl.TimeSpan(start=1.0, end=2.0)  # name will be None
-    assert str(unnamed_span) == "[1.0-2.0s]"  # lab part will be empty if name is None
-    assert repr(unnamed_span) == "TimeSpan([1.0-2.0s])"  # repr uses str(), so lab is also empty
+    # TimeSpan without name (already tested in test_str_repr)
+    unnamed_span = bnl.TimeSpan(start=1.0, end=2.0)
+    assert str(unnamed_span) == "TimeSpan([1.00s-2.00s], 1.00s)"
+    assert repr(unnamed_span) == "TimeSpan(start=1.0, end=2.0, name='None')"
 
 
 def test_plotting_runs_without_error():
@@ -120,131 +189,194 @@ def test_plotting_runs_without_error():
     fig, ax = seg.plot()
     plt.close(fig)
 
-    # Test Segmentation plotting with no segments
-    empty_seg = bnl.Segmentation()
-    fig, ax = empty_seg.plot()  # Should plot an empty axes
-    plt.close(fig)
+    # Test Segmentation plotting with no segments - No longer possible to create empty_seg
+    # empty_seg = bnl.Segmentation()
+    # fig, ax = empty_seg.plot()
+    # plt.close(fig)
 
     # Test Hierarchy plotting
     seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0], ["A"])
-    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ["a", "b"])
-    hierarchy = bnl.Hierarchy(layers=[seg1, seg2])
-    fig, _ = hierarchy.plot_single_axis()  # Changed to plot_single_axis
-    plt.close(fig)
+    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ["a", "b"], name="FineLayer")
+    hierarchy = bnl.Hierarchy(layers=[seg1, seg2], name="TestHierPlot")
+    fig_single_axis, _ = hierarchy.plot_single_axis() # plot_single_axis still returns fig, ax
+    plt.close(fig_single_axis)
+    fig_subplots = hierarchy.plot() # hierarchy.plot() now returns only fig
+    plt.close(fig_subplots)
+
 
     # Test Hierarchy plotting with one layer
-    hierarchy_single_layer = bnl.Hierarchy(layers=[seg1])
-    fig, _ = hierarchy_single_layer.plot_single_axis()  # Changed to plot_single_axis
-    plt.close(fig)
+    hierarchy_single_layer = bnl.Hierarchy(layers=[seg1], name="SingleLayerHier")
+    fig_single_axis_single, _ = hierarchy_single_layer.plot_single_axis()
+    plt.close(fig_single_axis_single)
+    fig_subplots_single = hierarchy_single_layer.plot()
+    plt.close(fig_subplots_single)
 
     # Test plotting with style_map
     fig, ax = span_named.plot(color="red", ymax=0.5)
     plt.close(fig)
 
-    # Test plotting hierarchy with empty layers (should raise error for plot_single_axis)
-    with pytest.raises(ValueError, match="Cannot plot empty hierarchy"):
-        empty_hierarchy = bnl.Hierarchy()
-        empty_hierarchy.plot_single_axis()
+    # Test plotting hierarchy with empty layers - Instantiation will fail first
+    with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
+        empty_hierarchy_sa = bnl.Hierarchy()
+        # empty_hierarchy_sa.plot_single_axis() # This line won't be reached
+    with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
+        empty_hierarchy_pl = bnl.Hierarchy()
+        # empty_hierarchy_pl.plot() # This line won't be reached
 
 
-@pytest.mark.xfail(reason="from_jams methods are not implemented in this task")
-def test_segmentation_from_jams(mocker):
-    """Test creating a Segmentation from a JAMS annotation."""
-    # Mock JAMS annotation
-    mock_anno = mocker.MagicMock()
-    mock_obs1 = mocker.MagicMock()
-    mock_obs1.time = 0.0
-    mock_obs1.duration = 1.0
-    mock_obs1.value = "segment1"
-    mock_obs2 = mocker.MagicMock()
-    mock_obs2.time = 1.0
-    mock_obs2.duration = 1.5
-    mock_obs2.value = "segment2"
-    mock_anno.__iter__.return_value = [mock_obs1, mock_obs2]
+# Fixture to load JAMS file content for tests
+@pytest.fixture
+def test_seg_jams_content():
+    path = Path(__file__).parent / "fixtures" / "annotations" / "test_seg.jams"
+    with open(path) as f:
+        return f.read()
 
-    seg = bnl.Segmentation.from_jams(mock_anno)
+@pytest.fixture
+def test_hier_jams_content():
+    path = Path(__file__).parent / "fixtures" / "annotations" / "test_hier.jams"
+    with open(path) as f:
+        return f.read()
+
+@pytest.fixture
+def test_hier_json_content():
+    path = Path(__file__).parent / "fixtures" / "annotations" / "test_hier.json"
+    with open(path) as f:
+        return json.load(f) # JSON fixture should be loaded as dict/list
+
+
+def test_segmentation_from_jams(test_seg_jams_content):
+    """Test creating a Segmentation from a JAMS annotation using a real JAMS file."""
+    jam = jams.JAMS.loads(test_seg_jams_content)
+    anno = jam.annotations.search(namespace="segment_open")[0]
+
+    seg = bnl.Segmentation.from_jams(anno)
     assert len(seg) == 2
+    assert seg.name == "segment_open" # Namespace becomes the name
     assert seg.segments[0].start == 0.0
-    assert seg.segments[0].end == 1.0
-    assert seg.segments[0].name == "segment1"
-    assert seg.segments[1].start == 1.0
-    assert seg.segments[1].end == 2.5
-    assert seg.segments[1].name == "segment2"
+    assert seg.segments[0].end == 5.0
+    assert seg.segments[0].name == "verse"
+    assert seg.segments[1].start == 5.0
+    assert seg.segments[1].end == 10.0
+    assert seg.segments[1].name == "chorus"
+    assert seg.duration == 10.0
+
+    # Test with an annotation that is not for segmentation (e.g. event-like)
+    # For this, we can create a simple beat annotation in the JAMS object
+    beat_data = [
+        jams.Observation(time=0.0, duration=0.0, value=1, confidence=None),
+        jams.Observation(time=1.0, duration=0.0, value=2, confidence=None),
+        jams.Observation(time=2.0, duration=0.0, value=3, confidence=None),
+    ]
+    beat_anno = jams.Annotation(namespace='beat', data=beat_data)
+    seg_beat = bnl.Segmentation.from_jams(beat_anno)
+    assert seg_beat.name == 'beat'
+    assert len(seg_beat) == 3
+    assert seg_beat.segments[0].name == '1' # Value is cast to str in TimeSpan
+    assert np.isclose(seg_beat.segments[1].start, 1.0)
+    # Contiguity check should be relaxed for 'beat' namespace
+    assert np.isclose(seg_beat.start, 0.0)
+    assert np.isclose(seg_beat.end, 2.0) # End is the end of the last segment (start + duration)
 
 
-@pytest.mark.xfail(reason="from_jams methods are not implemented in this task")
-def test_hierarchy_from_jams(mocker):
-    """Test creating a Hierarchy from a JAMS multi_segment annotation."""
-    # Mock JAMS annotation and hierarchy_flatten
-    mock_anno = mocker.MagicMock()
-    mock_anno.namespace = "multi_segment"
+def test_hierarchy_from_jams(test_hier_jams_content):
+    """Test creating a Hierarchy from a JAMS multi_segment annotation using a real JAMS file."""
+    jam = jams.JAMS.loads(test_hier_jams_content)
+    multi_segment_anno = jam.annotations.search(namespace="multi_segment")[0]
 
-    # Mock return value of hierarchy_flatten
-    # Represents two levels:
-    # Level 0: [(0.0, 5.0, "A")]
-    # Level 1: [(0.0, 2.0, "a"), (2.0, 5.0, "b")]
-    mock_hier_intervals = [[(0.0, 5.0)], [(0.0, 2.0), (2.0, 5.0)]]
-    mock_hier_labels = [["A"], ["a", "b"]]
-    mocker.patch("jams.eval.hierarchy_flatten", return_value=(mock_hier_intervals, mock_hier_labels))
-
-    hierarchy = bnl.Hierarchy.from_jams(mock_anno)
+    hierarchy = bnl.Hierarchy.from_jams(multi_segment_anno, name="MyTestHier")
+    assert hierarchy.name == "MyTestHier" # Explicit name
     assert len(hierarchy) == 2
+    assert hierarchy.duration == 10.0
+
+    # Check layer 0 (coarsest)
+    assert hierarchy.layers[0].name == "level_0" # Default layer name
     assert len(hierarchy.layers[0]) == 1
     assert hierarchy.layers[0].segments[0].name == "A"
     assert hierarchy.layers[0].segments[0].start == 0.0
-    assert hierarchy.layers[0].segments[0].end == 5.0
+    assert hierarchy.layers[0].segments[0].end == 10.0
+
+    # Check layer 1 (finer)
+    assert hierarchy.layers[1].name == "level_1" # Default layer name
     assert len(hierarchy.layers[1]) == 2
     assert hierarchy.layers[1].segments[0].name == "a"
+    assert hierarchy.layers[1].segments[0].start == 0.0
+    assert hierarchy.layers[1].segments[0].end == 5.0
     assert hierarchy.layers[1].segments[1].name == "b"
+    assert hierarchy.layers[1].segments[1].start == 5.0
+    assert hierarchy.layers[1].segments[1].end == 10.0
+
+    # Test default hierarchy name from JAMS metadata if no name is passed
+    hierarchy_default_name = bnl.Hierarchy.from_jams(multi_segment_anno)
+    assert hierarchy_default_name.name == "Test Annotator" # From annotator.name
 
     # Test wrong namespace
-    mock_anno.namespace = "wrong_namespace"
+    jam.annotations[0].namespace = "wrong_namespace" # Modify fixture for this test case
     with pytest.raises(ValueError, match="Expected 'multi_segment' namespace"):
-        bnl.Hierarchy.from_jams(mock_anno)
+        bnl.Hierarchy.from_jams(jam.annotations[0])
 
 
-def test_hierarchy_not_implemented_constructors():
-    """Test that from_boundaries, from_intervals raise NotImplementedError."""
-    # bnl.Hierarchy.from_json is now implemented.
-    with pytest.raises(NotImplementedError):
-        bnl.Hierarchy.from_boundaries([[]])
-    with pytest.raises(NotImplementedError):
-        bnl.Hierarchy.from_intervals([np.array([])])
+# def test_hierarchy_not_implemented_constructors():
+#     """Test that from_boundaries, from_intervals raise NotImplementedError."""
+#     # bnl.Hierarchy.from_json is now implemented.
+#     # These are currently commented out in core.py
+#     with pytest.raises(NotImplementedError):
+#         bnl.Hierarchy.from_boundaries([[]])
+#     with pytest.raises(NotImplementedError):
+#         bnl.Hierarchy.from_intervals([np.array([])])
 
 
-import json  # For parsing json
-
-import requests  # For fetching real annotation file
-
-
-def test_hierarchy_from_json_adobe_est_format():
-    """Test creating a Hierarchy from the Adobe EST JSON structure."""
-    # Structure: list of layers, each layer is [intervals_list, labels_list]
-    # where intervals_list is list of [start, end] or list of [[start, end]]
-    json_data_valid = [
-        [[[0.0, 10.0]], ["Layer0_SegA"]],  # Layer 0: 1 segment
-        [[[0.0, 5.0], [5.0, 10.0]], ["Layer1_Sega", "Layer1_Segb"]],  # Layer 1: 2 segments
-        [
-            [[0.0, 2.5], [2.5, 5.0], [5.0, 7.5], [7.5, 10.0]],
-            ["L2_s1", "L2_s2", "L2_s3", "L2_s4"],
-        ],  # Layer 2: 4 segments
-    ]
+def test_hierarchy_from_json_adobe_est_format(test_hier_json_content): # Added fixture argument
+    """Test creating a Hierarchy from the Adobe EST JSON structure, using the fixture."""
+    json_data_valid = test_hier_json_content
+    # Expected structure from test_hier.json:
+    # [
+    #     [[[0.0, 10.0]], ["A"]],
+    #     [[[0.0, 5.0], [5.0, 10.0]], ["a", "b"]]
+    # ]
     hierarchy = bnl.Hierarchy.from_json(json_data_valid, name="TestAdobeESTHierarchy")
 
     assert hierarchy.name == "TestAdobeESTHierarchy"
-    assert len(hierarchy) == 3
+    assert len(hierarchy) == 2
+    assert hierarchy.duration == 10.0
+
+    # Layer 0
+    assert hierarchy.layers[0].name == "layer_0" # Default layer name
     assert len(hierarchy.layers[0]) == 1
-    assert hierarchy.layers[0].segments[0].name == "Layer0_SegA"
+    assert hierarchy.layers[0].segments[0].name == "A"
     assert hierarchy.layers[0].segments[0].start == 0.0
     assert hierarchy.layers[0].segments[0].end == 10.0
 
+    # Layer 1
+    assert hierarchy.layers[1].name == "layer_1" # Default layer name
     assert len(hierarchy.layers[1]) == 2
-    assert hierarchy.layers[1].segments[1].name == "Layer1_Segb"
+    assert hierarchy.layers[1].segments[0].name == "a"
+    assert hierarchy.layers[1].segments[0].start == 0.0
+    assert hierarchy.layers[1].segments[0].end == 5.0
+    assert hierarchy.layers[1].segments[1].name == "b"
     assert hierarchy.layers[1].segments[1].start == 5.0
+    assert hierarchy.layers[1].segments[1].end == 10.0
 
-    assert len(hierarchy.layers[2]) == 4
-    assert hierarchy.layers[2].segments[3].name == "L2_s4"
-    assert hierarchy.layers[2].segments[3].end == 10.0
+    # Test more complex data directly (different from fixture)
+    json_data_complex_layers = [
+        [[[0.0, 12.0]], ["FullSpan"]], # Layer 0
+        [[[0.0, 4.0], [4.0, 8.0], [8.0, 12.0]], ["P1", "P2", "P3"]], # Layer 1
+        [ # Layer 2: more segments
+            [[0.0, 2.0], [2.0, 4.0], [4.0, 6.0], [6.0, 8.0], [8.0, 10.0], [10.0, 12.0]],
+            ["s1", "s2", "s3", "s4", "s5", "s6"],
+        ],
+    ]
+    h_complex = bnl.Hierarchy.from_json(json_data_complex_layers, name="ComplexJSONHier")
+    assert h_complex.name == "ComplexJSONHier"
+    assert len(h_complex) == 3
+    assert h_complex.duration == 12.0
+    assert h_complex.layers[0].name == "layer_0"
+    assert len(h_complex.layers[0].segments) == 1
+    assert h_complex.layers[1].name == "layer_1"
+    assert len(h_complex.layers[1].segments) == 3
+    assert h_complex.layers[2].name == "layer_2"
+    assert len(h_complex.layers[2].segments) == 6
+    assert h_complex.layers[2].segments[5].name == "s6"
+    assert h_complex.layers[2].segments[5].end == 12.0
 
     # Test with the more complex interval structure [[start, end]] per segment
     json_data_complex_interval = [
@@ -255,26 +387,19 @@ def test_hierarchy_from_json_adobe_est_format():
     assert hierarchy_complex_interval.layers[0].segments[0].start == 0.0
     assert hierarchy_complex_interval.layers[0].segments[0].end == 10.0
 
-    # Test with empty list (no layers)
-    empty_hierarchy = bnl.Hierarchy.from_json([])
-    assert len(empty_hierarchy) == 0
-    assert empty_hierarchy.name is None
+    # Test with empty list (no layers) - Now raises ValueError
+    with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
+        bnl.Hierarchy.from_json([])
 
     # Test with a layer that has no segments (empty intervals_list and labels_list)
+    # This will fail when trying to create an empty Segmentation for that layer.
     json_data_empty_layer = [
-        [[[0.0, 10.0]], ["Layer0_SegA"]],
-        [[], []],  # Empty layer
-        [[[0.0, 10.0]], ["Layer2_SegA"]],
+        [[[0.0, 10.0]], ["Layer0_SegA"]], # Valid layer
+        [[], []],  # This layer will cause Segmentation init to fail
+        [[[0.0, 10.0]], ["Layer2_SegA"]], # Valid layer (won't be reached)
     ]
-    hierarchy_empty_layer = bnl.Hierarchy.from_json(json_data_empty_layer)
-    assert len(hierarchy_empty_layer) == 3
-    assert len(hierarchy_empty_layer.layers[0]) == 1
-    assert len(hierarchy_empty_layer.layers[1]) == 0
-    assert len(hierarchy_empty_layer.layers[2]) == 1
-    assert hierarchy_empty_layer.start == 0.0
-    assert hierarchy_empty_layer.end == 10.0
-    assert hierarchy_empty_layer.layers[1].start == 0.0
-    assert hierarchy_empty_layer.layers[1].end == 0.0
+    with pytest.raises(ValueError, match="Segmentation must contain at least one segment."):
+        bnl.Hierarchy.from_json(json_data_empty_layer)
 
     # Test malformed layer (not a list of two lists)
     json_data_malformed_layer = [[[[0.0, 10.0]], ["A"]], "not a layer"]
@@ -298,9 +423,10 @@ def test_hierarchy_from_json_adobe_est_format():
     # Test inconsistent layer durations
     json_data_inconsistent_duration = [
         [[[0.0, 10.0]], ["A"]],
-        [[[0.0, 12.0]], ["b"]],
+            [[[0.0, 12.0]], ["b"]], # Layer 0 end 10.0, Layer 1 end 12.0
     ]
-    with pytest.raises(ValueError, match="All layers must have the same start and end time."):
+    # Updated match based on the more specific error message from Hierarchy.__post_init__
+    with pytest.raises(ValueError, match=r"All non-empty layers in a Hierarchy must span .* time range\."):
         bnl.Hierarchy.from_json(json_data_inconsistent_duration)
 
 
@@ -351,22 +477,34 @@ def test_hierarchy_plot_single_axis():
     assert ax is not None
     assert len(fig.axes) == 1
 
-    expected_yticks = ["Level 1", "Level 0"]
+    expected_yticks = ["L1", "L0"] # Updated to expect layer names
     actual_yticks = [label.get_text() for label in ax.get_yticklabels()]
     assert actual_yticks == expected_yticks
 
     plt.close(fig)
 
-    seg_empty = bnl.Segmentation(start=0.0, end=4.0)
-    hierarchy_with_empty = bnl.Hierarchy(layers=[seg1, seg_empty, seg2])
-    fig_empty, ax_empty = hierarchy_with_empty.plot_single_axis()
-    assert len(ax_empty.get_yticklabels()) == 3
-    expected_yticks_empty = ["Level 2", "Level 1", "Level 0"]
-    actual_yticks_empty = [label.get_text() for label in ax_empty.get_yticklabels()]
-    assert actual_yticks_empty == expected_yticks_empty
+    # Test with a layer that has no name (should default to "Level X")
+    seg_no_name = bnl.Segmentation.from_boundaries([0.0, 1.0, 4.0], ["n1", "n2"]) # No name for seg_no_name
+    hierarchy_with_mixed_names = bnl.Hierarchy(layers=[seg1, seg_no_name, seg2], name="MixedNames") # seg1 is L0, seg2 is L1
 
-    plt.close(fig_empty)
+    fig_mixed, ax_mixed = hierarchy_with_mixed_names.plot_single_axis()
+    # Order of layers: L0, seg_no_name, L1. Reversed for yticks: L1, Level 1 (for seg_no_name), L0
+    expected_yticks_mixed = ["L1", "Level 1", "L0"]
+    actual_yticks_mixed = [label.get_text() for label in ax_mixed.get_yticklabels()]
+    assert actual_yticks_mixed == expected_yticks_mixed
+    plt.close(fig_mixed)
 
-    with pytest.raises(ValueError, match="Cannot plot empty hierarchy"):
-        empty_hierarchy = bnl.Hierarchy()
-        empty_hierarchy.plot_single_axis()
+    # The following sub-test is invalid as seg_empty cannot be created without segments.
+    # seg_empty = bnl.Segmentation(start=0.0, end=4.0, name="EmptyLayer")
+    # hierarchy_with_empty = bnl.Hierarchy(layers=[seg1, seg_empty, seg2])
+    # fig_empty, ax_empty = hierarchy_with_empty.plot_single_axis()
+    # assert len(ax_empty.get_yticklabels()) == 3
+    # expected_yticks_empty = ["L1", "EmptyLayer", "L0"]
+    # actual_yticks_empty = [label.get_text() for label in ax_empty.get_yticklabels()]
+    # assert actual_yticks_empty == expected_yticks_empty
+    # plt.close(fig_empty)
+
+    # Instantiation of empty Hierarchy will fail before plotting
+    with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
+        empty_hierarchy_plot_single = bnl.Hierarchy()
+        # empty_hierarchy_plot_single.plot_single_axis() # Not reached
