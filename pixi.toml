@@ -50,6 +50,7 @@ ruff = "*"
 mypy = "*"
 types-requests = "*"
 requests-mock = "*"
+pytest-mock = "*"
 
 [feature.notebooks.dependencies]
 # Notebook dependencies
