@@ -1,18 +1,22 @@
-# Agent Instructions and Preferences
+# Agent Instructions
 
-This document provides guidance and preferences for AI agents working with this codebase.
+Concise guidance for AI agents working with this music information retrieval codebase.
 
-## General Principles
+## Core Principles
 
-- **Lean, Focused, and Healthy Codebase:** Strive to keep the codebase concise, well-organized, and maintainable. Avoid unnecessary complexity and ensure code is easy to understand and test.
-- **Test Strategy:** When practical, keep tests up to date, without slowing down development.
-- **Clear Documentation:** Document code clearly, especially for complex logic or public APIs. Use docstrings and comments where appropriate, and sphinx-ify the codebase for RTD.
+- **Simplicity First:** Keep code elegant, concise, and maintainable. Avoid over-engineering. Cleanliness is godliness.
+- **Core Classes:** Built around `TimeSeries`, `Segmentation`, and `Hierarchy` - use extensively and keep robust
+- **Research Focus:** Support music structure analysis and representation research questions
+- **80/20 Rule:** Achieve maximum impact with minimal effort
 
-## Specific Preferences
+## Development Guidelines
 
-- **Use Core Classes:** This repo is built around the core classes `TimeSeries`, `Segmentation`, and `Hierarchy`. Use them as much as possible, and keep them robust.
+- **Testing:** Maintain tests pragmatically without slowing development; test apps/ folder too
+- **Documentation:** Clear docstrings for complex logic and public APIs; Sphinx + RTD ready
+- **Dependencies:** Prefer pixi; minimal external dependencies
+- **Code Style:** Meaningful naming, logical structure, selective type hints
+- **Data Format:** Prefer feather files; prioritize native core classes over jams/json/mir_eval formats but support them
 
+## Agent Notes
 
-## Future Considerations (Agent Notes)
-
-* (Agent can add notes here as development progresses, e.g., areas for refactoring, common pitfalls, useful commands, etc.)
+*(Add development insights, common patterns, useful commands, etc.)*
