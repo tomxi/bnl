@@ -44,34 +44,65 @@ Loading and exploring the SALAMI dataset:
 
 .. code-block:: python
 
-    import bnl.data as data
+    from bnl.data import Dataset
+    from bnl.core import Hierarchy, Segmentation # Assuming these might be returned
     import matplotlib.pyplot as plt
 
-    # Explore available tracks
-    track_ids = data.slm.list_tids()
-    print(f"Available SALAMI tracks: {len(track_ids)}")
+    # Assuming a manifest file exists, e.g., for a local SALAMI subset:
+    # LOCAL_MANIFEST_PATH = "~/data/salami_subset/metadata.csv"
+    # Or for the cloud dataset:
+    CLOUD_MANIFEST_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev/manifest_cloud_boolean.csv"
+
+    # Initialize the Dataset
+    # For local: dataset = Dataset(LOCAL_MANIFEST_PATH)
+    dataset = Dataset(CLOUD_MANIFEST_URL)
+    print(f"Available SALAMI tracks: {len(dataset.track_ids)}")
     
-    # Load a specific track
-    track = data.slm.load_track('10')
-    print(f"Track: {track}")
-    
-    # Access metadata
-    info = track.info
-    print(f"Artist: {info['artist']}")
-    print(f"Title: {info['title']}")
-    print(f"Duration: {info['duration']:.1f}s")
-    
-    # Access JAMS annotation data
-    jams_obj = track.jams
-    print(f"Annotations: {len(jams_obj.annotations)}")
-    
+    # Load a specific track by its ID
+    # Ensure the track_id exists in your manifest
+    if "10" in dataset.track_ids:
+        track = dataset["10"]
+        print(f"Track: {track}")
+
+        # Access metadata
+        info = track.info
+        print(f"Artist: {info.get('artist', 'N/A')}") # Use .get for safety
+        print(f"Title: {info.get('title', 'N/A')}")
+        if 'duration' in info:
+            print(f"Duration: {info['duration']:.1f}s")
+
+        # Load a specific annotation, e.g., the 'reference' JAMS annotation
+        # The key 'reference' comes from how the manifest was built
+        # (e.g. has_annotation_reference -> 'reference')
+        if "reference" in track.annotations:
+            try:
+                annotation_data = track.load_annotation("reference")
+                print(f"Loaded annotation type: {type(annotation_data)}")
+                if isinstance(annotation_data, Hierarchy):
+                    print(f"  Hierarchy with {len(annotation_data.layers)} layers.")
+                elif isinstance(annotation_data, Segmentation):
+                    print(f"  Segmentation with {len(annotation_data.segments)} segments.")
+            except Exception as e:
+                print(f"Could not load 'reference' annotation for track 10: {e}")
+        else:
+            print("Track 10 does not have a 'reference' annotation listed.")
+
     # Load multiple tracks for analysis
-    sample_tracks = data.slm.load_tracks(['10', '100', '1000'])
-    durations = [track.info['duration'] for track in sample_tracks]
-    print(f"Sample durations: {durations}")
+    sample_track_ids = ["10", "100", "1000"] # Ensure these are in your dataset
+    valid_sample_tracks = []
+    for tid in sample_track_ids:
+        if tid in dataset.track_ids:
+            valid_sample_tracks.append(dataset[tid])
+        else:
+            print(f"Track ID {tid} not found in dataset.")
+
+    if valid_sample_tracks:
+        durations = [t.info.get('duration', 0.0) for t in valid_sample_tracks]
+        print(f"Sample durations for existing tracks: {durations}")
 
 .. note::
-   To use data loading functionality, ensure SALAMI dataset files are in ``~/data/``:
-   
-   - JAMS annotations: ``~/data/salami-jams/``
-   - Audio files: ``~/data/salami/audio/``
+   For local datasets, ensure your manifest file correctly points to your data assets
+   (e.g., JAMS annotations, audio files) relative to the manifest's location or using
+   conventions understood by the path reconstruction logic in `bnl.data.Dataset`.
+   The example manifest builder scripts (`scripts/build_local_manifest.py`)
+   expect specific directory structures (like `jams/` and `audio/` subfolders).

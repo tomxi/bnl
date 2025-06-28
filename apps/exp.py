@@ -15,8 +15,8 @@ Usage:
     pixi run exp
 
 Data Sources:
-- Cloud: Uses a path-based manifest with full URLs to assets.
-- Local: Supports SALAMI-style datasets with a path-based manifest containing relative asset paths.
+- Cloud: Streams data directly from R2 bucket using online manifest
+- Local: Supports SALAMI-style datasets with a path-based manifest containing relative asset paths
 
 Architecture:
 - Cloud-native: Streams data from R2 bucket without local storage
@@ -26,7 +26,7 @@ Architecture:
 """
 
 import os
-from pathlib import Path
+from typing import Any
 
 import librosa
 import librosa.display
@@ -41,10 +41,8 @@ st.title("SALAMI Explorer")
 
 # --- Data Source and Path Configuration ---
 R2_BUCKET_PUBLIC_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
-# The cloud manifest is now a local resource, bundled with the app
-CLOUD_MANIFEST_PATH = Path(__file__).parent.parent / "src/bnl/resources/manifest_cloud_boolean.csv"
-LOCAL_DATASET_ROOT = "~/data/salami"  # Example local path, user might need to change this
-LOCAL_MANIFEST_PATH = os.path.expanduser(f"{LOCAL_DATASET_ROOT}/metadata.csv")
+CLOUD_MANIFEST_URL = f"{R2_BUCKET_PUBLIC_URL}/manifest_cloud_boolean.csv"
+LOCAL_MANIFEST_PATH = os.path.expanduser("~/data/salami/metadata.csv")
 
 # Let user choose data source
 data_source_option = st.sidebar.radio(
@@ -68,37 +66,24 @@ elif data_source_option != st.session_state.data_source_choice:
 
 # --- Data Loading Functions (Cached for performance) ---
 @st.cache_resource
-def get_dataset(source_type: str):
+def get_dataset(source_type: str) -> bnl.data.Dataset:
     """Loads and caches the dataset object based on selected source."""
     if source_type == "Cloud (R2)":
-        if not CLOUD_MANIFEST_PATH.exists():
-            st.error(f"Cloud manifest not found at: {CLOUD_MANIFEST_PATH}")
-            st.error("Please ensure the `manifest_cloud_boolean.csv` file is in `src/bnl/resources/`.")
-            st.stop()
         try:
-            # Load from the local resource, but treat it as a cloud source for path reconstruction
-            return bnl.data.Dataset(
-                CLOUD_MANIFEST_PATH,
-                data_source_type="cloud",
-                cloud_base_url=R2_BUCKET_PUBLIC_URL,
-            )
+            # Load from the online cloud manifest - Dataset will auto-detect it's a cloud source
+            return bnl.data.Dataset(CLOUD_MANIFEST_URL)
         except Exception as e:
-            st.error(f"Failed to load CLOUD manifest: {e}")
+            st.error(f"Failed to load cloud manifest from: {CLOUD_MANIFEST_URL}")
+            st.error(f"Error: {e}")
+            st.error("Please check your internet connection and verify the cloud service is available.")
             st.stop()
 
     elif source_type == "Local Filesystem":
-        manifest_path = LOCAL_MANIFEST_PATH
         try:
             # The Dataset class now infers the source type from the local path
-            return bnl.data.Dataset(manifest_path, data_source_type="local")
-        except FileNotFoundError:
-            st.error(f"Local manifest not found at: {manifest_path}")
-            st.error("Ensure your local SALAMI dataset is structured correctly and manifest exists.")
-            st.info(f"Expected structure: \n{LOCAL_DATASET_ROOT}/\n  ├── audio/\n  ├── jams/\n  └── metadata.csv")
-            st.stop()
+            return bnl.data.Dataset(LOCAL_MANIFEST_PATH)
         except Exception as e:
-            st.error(f"Failed to load LOCAL manifest from: {manifest_path}")
-            st.error(f"Error: {e}")
+            st.error(f"Failed to load LOCAL manifest from: {LOCAL_MANIFEST_PATH} \n Error: {e}")
             st.stop()
     else:
         st.error("Invalid data source selected.")
@@ -109,16 +94,10 @@ def get_dataset(source_type: str):
 current_dataset = get_dataset(st.session_state.data_source_choice)
 
 
-@st.cache_data  # Cache based on the dataset object's identity (implicitly via current_dataset)
-def get_tids(_dataset):  # Pass dataset to make caching aware of it
-    """Fetches the list of all available track IDs."""
-    return _dataset.list_tids()
-
-
 @st.cache_data
-def load_track_data(_dataset, track_id, data_source_type):
+def load_track_data(_dataset: bnl.data.Dataset, track_id: str) -> tuple:
     """Loads track data and populates track.info with metadata like title/artist."""
-    track = _dataset.load_track(track_id)
+    track = _dataset[track_id]
 
     # Load audio using the Track's built-in method
     waveform, sr = track.load_audio()
@@ -127,7 +106,7 @@ def load_track_data(_dataset, track_id, data_source_type):
 
 
 @st.cache_data
-def create_audio_analysis_plot(waveform, sr):
+def create_audio_analysis_plot(waveform: Any, sr: Any) -> plt.Figure | None:
     """Creates a matplotlib figure with waveform and MFCC plots."""
     if waveform is None or sr is None:
         return None
@@ -147,7 +126,7 @@ def create_audio_analysis_plot(waveform, sr):
 
 
 # --- UI Layout & App State ---
-def reset_track_state():
+def reset_track_state() -> None:
     """Resets flags when a new track is selected, triggering a data reload."""
     st.session_state.track_loaded = False
     st.session_state.is_stabilized = False
@@ -157,22 +136,19 @@ def reset_track_state():
 # Define this before the logic that uses its state.
 with st.sidebar:
     # This selectbox initializes `st.session_state.track_id` on the first run.
-    # Pass current_dataset to get_tids
-    available_tids = get_tids(current_dataset)
-    if not available_tids:
+    if not current_dataset.track_ids:
         st.warning("No track IDs found in the selected dataset.")
         st.stop()
 
     st.selectbox(
         "Select a SALAMI track id:",
-        available_tids,
+        current_dataset.track_ids,
         key="track_id",
         on_change=reset_track_state,
     )
-
-    # Initialize track_id if not set
-    if "track_id" not in st.session_state or st.session_state.track_id not in available_tids:
-        st.session_state.track_id = available_tids[0]
+    # Initialize track_id to first available if not set or invalid
+    if st.session_state.get("track_id") not in current_dataset.track_ids:
+        st.session_state.track_id = current_dataset.track_ids[0]
         reset_track_state()
 
     # Show current status
@@ -200,16 +176,10 @@ if "is_stabilized" not in st.session_state:  # May not be needed anymore
 # Load track data when needed
 if not st.session_state.track_loaded:
     with st.spinner(f"Loading track {st.session_state.track_id}..."):
-        track, waveform, sr = load_track_data(
-            current_dataset,
-            st.session_state.track_id,
-            st.session_state.data_source_choice,
-        )
+        track, waveform, sr = load_track_data(current_dataset, st.session_state.track_id)
         analysis_plot = create_audio_analysis_plot(waveform, sr) if waveform is not None else None
 
     st.session_state.track = track
-    st.session_state.waveform = waveform
-    st.session_state.sr = sr
     st.session_state.analysis_plot = analysis_plot
     st.session_state.track_loaded = True
 
@@ -226,7 +196,7 @@ if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
     track = st.session_state.track
     st.header(f"Track: {track.info.get('title', st.session_state.track_id)}")
 
-    # Audio player: find the audio path from track.info
+    # --- Audio player: find the audio path from track.info ---
     audio_url_or_path = None
     for key, value in track.info.items():
         if key.startswith("audio_") and key.endswith("_path"):
@@ -243,6 +213,31 @@ if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
     else:
         st.warning(f"No audio asset found for track {st.session_state.track_id} in the manifest.")
         st.json(track.manifest_row.to_dict())  # Display what assets the manifest says it has
+
+    # --- Annotation visualization ---
+    if track.has_annotations:
+        st.header("Annotations")
+        st.write(f"Available annotation keys: {list(track.annotations.keys())}")
+        # Attempt to load and plot the 'reference' annotation by default if it exists
+        if "reference" in track.annotations:
+            try:
+                # Using the new load_annotation method
+                ref_annotation = track.load_annotation("reference")
+                st.write(f"Loaded 'reference' annotation (type: {type(ref_annotation)}).")
+                if hasattr(ref_annotation, "plot"):
+                    # BNL plot methods return (fig, ax) tuple
+                    fig, _ = ref_annotation.plot()
+                    st.pyplot(fig)
+                else:
+                    st.write("Loaded annotation object does not have a direct .plot() method.")
+            except Exception as e:
+                st.error(f"Error loading or plotting 'reference' annotation: {e}")
+        else:
+            st.info("No 'reference' annotation key found for this track.")
+            st.write("Consider adding UI to select other annotation types and IDs if needed.")
+
+    else:
+        st.warning("No annotations found for this track.")
 
 else:
     st.warning("Please select a track or wait for data to load.")

@@ -25,6 +25,7 @@ coverage.xml
 # Documentation
 docs/_*/
 docs/**/_generated_*/
+docs/build/
 site/
 
 # Pixi
@@ -35,3 +36,4 @@ site/
 
 # macOS
 .DS_Store
+build/
