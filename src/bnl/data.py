@@ -129,13 +129,16 @@ class Track:
 
         audio_path = self.info[audio_path_key]
 
+        # Expand user path if it's a local path
+        expanded_audio_path = Path(audio_path).expanduser() if isinstance(audio_path, (str, Path)) else audio_path
+
         try:
             if isinstance(audio_path, str) and audio_path.startswith("http"):
                 response = requests.get(audio_path)
                 response.raise_for_status()
                 y, sr = librosa.load(io.BytesIO(response.content), sr=None, mono=True)
-            elif Path(audio_path).exists():
-                y, sr = librosa.load(audio_path, sr=None, mono=True)
+            elif expanded_audio_path.exists():
+                y, sr = librosa.load(expanded_audio_path, sr=None, mono=True)
             else:
                 print(f"Warning: Audio file not found at: {audio_path}")
                 return None, None
@@ -207,7 +210,9 @@ class Dataset:
         self.data_location = "cloud" if urlparse(str(manifest_path)).scheme in ("http", "https") else "local"
 
         if self.data_location == "local":
-            self.dataset_root: Path | str = Path(manifest_path).parent
+            # Expand user path (~ -> /home/user) before creating Path
+            expanded_manifest_path = Path(manifest_path).expanduser()
+            self.dataset_root: Path | str = expanded_manifest_path.parent
             self.base_url: str | None = None
         elif self.data_location == "cloud":
             self.dataset_root = self.base_url
@@ -216,15 +221,18 @@ class Dataset:
             raise ValueError(f"Unsupported data_location: '{self.data_location}'")
 
         try:
-            self.manifest = pd.read_csv(manifest_path)
+            # Use expanded path for local files, original path for URLs
+            load_path = Path(manifest_path).expanduser() if self.data_location == "local" else manifest_path
+            self.manifest = pd.read_csv(load_path)
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Manifest file not found at: {manifest_path}") from e
 
-        # --- Standardize track_id to string ---
+            # --- Standardize track_id to string ---
         if "track_id" not in self.manifest.columns:
             raise ValueError("Manifest must contain a 'track_id' column.")
         self.manifest["track_id"] = self.manifest["track_id"].astype(str)
         self.manifest.set_index("track_id", inplace=True, drop=False)
+
         # Sort by track_id, handling numeric vs. lexical gracefully
         self.track_ids = sorted(self.manifest["track_id"].astype(str).unique(), key=lambda x: int(x))
 
