@@ -29,7 +29,7 @@ dependencies = [
 requires-python = ">=3.9"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "pylint"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "pylint", "pytest-mock"]
 docs = [
     "sphinx",
     "sphinx-rtd-theme",

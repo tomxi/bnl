@@ -39,24 +39,37 @@ BNL supports loading real musical structure data from the SALAMI dataset:
 
 .. code-block:: python
 
-    import bnl.data as data
+    from bnl.data import Dataset
 
-    # List available SALAMI tracks
-    track_ids = data.slm.list_tids()
-    print(f"Found {len(track_ids)} tracks")
+    # Example using the public cloud manifest
+    CLOUD_MANIFEST_URL = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev/manifest_cloud_boolean.csv"
+    dataset = Dataset(CLOUD_MANIFEST_URL)
 
-    # Load a single track
-    track = data.slm.load_track('10')
-    print(f"Loaded: {track}")
-    print(f"Track info: {track.info}")
+    # List available track IDs (first 5 for brevity)
+    print(f"Found {len(dataset.track_ids)} tracks. First 5: {dataset.track_ids[:5]}")
 
-    # Access JAMS annotation data
-    jams_obj = track.jams
-    print(f"Duration: {jams_obj.file_metadata.duration}")
+    # Load a single track (ensure '2' is a valid track_id in the manifest)
+    if "2" in dataset.track_ids:
+        track = dataset["2"]
+        print(f"Loaded: {track}")
+        print(f"Track info: {track.info.get('title', 'N/A')}") # Example: get title
+
+        # Load a 'reference' annotation if available
+        if "reference" in track.annotations:
+            try:
+                annotation_obj = track.load_annotation("reference")
+                print(f"Loaded 'reference' annotation: {type(annotation_obj)}")
+            except Exception as e:
+                print(f"Error loading 'reference' annotation for track 2: {e}")
+    else:
+        print("Track ID '2' not found in dataset.")
+
 
 .. note::
-   Data loading requires SALAMI dataset files in ``~/data/``. 
-   See the examples for more details on data setup.
+   For local datasets, you would initialize with a file path, e.g.,
+   `dataset = Dataset("~/data/my_local_manifest.csv")`.
+   The manifest should point to your data assets.
+   Refer to manifest building scripts for conventions.
 
 
 Next Steps
