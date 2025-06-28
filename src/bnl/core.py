@@ -380,9 +380,7 @@ class Hierarchy(TimeSpan):
 
         for i, layer_data in enumerate(json_data):
             if not (isinstance(layer_data, list) and len(layer_data) == 2):
-                raise ValueError(
-                    f"Layer {i} is malformed. Expected a list of [intervals, labels], got: {layer_data}"
-                )
+                raise ValueError(f"Layer {i} is malformed. Expected a list of [intervals, labels], got: {layer_data}")
 
             intervals_data, labels_data = layer_data
 
@@ -401,18 +399,26 @@ class Hierarchy(TimeSpan):
             for interval, label in zip(intervals_data, labels_data):
                 # Accommodate for intervals possibly being nested e.g. [[[0.0, 10.0]]] vs [[0.0, 10.0]]
                 actual_interval = interval
-                if isinstance(interval, list) and len(interval) == 1 and \
-                   isinstance(interval[0], list) and len(interval[0]) == 2:
+                if (
+                    isinstance(interval, list)
+                    and len(interval) == 1
+                    and isinstance(interval[0], list)
+                    and len(interval[0]) == 2
+                ):
                     actual_interval = interval[0]
 
                 if not (isinstance(actual_interval, list) and len(actual_interval) == 2):
-                     raise ValueError(f"Malformed interval structure in layer {i}: {actual_interval}. Expected [start, end].")
+                    raise ValueError(
+                        f"Malformed interval structure in layer {i}: {actual_interval}. Expected [start, end]."
+                    )
 
                 start, end = actual_interval
                 try:
                     segments.append(TimeSpan(start=float(start), end=float(end), name=str(label)))
-                except ValueError as e: # Catch errors from float conversion or TimeSpan post_init
-                    raise ValueError(f"Error creating TimeSpan for interval {actual_interval} with label '{label}' in layer {i}: {e}")
+                except ValueError as e:  # Catch errors from float conversion or TimeSpan post_init
+                    raise ValueError(
+                        f"Error creating TimeSpan for interval {actual_interval} with label '{label}' in layer {i}: {e}"
+                    )
 
             segments.sort(key=lambda s: s.start)
             segmentations.append(Segmentation(segments=segments))
@@ -463,9 +469,10 @@ class Hierarchy(TimeSpan):
 
         # Calculate total height needed for all layers for y-axis scaling of axvspan
         total_plot_height = n_layers * (layer_height + layer_gap) - layer_gap
-        if total_plot_height <= 0: total_plot_height = 1 # Avoid division by zero for empty plots
+        if total_plot_height <= 0:
+            total_plot_height = 1  # Avoid division by zero for empty plots
 
-        current_y_base = total_plot_height # Start plotting from the top
+        current_y_base = total_plot_height  # Start plotting from the top
 
         for i, layer in enumerate(self.layers):
             # Calculate ymin and ymax for the current layer's segments
@@ -473,7 +480,7 @@ class Hierarchy(TimeSpan):
             layer_ymin_abs = current_y_base - layer_height
             layer_ymax_abs = current_y_base
 
-            if layer.segments: # Check if layer has segments
+            if layer.segments:  # Check if layer has segments
                 style_map = label_style_dict(layer.labels)
                 for span in layer.segments:
                     span_style = style_map.get(span.name if span.name is not None else "", {})
@@ -482,21 +489,28 @@ class Hierarchy(TimeSpan):
                     rect_ymin_rel = layer_ymin_abs / total_plot_height
                     rect_ymax_rel = layer_ymax_abs / total_plot_height
 
-                    ax.axvspan(span.start, span.end,
-                               ymin=rect_ymin_rel, ymax=rect_ymax_rel,
-                               **span_style, alpha=span_style.get("alpha", 0.7))
+                    ax.axvspan(
+                        span.start,
+                        span.end,
+                        ymin=rect_ymin_rel,
+                        ymax=rect_ymax_rel,
+                        **span_style,
+                        alpha=span_style.get("alpha", 0.7),
+                    )
 
                     if span.name:
                         ax.text(
                             span.start + 0.005 * (self.end - self.start),
                             layer_ymin_abs + layer_height / 2,
                             f"{span.name}",
-                            va='center', ha='left', fontsize=7, clip_on=True,
-                            bbox=dict(boxstyle="round,pad=0.1", facecolor="white", alpha=0.7, edgecolor='none')
+                            va="center",
+                            ha="left",
+                            fontsize=7,
+                            clip_on=True,
+                            bbox=dict(boxstyle="round,pad=0.1", facecolor="white", alpha=0.7, edgecolor="none"),
                         )
 
-            current_y_base -= (layer_height + layer_gap)
-
+            current_y_base -= layer_height + layer_gap
 
         if title and self.name:
             ax.set_title(self.name)
@@ -506,7 +520,7 @@ class Hierarchy(TimeSpan):
         else:
             ax.set_xlim(-0.1, 0.1)
 
-        ax.set_ylim(0, total_plot_height) # Y-axis uses data coordinates reflecting the structure
+        ax.set_ylim(0, total_plot_height)  # Y-axis uses data coordinates reflecting the structure
 
         if time_ticks:
             ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
@@ -515,7 +529,9 @@ class Hierarchy(TimeSpan):
             ax.set_xticks([])
 
         # Set y-ticks to correspond to the center of each layer's band
-        ytick_positions = [total_plot_height - (i * (layer_height + layer_gap) + layer_height / 2) for i in range(n_layers)]
+        ytick_positions = [
+            total_plot_height - (i * (layer_height + layer_gap) + layer_height / 2) for i in range(n_layers)
+        ]
         ax.set_yticks(ytick_positions)
         ax.set_yticklabels([f"Level {i}" for i in range(n_layers)])
 

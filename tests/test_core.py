@@ -129,12 +129,12 @@ def test_plotting_runs_without_error():
     seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0], ["A"])
     seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ["a", "b"])
     hierarchy = bnl.Hierarchy(layers=[seg1, seg2])
-    fig, _ = hierarchy.plot_single_axis() # Changed to plot_single_axis
+    fig, _ = hierarchy.plot_single_axis()  # Changed to plot_single_axis
     plt.close(fig)
 
     # Test Hierarchy plotting with one layer
     hierarchy_single_layer = bnl.Hierarchy(layers=[seg1])
-    fig, _ = hierarchy_single_layer.plot_single_axis() # Changed to plot_single_axis
+    fig, _ = hierarchy_single_layer.plot_single_axis()  # Changed to plot_single_axis
     plt.close(fig)
 
     # Test plotting with style_map
@@ -212,8 +212,9 @@ def test_hierarchy_not_implemented_constructors():
         bnl.Hierarchy.from_intervals([np.array([])])
 
 
-import requests # For fetching real annotation file
-import json # For parsing json
+import json  # For parsing json
+
+import requests  # For fetching real annotation file
 
 
 def test_hierarchy_from_json_adobe_est_format():
@@ -223,7 +224,10 @@ def test_hierarchy_from_json_adobe_est_format():
     json_data_valid = [
         [[[0.0, 10.0]], ["Layer0_SegA"]],  # Layer 0: 1 segment
         [[[0.0, 5.0], [5.0, 10.0]], ["Layer1_Sega", "Layer1_Segb"]],  # Layer 1: 2 segments
-        [[[0.0, 2.5], [2.5, 5.0], [5.0, 7.5], [7.5, 10.0]], ["L2_s1", "L2_s2", "L2_s3", "L2_s4"]], # Layer 2: 4 segments
+        [
+            [[0.0, 2.5], [2.5, 5.0], [5.0, 7.5], [7.5, 10.0]],
+            ["L2_s1", "L2_s2", "L2_s3", "L2_s4"],
+        ],  # Layer 2: 4 segments
     ]
     hierarchy = bnl.Hierarchy.from_json(json_data_valid, name="TestAdobeESTHierarchy")
 
@@ -272,32 +276,22 @@ def test_hierarchy_from_json_adobe_est_format():
     assert hierarchy_empty_layer.layers[1].start == 0.0
     assert hierarchy_empty_layer.layers[1].end == 0.0
 
-
     # Test malformed layer (not a list of two lists)
-    json_data_malformed_layer = [
-        [[[0.0, 10.0]], ["A"]],
-        "not a layer"
-    ]
+    json_data_malformed_layer = [[[[0.0, 10.0]], ["A"]], "not a layer"]
     with pytest.raises(ValueError, match="Layer 1 is malformed"):
         bnl.Hierarchy.from_json(json_data_malformed_layer)
 
     # Test mismatched intervals and labels
-    json_data_mismatched = [
-        [[[0.0, 5.0], [5.0, 10.0]], ["A"]]
-    ]
+    json_data_mismatched = [[[[0.0, 5.0], [5.0, 10.0]], ["A"]]]
     with pytest.raises(ValueError, match="Layer 0 has mismatched number of intervals and labels"):
         bnl.Hierarchy.from_json(json_data_mismatched)
 
     # Test malformed interval item
-    json_data_malformed_interval = [
-        [[[0.0, 5.0, 6.0]], ["A"]]
-    ]
+    json_data_malformed_interval = [[[[0.0, 5.0, 6.0]], ["A"]]]
     with pytest.raises(ValueError, match="Malformed interval structure in layer 0"):
         bnl.Hierarchy.from_json(json_data_malformed_interval)
 
-    json_data_malformed_interval_2 = [
-        [[["string", 5.0]], ["A"]]
-    ]
+    json_data_malformed_interval_2 = [[[["string", 5.0]], ["A"]]]
     with pytest.raises(ValueError, match="could not convert string to float"):
         bnl.Hierarchy.from_json(json_data_malformed_interval_2)
 
@@ -336,7 +330,7 @@ def test_hierarchy_from_json_real_file():
         assert isinstance(hierarchy.start, float)
         assert isinstance(hierarchy.end, float)
         if len(hierarchy) > 0:
-             assert hierarchy.start <= hierarchy.end
+            assert hierarchy.start <= hierarchy.end
 
     except requests.exceptions.RequestException as e:
         pytest.skip(f"Skipping remote data test, could not fetch {annotation_url}: {e}")
