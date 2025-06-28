@@ -147,7 +147,7 @@ class Track:
             print(f"Warning: Failed to load audio from {audio_path}: {e}")
             return None, None
 
-    def load_hierarchy(self, annotation_type: str) -> "bnl.Hierarchy":
+    def load_hierarchy(self, annotation_type: str) -> Hierarchy:
         """Load a hierarchical annotation as a Hierarchy object.
 
         Parameters
@@ -215,15 +215,19 @@ class Dataset:
             self.dataset_root: Path | str = expanded_manifest_path.parent
             self.base_url: str | None = None
         elif self.data_location == "cloud":
-            self.dataset_root = self.base_url
             self.base_url = str(manifest_path).rsplit("/", 1)[0]
+            self.dataset_root = self.base_url
         else:
             raise ValueError(f"Unsupported data_location: '{self.data_location}'")
 
         try:
             # Use expanded path for local files, original path for URLs
             load_path = Path(manifest_path).expanduser() if self.data_location == "local" else manifest_path
-            self.manifest = pd.read_csv(load_path)
+            self.manifest = (
+                pd.read_csv(io.StringIO(requests.get(str(manifest_path)).text))
+                if self.data_location == "cloud"
+                else pd.read_csv(load_path)
+            )
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Manifest file not found at: {manifest_path}") from e
 
@@ -234,7 +238,13 @@ class Dataset:
         self.manifest.set_index("track_id", inplace=True, drop=False)
 
         # Sort by track_id, handling numeric vs. lexical gracefully
-        self.track_ids = sorted(self.manifest["track_id"].astype(str).unique(), key=lambda x: int(x))
+        track_ids_unique = self.manifest["track_id"].astype(str).unique()
+        try:
+            # Try numeric sort first
+            self.track_ids = sorted(track_ids_unique, key=lambda x: int(x))
+        except ValueError:
+            # Fall back to lexical sort if any track_id is non-numeric
+            self.track_ids = sorted(track_ids_unique)
 
     def __getitem__(self, track_id: str) -> Track:
         """Load a specific track by its ID."""

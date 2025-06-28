@@ -103,22 +103,24 @@ def mock_cloud_manifest_file(tmp_path: Path) -> Path:
 # --- Test Core Functionality ---
 def test_dataset_init_local(mock_local_manifest_file: Path):
     """Test initializing a Dataset from a local manifest."""
-    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
-    assert dataset.data_source_type == "local"
+    dataset = data.Dataset(mock_local_manifest_file)
+    assert dataset.data_location == "local"
     assert dataset.dataset_root == mock_local_manifest_file.parent
-    assert dataset.list_tids() == ["1", "2", "3"]
+    assert dataset.track_ids == ["1", "2", "3"]
 
 
-def test_dataset_init_cloud(mock_cloud_manifest_file: Path):
-    """Test initializing a Dataset for cloud usage with a local boolean manifest."""
-    dataset = data.Dataset(
-        mock_cloud_manifest_file,
-        data_source_type="cloud",
-        cloud_base_url=MOCK_CLOUD_URL_BASE,
-    )
-    assert dataset.data_source_type == "cloud"
+def test_dataset_init_cloud(mock_cloud_manifest_file: Path, requests_mock):
+    """Test initializing a Dataset for cloud usage with a cloud manifest URL."""
+    # Mock the cloud manifest URL
+    cloud_manifest_url = f"{MOCK_CLOUD_URL_BASE}/manifest_cloud.csv"
+    with open(mock_cloud_manifest_file, "r") as f:
+        manifest_content = f.read()
+    requests_mock.get(cloud_manifest_url, text=manifest_content)
+
+    dataset = data.Dataset(cloud_manifest_url)
+    assert dataset.data_location == "cloud"
     assert dataset.base_url == MOCK_CLOUD_URL_BASE
-    assert dataset.list_tids() == ["101", "102"]
+    assert dataset.track_ids == ["101", "102"]
 
 
 def test_dataset_init_file_not_found():
@@ -128,8 +130,8 @@ def test_dataset_init_file_not_found():
 
 def test_load_track_local(mock_local_manifest_file: Path, monkeypatch):
     """Test loading a track and accessing its info from a local dataset."""
-    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
-    track = dataset.load_track("1")
+    dataset = data.Dataset(mock_local_manifest_file)
+    track = dataset["1"]
 
     assert track.track_id == "1"
     assert "Track(track_id='1'" in repr(track)
@@ -153,7 +155,7 @@ def test_load_track_local(mock_local_manifest_file: Path, monkeypatch):
     assert sr is not None
 
     # Test audio loading for a track with a missing file (but present in manifest)
-    track2 = dataset.load_track("2")
+    track2 = dataset["2"]
     y2, sr2 = track2.load_audio()
     assert y2 is None
     assert sr2 is None
@@ -161,12 +163,14 @@ def test_load_track_local(mock_local_manifest_file: Path, monkeypatch):
 
 def test_load_track_cloud(mock_cloud_manifest_file: Path, requests_mock, monkeypatch):
     """Test loading a track, parsing JAMS, and loading audio from a cloud dataset."""
-    dataset = data.Dataset(
-        mock_cloud_manifest_file,
-        data_source_type="cloud",
-        cloud_base_url=MOCK_CLOUD_URL_BASE,
-    )
-    track = dataset.load_track("101")
+    # Mock the cloud manifest URL
+    cloud_manifest_url = f"{MOCK_CLOUD_URL_BASE}/manifest_cloud.csv"
+    with open(mock_cloud_manifest_file, "r") as f:
+        manifest_content = f.read()
+    requests_mock.get(cloud_manifest_url, text=manifest_content)
+
+    dataset = data.Dataset(cloud_manifest_url)
+    track = dataset["101"]
 
     # --- Test JAMS and Audio Loading ---
     # 1. Construct expected URLs first
@@ -200,8 +204,8 @@ def test_load_track_cloud(mock_cloud_manifest_file: Path, requests_mock, monkeyp
 
 def test_load_track_with_missing_assets(mock_local_manifest_file: Path):
     """Ensure that missing asset paths are handled gracefully."""
-    dataset = data.Dataset(mock_local_manifest_file, data_source_type="local")
-    track = dataset.load_track("3")  # Track 3 has no assets in the manifest
+    dataset = data.Dataset(mock_local_manifest_file)
+    track = dataset["3"]  # Track 3 has no assets in the manifest
     assert "num_assets=0" in repr(track)
     assert track.info == {"track_id": "3"}  # Info should be mostly empty
     y, sr = track.load_audio()
@@ -212,7 +216,7 @@ def test_load_nonexistent_track(mock_local_manifest_file: Path):
     """Test that loading a track_id not in the manifest raises a ValueError."""
     dataset = data.Dataset(mock_local_manifest_file)
     with pytest.raises(ValueError, match="Track ID 'nonexistent' not found"):
-        dataset.load_track("nonexistent")
+        dataset["nonexistent"]
 
 
 def test_dataset_handles_non_numeric_track_ids(tmp_path: Path):
@@ -223,6 +227,6 @@ def test_dataset_handles_non_numeric_track_ids(tmp_path: Path):
     df = pd.DataFrame({"track_id": ["10", "2", "a_track"], "has_audio_mp3": [True, True, False]})
     df.to_csv(manifest_file, index=False)
 
-    dataset = data.Dataset(manifest_file, data_source_type="local")
+    dataset = data.Dataset(manifest_file)
     # Expect a lexical sort ('10', '2', 'a_track'), not a numeric one.
-    assert dataset.list_tids() == ["10", "2", "a_track"]
+    assert dataset.track_ids == ["10", "2", "a_track"]

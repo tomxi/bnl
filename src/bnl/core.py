@@ -279,8 +279,7 @@ class Hierarchy(TimeSpan):
 
     def plot(  # type: ignore[override]
         self,
-        figsize: tuple[float, float] = (6, 4),
-        **kwargs: Any,
+        figsize: tuple[float, float] | None = None,
     ) -> Figure:
         """Plot the hierarchy with each layer in a separate subplot.
 
@@ -288,9 +287,6 @@ class Hierarchy(TimeSpan):
         ----------
         figsize : tuple, optional
             Figure size (width, height)
-        **kwargs : dict, optional
-            Additional keyword arguments passed to layer plotting.
-
         Returns
         -------
         fig : matplotlib figure
@@ -302,21 +298,23 @@ class Hierarchy(TimeSpan):
             raise ValueError("Cannot plot empty hierarchy")
 
         # Create subplots - one for each layer
-        fig, axes = plt.subplots(n_layers, 1, figsize=figsize, sharex=True)
+        fig, axes = plt.subplots(
+            n_layers, 1, figsize=figsize or (6, 0.5 + 0.5 * n_layers), sharex=True, constrained_layout=True
+        )
         if n_layers == 1:
             axes = [axes]
 
         # Plot each layer using Segmentation.plot()
         for i, (layer, ax) in enumerate(zip(self.layers, axes)):
-            layer_style_map: dict[str, Any] | None = label_style_dict(layer.labels) if len(layer) > 0 else None
-            # Use Segmentation.plot() which will call TimeSpan.plot() for each segment
             layer.plot(
-                ax=ax, style_map=layer_style_map, title=False, ytick=f"Level {i}", time_ticks=(i == n_layers - 1)
+                ax=ax,
+                style_map=label_style_dict(layer.labels) if len(layer) > 0 else None,
+                title=False,
+                ytick=f"Level {i}",
+                time_ticks=(i == (n_layers - 1)),
             )
-
         # Set x-label only on bottom subplot
         axes[-1].set_xlabel("Time (s)")
-        fig.tight_layout()
         return fig
 
     @classmethod
