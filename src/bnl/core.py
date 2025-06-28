@@ -278,7 +278,9 @@ class Hierarchy(TimeSpan):
         return f"Hierarchy({len(self)} levels over {self.start:.2f}s-{self.end:.2f}s)"
 
     def plot(  # type: ignore[override]
-        self, figsize: tuple[float, float] = (8, 6), layer_height: float = 1.0, layer_spacing: float = 0.2
+        self,
+        figsize: tuple[float, float] = (6, 4),
+        **style_map: Any,
     ) -> tuple:
         """Plot the hierarchy with each layer in a separate subplot.
 
@@ -286,10 +288,9 @@ class Hierarchy(TimeSpan):
         ----------
         figsize : tuple, optional
             Figure size (width, height)
-        layer_height : float, optional
-            Height of each layer in the plot
-        layer_spacing : float, optional
-            Spacing between layers
+        style_map : dict, optional
+            A dictionary of style parameters for the plot.
+            See `bnl.viz.label_style_dict` for available parameters.
 
         Returns
         -------
@@ -308,23 +309,13 @@ class Hierarchy(TimeSpan):
 
         # Plot each layer using Segmentation.plot()
         for i, (layer, ax) in enumerate(zip(self.layers, axes)):
-            # Create style map for this layer with ymin/ymax for positioning
-            if len(layer) > 0:
-                style_map = label_style_dict(layer.labels)
-                # Add ymin/ymax to each style to position segments properly
-                for label_style in style_map.values():
-                    label_style.update({"ymin": 0, "ymax": layer_height})
-            else:
-                style_map = None
-
+            style_map = label_style_dict(layer.labels) if len(layer) > 0 else None
             # Use Segmentation.plot() which will call TimeSpan.plot() for each segment
-            layer.plot(ax=ax, style_map=style_map, title=False, ytick=f"Level {i}")
-
-            # Set y limits for this subplot
-            ax.set_ylim(0, layer_height)
+            layer.plot(ax=ax, style_map=style_map, title=False, ytick=f"Level {i}", time_ticks=(i == n_layers - 1))
 
         # Set x-label only on bottom subplot
         axes[-1].set_xlabel("Time (s)")
+        fig.tight_layout()
         return fig
 
     @classmethod
@@ -384,4 +375,16 @@ class Hierarchy(TimeSpan):
     def from_json(cls, json_data: dict[str, Any]) -> "Hierarchy":
         """Create hierarchy from a JSON annotation. (Not yet implemented)"""
         # TODO: Implement JSON multilevel annotation parsing
+        raise NotImplementedError
+
+    @classmethod
+    def from_boundaries(
+        cls, boundaries: list[float], labels: list[str | None] | None = None, name: str | None = None
+    ) -> "Hierarchy":
+        raise NotImplementedError
+
+    @classmethod
+    def from_intervals(
+        cls, intervals: np.ndarray, labels: list[str | None] | None = None, name: str | None = None
+    ) -> "Hierarchy":
         raise NotImplementedError
