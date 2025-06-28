@@ -119,3 +119,98 @@ def test_plotting_runs_without_error():
     seg = bnl.Segmentation.from_boundaries([0, 1, 2], ["X", "Y"])
     fig, ax = seg.plot()
     plt.close(fig)
+
+    # Test Segmentation plotting with no segments
+    empty_seg = bnl.Segmentation()
+    fig, ax = empty_seg.plot() # Should plot an empty axes
+    plt.close(fig)
+
+
+    # Test Hierarchy plotting
+    seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0], ["A"])
+    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ["a", "b"])
+    hierarchy = bnl.Hierarchy(layers=[seg1, seg2])
+    fig = hierarchy.plot()
+    plt.close(fig)
+
+    # Test Hierarchy plotting with one layer
+    hierarchy_single_layer = bnl.Hierarchy(layers=[seg1])
+    fig = hierarchy_single_layer.plot()
+    plt.close(fig)
+
+    # Test plotting with style_map
+    fig, ax = span_named.plot(color="red", ymax=0.5)
+    plt.close(fig)
+
+    # Test plotting hierarchy with empty layers (should raise error)
+    with pytest.raises(ValueError, match="Cannot plot empty hierarchy"):
+        empty_hierarchy = bnl.Hierarchy()
+        empty_hierarchy.plot()
+
+def test_segmentation_from_jams(mocker):
+    """Test creating a Segmentation from a JAMS annotation."""
+    # Mock JAMS annotation
+    mock_anno = mocker.MagicMock()
+    mock_obs1 = mocker.MagicMock()
+    mock_obs1.time = 0.0
+    mock_obs1.duration = 1.0
+    mock_obs1.value = "segment1"
+    mock_obs2 = mocker.MagicMock()
+    mock_obs2.time = 1.0
+    mock_obs2.duration = 1.5
+    mock_obs2.value = "segment2"
+    mock_anno.__iter__.return_value = [mock_obs1, mock_obs2]
+
+    seg = bnl.Segmentation.from_jams(mock_anno)
+    assert len(seg) == 2
+    assert seg.segments[0].start == 0.0
+    assert seg.segments[0].end == 1.0
+    assert seg.segments[0].name == "segment1"
+    assert seg.segments[1].start == 1.0
+    assert seg.segments[1].end == 2.5
+    assert seg.segments[1].name == "segment2"
+
+def test_hierarchy_from_jams(mocker):
+    """Test creating a Hierarchy from a JAMS multi_segment annotation."""
+    # Mock JAMS annotation and hierarchy_flatten
+    mock_anno = mocker.MagicMock()
+    mock_anno.namespace = "multi_segment"
+
+    # Mock return value of hierarchy_flatten
+    # Represents two levels:
+    # Level 0: [(0.0, 5.0, "A")]
+    # Level 1: [(0.0, 2.0, "a"), (2.0, 5.0, "b")]
+    mock_hier_intervals = [
+        [(0.0, 5.0)],
+        [(0.0, 2.0), (2.0, 5.0)]
+    ]
+    mock_hier_labels = [
+        ["A"],
+        ["a", "b"]
+    ]
+    mocker.patch("jams.eval.hierarchy_flatten", return_value=(mock_hier_intervals, mock_hier_labels))
+
+    hierarchy = bnl.Hierarchy.from_jams(mock_anno)
+    assert len(hierarchy) == 2
+    assert len(hierarchy.layers[0]) == 1
+    assert hierarchy.layers[0].segments[0].name == "A"
+    assert hierarchy.layers[0].segments[0].start == 0.0
+    assert hierarchy.layers[0].segments[0].end == 5.0
+    assert len(hierarchy.layers[1]) == 2
+    assert hierarchy.layers[1].segments[0].name == "a"
+    assert hierarchy.layers[1].segments[1].name == "b"
+
+    # Test wrong namespace
+    mock_anno.namespace = "wrong_namespace"
+    with pytest.raises(ValueError, match="Expected 'multi_segment' namespace"):
+        bnl.Hierarchy.from_jams(mock_anno)
+
+
+def test_hierarchy_not_implemented_constructors():
+    """Test that from_json, from_boundaries, from_intervals raise NotImplementedError."""
+    with pytest.raises(NotImplementedError):
+        bnl.Hierarchy.from_json({})
+    with pytest.raises(NotImplementedError):
+        bnl.Hierarchy.from_boundaries([[]])
+    with pytest.raises(NotImplementedError):
+        bnl.Hierarchy.from_intervals([np.array([])])
