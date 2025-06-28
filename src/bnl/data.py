@@ -23,7 +23,8 @@ def _parse_jams_metadata(jams_path: Path | str) -> dict[str, Any]:
     """Load metadata from a JAMS file, returning empty dict on failure."""
     try:
         if isinstance(jams_path, str) and jams_path.startswith("http"):
-            response = requests.get(jams_path)
+            headers = {"User-Agent": "BNL-Dataset/1.0 (Music Information Retrieval)"}
+            response = requests.get(jams_path, headers=headers)
             response.raise_for_status()
             jam = jams.load(io.StringIO(response.text))
         elif Path(jams_path).exists():
@@ -110,7 +111,8 @@ class Track:
 
         try:
             if isinstance(audio_path, str) and audio_path.startswith("http"):
-                response = requests.get(audio_path)
+                headers = {"User-Agent": "BNL-Dataset/1.0 (Music Information Retrieval)"}
+                response = requests.get(audio_path, headers=headers)
                 response.raise_for_status()
                 y, sr = librosa.load(io.BytesIO(response.content), sr=None, mono=True)
             elif expanded_path.exists():
@@ -149,7 +151,8 @@ class Track:
     def _fetch_content(self, path: str | Path) -> io.StringIO:
         """Fetch file content into StringIO buffer."""
         if isinstance(path, str) and path.startswith("http"):
-            response = requests.get(str(path))
+            headers = {"User-Agent": "BNL-Dataset/1.0 (Music Information Retrieval)"}
+            response = requests.get(str(path), headers=headers)
             response.raise_for_status()
             return io.StringIO(response.text)
         elif Path(path).exists():
@@ -255,11 +258,13 @@ class Dataset:
         # Load manifest
         try:
             load_path = Path(manifest_path).expanduser() if self.data_location == "local" else manifest_path
-            self.manifest = (
-                pd.read_csv(io.StringIO(requests.get(str(manifest_path)).text))
-                if self.data_location == "cloud"
-                else pd.read_csv(load_path)
-            )
+            if self.data_location == "cloud":
+                headers = {"User-Agent": "BNL-Dataset/1.0 (Music Information Retrieval)"}
+                response = requests.get(str(manifest_path), headers=headers)
+                response.raise_for_status()
+                self.manifest = pd.read_csv(io.StringIO(response.text))
+            else:
+                self.manifest = pd.read_csv(load_path)
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Manifest not found: {manifest_path}") from e
 
