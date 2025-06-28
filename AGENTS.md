@@ -32,6 +32,7 @@ Concise guidance for AI agents working with this music information retrieval cod
 - make better choices around wha'ts a property and what's a classmethod etc. Read the generated docs to think through what's doing what.
 - We don't need the mertics modules anymore. We will use frameless-eval for doing established metrics, and use mir_eval for frame based metrics, and other utilities.
 - API design: Soideall, track.load_hierarchy should be track.load_annotation(anno_type)
+    THIS IS NOW IMPLEMENTED: Track.load_annotation(annotation_type, annotation_id=None) handles JAMS (multi_segment, other segmentations, specific selection) and JSON hierarchies.
 
 - Some concrete examples:
 local_track.annotations

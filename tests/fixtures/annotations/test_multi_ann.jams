@@ -1,0 +1,48 @@
+{
+    "annotations": [
+        {
+            "namespace": "multi_segment",
+            "data": [
+                {"time": 0.0, "duration": 20.0, "value": {"level": 0, "label": "S"}},
+                {"time": 0.0, "duration": 10.0, "value": {"level": 1, "label": "X"}},
+                {"time": 10.0, "duration": 10.0, "value": {"level": 1, "label": "Y"}}
+            ],
+            "sandbox": {},
+            "annotation_metadata": {"version": "1.0", "corpus": "multi"}
+        },
+        {
+            "namespace": "segment_open",
+            "data": [
+                {"time": 0.0, "duration": 10.0, "value": "part1"},
+                {"time": 10.0, "duration": 10.0, "value": "part2"}
+            ],
+            "sandbox": {},
+            "annotation_metadata": {"version": "1.1", "annotation_tools": "manual"}
+        },
+        {
+            "namespace": "beat",
+            "id": "beat_annot_123",
+            "data": [
+                {"time": 1.0, "duration": 0.0, "value": 1},
+                {"time": 2.0, "duration": 0.0, "value": 2},
+                {"time": 3.0, "duration": 0.0, "value": 3}
+            ],
+            "sandbox": {},
+            "annotation_metadata": {"corpus": "beat_data"}
+        },
+        {
+            "namespace": "multi_segment",
+            "data": [
+                {"time": 0.0, "duration": 20.0, "value": {"level": 0, "label": "Z"}}
+            ],
+            "sandbox": {},
+            "annotation_metadata": {"version": "2.0", "corpus": "multi2"}
+        }
+    ],
+    "file_metadata": {
+        "title": "Test Multi Annotation Song",
+        "artist": "BNL Test Suite",
+        "duration": 20.0,
+        "jams_version": "0.3.4"
+    }
+}

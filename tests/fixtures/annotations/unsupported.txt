@@ -1,0 +1,1 @@
+This is not a JAMS or JSON file, it's just plain text.

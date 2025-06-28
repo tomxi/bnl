@@ -1,0 +1,9 @@
+track_id,has_annotation_ref_hier_jams,has_annotation_ref_seg_jams,has_annotation_ref_multi_jams,has_annotation_ref_hier_json,has_annotation_ref_empty_jams,has_annotation_ref_malformed_json,has_annotation_ref_unsupported_txt,has_audio_mp3
+track1,True,False,False,False,False,False,False,False
+track2,False,True,False,False,False,False,False,False
+track3,False,False,True,False,False,False,False,False
+track4,False,False,False,True,False,False,False,False
+track5,False,False,False,False,True,False,False,False
+track6,False,False,False,False,False,True,False,False
+track7,False,False,False,False,False,False,True,False
+track8,True,True,True,True,False,False,False,True

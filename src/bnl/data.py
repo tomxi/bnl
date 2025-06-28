@@ -147,48 +147,163 @@ class Track:
             print(f"Warning: Failed to load audio from {audio_path}: {e}")
             return None, None
 
-    def load_hierarchy(self, annotation_type: str) -> Hierarchy:
-        """Load a hierarchical annotation as a Hierarchy object.
+    def load_annotation(
+        self, annotation_type: str, annotation_id: str | int | None = None
+    ) -> Hierarchy | "Segmentation":  # "Segmentation" forward ref for type checker
+        """Load an annotation as a Hierarchy or Segmentation object.
 
         Parameters
         ----------
         annotation_type : str
-            Type of annotation to load (e.g., 'reference')
+            Type of annotation to load, corresponding to a key in `track.annotations`
+            (e.g., 'reference', 'adobe-mu1gamma1'). This determines the file to load.
+        annotation_id : str or int, optional
+            If the annotation file (especially JAMS) contains multiple annotations,
+            this specifies which one to load.
+            - For JAMS: Can be an annotation's `id` (if set in JAMS) or `namespace`.
+                         If an integer, it's treated as an index into `jam.annotations`.
+            - For JSON: Currently not used, but kept for API consistency.
+            If None (default):
+            - For JAMS: Attempts to find and load a 'multi_segment' annotation as Hierarchy.
+                        If not found, looks for other common segmentation types to load as Segmentation.
+                        If multiple suitable annotations are found, loads the first one.
+            - For JSON: Loads the entire file as a Hierarchy.
 
         Returns
         -------
-        bnl.Hierarchy
-            The loaded hierarchical annotation
-        """
-        import jams
+        bnl.Hierarchy or bnl.Segmentation
+            The loaded annotation data.
 
-        # Get the annotation path
+        Raises
+        ------
+        ValueError
+            If the annotation_type is not found, the file cannot be fetched,
+            no suitable annotation is found in the file, or the specified
+            annotation_id is not found.
+        NotImplementedError
+            If the file type is not supported.
+        """
+        # Import Segmentation locally if needed to avoid circular import at module level with core
+        from .core import Segmentation
+
         if annotation_type not in self.annotations:
-            raise ValueError(f"Annotation type '{annotation_type}' not available for this track")
+            raise ValueError(f"Annotation type '{annotation_type}' not available for this track. Available: {list(self.annotations.keys())}")
 
         annotation_path = self.annotations[annotation_type]
 
-        # Load the JAMS file
-        if self.dataset.data_location == "cloud":
-            # For cloud data, download and load
-            response = requests.get(str(annotation_path))
-            response.raise_for_status()
-            jam = jams.load(io.StringIO(response.text))
+        # --- File Fetching ---
+        file_content: io.BytesIO | io.StringIO
+        is_jams = str(annotation_path).lower().endswith(".jams")
+        is_json = str(annotation_path).lower().endswith(".json")
+
+        try:
+            if isinstance(annotation_path, str) and annotation_path.startswith("http"):
+                response = requests.get(str(annotation_path))
+                response.raise_for_status()
+                if is_jams or is_json:
+                    file_content = io.StringIO(response.text)
+                else: # Should not happen for current annotation types (jams/json are text)
+                    file_content = io.BytesIO(response.content)
+            elif Path(annotation_path).exists():
+                if is_jams or is_json:
+                    with open(annotation_path, "r", encoding="utf-8") as f:
+                        file_content = io.StringIO(f.read())
+                else: # Should not happen
+                    with open(annotation_path, "rb") as f:
+                        file_content = io.BytesIO(f.read())
+            else:
+                raise FileNotFoundError(f"Annotation file not found: {annotation_path}")
+        except requests.exceptions.RequestException as e:
+            raise ValueError(f"Failed to fetch cloud annotation from {annotation_path}: {e}")
+        except FileNotFoundError as e: # Already a ValueError in context, but explicit is fine
+            raise ValueError(str(e))
+        except Exception as e: # General catch for other IO errors
+            raise ValueError(f"Error reading annotation file {annotation_path}: {e}")
+
+        # --- JAMS Loading Logic ---
+        if is_jams:
+            import jams
+            jam = jams.load(file_content)
+
+            selected_ann: jams.Annotation | None = None
+
+            if annotation_id is not None:
+                if isinstance(annotation_id, int):
+                    if 0 <= annotation_id < len(jam.annotations):
+                        selected_ann = jam.annotations[annotation_id]
+                    else:
+                        raise ValueError(
+                            f"Annotation index {annotation_id} out of range for {annotation_path}. "
+                            f"Found {len(jam.annotations)} annotations."
+                        )
+                elif isinstance(annotation_id, str):
+                    found_annotations = jam.annotations.find(namespace=annotation_id)
+                    if not found_annotations:
+                        for ann_obj in jam.annotations: # Search by ann.id (not a standard JAMS search)
+                            if hasattr(ann_obj, 'id') and ann_obj.id == annotation_id:
+                                found_annotations = [ann_obj]
+                                break
+
+                    if found_annotations:
+                        if len(found_annotations) > 1:
+                            print(f"Warning: Multiple annotations found for id/namespace '{annotation_id}' in {annotation_path}. Using the first one.")
+                        selected_ann = found_annotations[0]
+                    else:
+                        raise ValueError(f"No annotation found with id or namespace '{annotation_id}' in {annotation_path}")
+                else:
+                    raise TypeError(f"Invalid annotation_id type: {type(annotation_id)}. Must be int or str.")
+            else: # annotation_id is None (default loading)
+                multi_segment_annotations = jam.annotations.find(namespace="multi_segment")
+                if multi_segment_annotations:
+                    if len(multi_segment_annotations) > 1:
+                        print(f"Warning: Multiple 'multi_segment' annotations found in {annotation_path}. Using the first one.")
+                    selected_ann = multi_segment_annotations[0]
+                else:
+                    common_segment_namespaces = ["segment_open"]
+                    for ns in common_segment_namespaces:
+                        segment_annotations = jam.annotations.find(namespace=ns)
+                        if segment_annotations:
+                            if len(segment_annotations) > 1:
+                                print(f"Warning: Multiple '{ns}' annotations found in {annotation_path} for default. Using the first one.")
+                            selected_ann = segment_annotations[0]
+                            break
+
+            if not selected_ann:
+                if not jam.annotations:
+                    raise ValueError(f"No annotations found in JAMS file: {annotation_path}")
+                else:
+                    available_ns = sorted(list(set(ann.namespace for ann in jam.annotations)))
+                    raise ValueError(
+                        f"Could not automatically determine which annotation to load from {annotation_path}. "
+                        f"No 'multi_segment' or other default segmentation types (e.g., {common_segment_namespaces}) found. "
+                        f"Available namespaces: {available_ns}. Please specify an 'annotation_id' (namespace, ann.id, or index)."
+                    )
+
+            if selected_ann.namespace == "multi_segment":
+                return Hierarchy.from_jams(selected_ann)
+            else:
+                try:
+                    return Segmentation.from_jams(selected_ann)
+                except Exception as e:
+                    raise ValueError(
+                        f"Failed to load annotation (namespace: '{selected_ann.namespace}') as Segmentation "
+                        f"from {annotation_path}: {e}"
+                    )
+
+        # --- JSON Loading Logic ---
+        elif is_json:
+            import json
+            try:
+                json_data = json.load(file_content)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Invalid JSON in {annotation_path}: {e}")
+            return Hierarchy.from_json(json_data)
+
+        # --- Unsupported File Type ---
         else:
-            # For local data, load directly
-            jam = jams.load(str(annotation_path))
-
-        # Find multi_segment annotation
-        multi_segment_ann = None
-        for ann in jam.annotations:
-            if ann.namespace == "multi_segment":
-                multi_segment_ann = ann
-                break
-
-        if multi_segment_ann is None:
-            raise ValueError(f"No multi_segment annotation found in {annotation_path}")
-
-        return Hierarchy.from_jams(multi_segment_ann)
+            raise NotImplementedError(
+                f"Unsupported annotation file type for: {annotation_path}. Only .jams and .json are supported."
+            )
 
 
 class Dataset:

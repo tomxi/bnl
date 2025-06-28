@@ -1,0 +1,27 @@
+{
+    "annotations": [
+        {
+            "namespace": "multi_segment",
+            "data": [
+                {"time": 0.0, "duration": 10.0, "value": {"level": 0, "label": "A"}},
+                {"time": 0.0, "duration": 5.0, "value": {"level": 1, "label": "a"}},
+                {"time": 5.0, "duration": 5.0, "value": {"level": 1, "label": "b"}}
+            ],
+            "sandbox": {},
+            "annotation_metadata": {
+                "annotator": {"name": "Test Annotator"},
+                "version": "1.0",
+                "corpus": "Test Corpus",
+                "annotation_tools": "Test Tool"
+            }
+        }
+    ],
+    "file_metadata": {
+        "title": "Test Hierarchical Song",
+        "artist": "BNL Test Suite",
+        "release": "Test Album",
+        "duration": 10.0,
+        "identifiers": {},
+        "jams_version": "0.3.4"
+    }
+}

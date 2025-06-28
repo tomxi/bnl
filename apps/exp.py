@@ -216,9 +216,25 @@ if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
     # --- Annotation visualization ---
     if track.has_annotations:
         st.header("Annotations")
-        st.write(track.annotations)
-        test_anno = track.load_hierarchy("reference")
-        st.pyplot(test_anno.plot())
+        st.write(f"Available annotation keys: {list(track.annotations.keys())}")
+        # Attempt to load and plot the 'reference' annotation by default if it exists
+        if "reference" in track.annotations:
+            try:
+                # Using the new load_annotation method
+                ref_annotation = track.load_annotation("reference")
+                st.write(f"Loaded 'reference' annotation (type: {type(ref_annotation)}).")
+                if hasattr(ref_annotation, 'plot'):
+                    # Assuming Hierarchy and Segmentation objects have a .plot() method
+                    # that returns a matplotlib Figure.
+                    fig = ref_annotation.plot()
+                    st.pyplot(fig)
+                else:
+                    st.write("Loaded annotation object does not have a direct .plot() method.")
+            except Exception as e:
+                st.error(f"Error loading or plotting 'reference' annotation: {e}")
+        else:
+            st.info("No 'reference' annotation key found for this track.")
+            st.write("Consider adding UI to select other annotation types and IDs if needed.")
 
     else:
         st.warning("No annotations found for this track.")

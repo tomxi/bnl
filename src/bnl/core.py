@@ -218,11 +218,30 @@ class Segmentation(TimeSpan):
 
     @classmethod
     def from_jams(cls, anno: jams.Annotation) -> "Segmentation":
-        """Create segmentation from a JAMS open segment annotation."""
+        """Create a Segmentation object from a JAMS annotation.
+
+        This method iterates through the observations of the provided JAMS
+        annotation, creating a TimeSpan for each. It expects observations
+        to have 'time', 'duration', and 'value' attributes. The resulting
+        Segmentation object will have its `name` attribute set to the
+        namespace of the input JAMS annotation (e.g., 'segment_open',
+        'beat', 'chord').
+
+        Parameters
+        ----------
+        anno : jams.Annotation
+            The JAMS annotation object to convert.
+
+        Returns
+        -------
+        Segmentation
+            A new Segmentation object.
+        """
         segments = []
         for obs in anno:
             segments.append(TimeSpan(start=obs.time, end=obs.time + obs.duration, name=obs.value))
-        return cls(segments=segments)
+        # Use the annotation's namespace as the name for the Segmentation object
+        return cls(segments=segments, name=anno.namespace)
 
 
 @dataclass

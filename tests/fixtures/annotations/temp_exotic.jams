@@ -1,0 +1,11 @@
+
+{
+    "annotations": [
+        {
+            "namespace": "exotic_namespace",
+            "data": [{"time": 0.0, "duration": 5.0, "value": "exotic_segment"}],
+            "sandbox": {}, "annotation_metadata": {}
+        }
+    ],
+    "file_metadata": {"duration": 5.0}
+}

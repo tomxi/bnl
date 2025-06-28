@@ -17,16 +17,30 @@ pixi install
 ```python
 import bnl
 
-# Load cloud dataset (default)
-dataset = bnl.data.Dataset("https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev/manifest_cloud_boolean.csv",
-                           data_source_type="cloud",
-                           cloud_base_url="https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev")
+# Load cloud dataset
+dataset = bnl.data.Dataset("https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev/manifest_cloud_boolean.csv")
 
-# Load a track with metadata and audio
-track = dataset.load_track("2")
-print(f"Now playing: \"{track.info['title']}\" by {track.info['artist']}")
+# Load a track by ID (ensure "2" is in dataset.track_ids)
+track = dataset["2"]
+print(f"Track info: {track.info.get('title', 'N/A')} by {track.info.get('artist', 'N/A')}")
 
-waveform, sr = track.load_audio()  # Load MP3 from cloud
+# Load audio
+waveform, sr = track.load_audio()
+if waveform is not None:
+    print(f"Loaded audio: {waveform.shape}, SR: {sr}")
+
+# Load 'reference' annotation if available
+if "reference" in track.annotations:
+    try:
+        annotation = track.load_annotation("reference")
+        print(f"Loaded reference annotation: {type(annotation)}")
+        # You can now plot or analyze the annotation (bnl.Hierarchy or bnl.Segmentation)
+        # For example, if it's a Hierarchy:
+        # if isinstance(annotation, bnl.core.Hierarchy):
+        #     fig = annotation.plot()
+        #     fig.show() # Requires a graphical backend
+    except Exception as e:
+        print(f"Error loading reference annotation: {e}")
 ```
 
 ## Interactive Data Explorer
