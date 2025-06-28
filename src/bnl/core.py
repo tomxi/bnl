@@ -38,11 +38,14 @@ class TimeSpan:
 
         if self.start > self.end:
             raise ValueError(f"Start time ({self.start}) must be less than end time ({self.end})")
-        if self.name is None:
-            self.name = str(self)
+
+        if self.name is not None:
+            self.name = str(self.name)
+        # else: # If name is None, TimeSpan.__str__ will handle it. Or could set a default like ""
+            # self.name = str(self) # This would make name default to the string representation of the TimeSpan itself
 
     def __str__(self) -> str:
-        lab = self.name if self.name else ""
+        lab = self.name if self.name is not None else "" # Ensure lab is string
         return f"[{self.start:.1f}-{self.end:.1f}s]{lab}"
 
     def __repr__(self) -> str:
@@ -100,9 +103,20 @@ class Segmentation(TimeSpan):
         # order the segments by start time
         self.segments = sorted(self.segments, key=lambda x: x.start)
         # I should check that the segments are non-overlapping and contiguous.
-        for i in range(len(self.segments) - 1):
-            if self.segments[i].end != self.segments[i + 1].start:
-                raise ValueError("Segments must be non-overlapping and contiguous.")
+        # Relax this check for common event-like namespaces where contiguity is not expected.
+        event_namespaces = ["beat", "chord", "onset", "note"] # Add more if needed
+        is_event_segmentation = self.name in event_namespaces
+
+        if not is_event_segmentation:
+            for i in range(len(self.segments) - 1):
+                # Allow for small floating point inaccuracies
+                if not np.isclose(self.segments[i].end, self.segments[i + 1].start):
+                    raise ValueError(
+                        f"Segments must be non-overlapping and contiguous. "
+                        f"Gap found between segment {i} (end: {self.segments[i].end}) and "
+                        f"segment {i+1} (start: {self.segments[i+1].start}). "
+                        f"Segmentation name: '{self.name}'"
+                    )
 
         # Set start/end from segments if available
         if self.segments:

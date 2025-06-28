@@ -1,5 +1,7 @@
 """Core data loading classes for manifest-based datasets."""
 
+from __future__ import annotations
+
 import io
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -237,15 +239,21 @@ class Track:
                             f"Found {len(jam.annotations)} annotations."
                         )
                 elif isinstance(annotation_id, str):
-                    found_annotations = jam.annotations.find(namespace=annotation_id)
-                    if not found_annotations:
-                        for ann_obj in jam.annotations: # Search by ann.id (not a standard JAMS search)
-                            if hasattr(ann_obj, 'id') and ann_obj.id == annotation_id:
-                                found_annotations = [ann_obj]
-                                break
+                    # Replace jam.annotations.find with manual iteration
+                    found_annotations = []
+                    for ann in jam.annotations:
+                        if ann.namespace == annotation_id:
+                            found_annotations.append(ann)
+                        # Also check by ann.id if it exists (not a standard JAMS search, but was in previous code)
+                        elif hasattr(ann, 'id') and ann.id == annotation_id:
+                            found_annotations.append(ann)
+                            break # Exact ID match is usually unique
 
                     if found_annotations:
                         if len(found_annotations) > 1:
+                            # If multiple were found by namespace, and not by a unique ID, print warning.
+                            # If found by ID, it implies uniqueness, so warning might be less relevant,
+                            # but keeping original logic for now.
                             print(f"Warning: Multiple annotations found for id/namespace '{annotation_id}' in {annotation_path}. Using the first one.")
                         selected_ann = found_annotations[0]
                     else:
@@ -253,20 +261,29 @@ class Track:
                 else:
                     raise TypeError(f"Invalid annotation_id type: {type(annotation_id)}. Must be int or str.")
             else: # annotation_id is None (default loading)
-                multi_segment_annotations = jam.annotations.find(namespace="multi_segment")
+                # Replace jam.annotations.find with manual iteration for default loading
+                multi_segment_annotations = []
+                for ann in jam.annotations:
+                    if ann.namespace == "multi_segment":
+                        multi_segment_annotations.append(ann)
+
                 if multi_segment_annotations:
                     if len(multi_segment_annotations) > 1:
                         print(f"Warning: Multiple 'multi_segment' annotations found in {annotation_path}. Using the first one.")
                     selected_ann = multi_segment_annotations[0]
                 else:
-                    common_segment_namespaces = ["segment_open"]
-                    for ns in common_segment_namespaces:
-                        segment_annotations = jam.annotations.find(namespace=ns)
-                        if segment_annotations:
-                            if len(segment_annotations) > 1:
-                                print(f"Warning: Multiple '{ns}' annotations found in {annotation_path} for default. Using the first one.")
-                            selected_ann = segment_annotations[0]
-                            break
+                    common_segment_namespaces = ["segment_open"] # Add other common namespaces if needed
+                    for ns_to_find in common_segment_namespaces:
+                        segment_annotations_for_ns = []
+                        for ann in jam.annotations:
+                            if ann.namespace == ns_to_find:
+                                segment_annotations_for_ns.append(ann)
+
+                        if segment_annotations_for_ns:
+                            if len(segment_annotations_for_ns) > 1:
+                                print(f"Warning: Multiple '{ns_to_find}' annotations found in {annotation_path} for default. Using the first one.")
+                            selected_ann = segment_annotations_for_ns[0]
+                            break # Found a suitable default, stop searching
 
             if not selected_ann:
                 if not jam.annotations:

@@ -41,7 +41,7 @@ def test_track_hierarchy_missing_annotation(tmp_path):
 
     dataset = data.Dataset(manifest_file)
     with pytest.raises(ValueError, match="not available"):
-        dataset["1"].load_hierarchy("missing")
+        dataset["1"].load_annotation("missing")
 
 
 def test_dataset_iteration(tmp_path):

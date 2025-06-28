@@ -61,8 +61,8 @@ def test_segmentation_constructors(constructor, data):
 
     # Test without labels (default labels)
     seg2 = constructor(data)
-    assert seg2.labels == ["[0.0-1.0s]", "[1.0-2.5s]"]
-    assert seg2[0] == bnl.TimeSpan(start=0.0, end=1.0, name="[0.0-1.0s]")
+    assert seg2.labels == [None, None] # If no labels are provided, TimeSpan.name will be None
+    assert seg2[0] == bnl.TimeSpan(start=0.0, end=1.0, name=None) # name should be None
 
 
 def test_str_repr():
@@ -99,9 +99,9 @@ def test_core_edge_cases_and_validation():
     assert empty_hierarchy.bdrys == []
 
     # Test TimeSpan without name
-    unnamed_span = bnl.TimeSpan(start=1.0, end=2.0)
-    assert str(unnamed_span) == "[1.0-2.0s][1.0-2.0s]"
-    assert repr(unnamed_span) == "TimeSpan([1.0-2.0s][1.0-2.0s])"
+    unnamed_span = bnl.TimeSpan(start=1.0, end=2.0) # name will be None
+    assert str(unnamed_span) == "[1.0-2.0s]" # lab part will be empty if name is None
+    assert repr(unnamed_span) == "TimeSpan([1.0-2.0s])" # repr uses str(), so lab is also empty
 
 
 def test_plotting_runs_without_error():

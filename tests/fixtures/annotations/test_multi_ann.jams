@@ -21,7 +21,6 @@
         },
         {
             "namespace": "beat",
-            "id": "beat_annot_123",
             "data": [
                 {"time": 1.0, "duration": 0.0, "value": 1},
                 {"time": 2.0, "duration": 0.0, "value": 2},
