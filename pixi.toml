@@ -9,15 +9,18 @@ platforms = ["osx-arm64", "osx-64", "linux-64", "win-64"]
 [system-requirements]
 
 [dependencies]
-# Core dependencies
+# Core scientific computing
 numpy = "*"
+pandas = "*"
 matplotlib = "*"
+seaborn = "*"
+
+# Audio processing and MIR
 librosa = "*"
 pyarrow = "*"
-seaborn = "*"
 mir_eval = "*"
 
-# Runtime dependencies
+# Runtime environment
 python = "3.12.*"
 requests = ">=2.32.4,<3"
 ffmpeg = ">=7.1.1,<8"
@@ -43,7 +46,6 @@ sphinx-autobuild = "*"
 
 [feature.dev.dependencies]
 # Development dependencies
-# We've removed pylint to consolidate on ruff for speed and simplicity.
 pytest = "*"
 pytest-cov = "*"
 ruff = "*"
@@ -58,15 +60,21 @@ jupyter = "*"
 ipykernel = "*"
 
 [feature.apps.dependencies]
-# Dependencies for running some interactive apps or widgets
+# Dependencies for running interactive apps
 streamlit = "*"
 
 [feature.cloud.dependencies]
+# Cloud storage dependencies (for AWS S3/R2 operations)
 boto3 = ">=1.38.44,<2"
 
 [environments]
+# Default environment includes most common development tools
 default = ["docs", "dev", "notebooks", "apps"]
+
+# Minimal environment with just core dependencies
 minimal = []
+
+# Specialized environments for specific use cases
 docs = ["docs"]
 dev = ["dev"]
 notebooks = ["notebooks"]
@@ -79,29 +87,32 @@ cloud = ["cloud"]
 # ===================================================================
 
 # Format source code (run frequently during development)
-format = "ruff format src/"
+format = "ruff format"
 
 # Check code style without fixing (useful for CI)
-lint = "ruff check src/"
+lint = "ruff check"
 
 # Fix code style issues automatically
-fix = "ruff check src/ --fix"
+fix = "ruff check --fix"
 
 # Run all tests
 test = "pip install -e . && pytest"
 
 # Run full validation pipeline (format + lint + types + test)
-check = "pip install -e . && ruff format --check src/ && ruff check . && mypy src/ --ignore-missing-imports && pytest"
+check = "pip install -e . && ruff format --check && ruff check && mypy src/ apps/ --ignore-missing-imports && pytest"
 
 # ===================================================================
 # Extended Development Tasks
 # ===================================================================
 
+# Install package in development mode (editable install)
+install = "pip install -e ."
+
 # Run tests with coverage report
 test-cov = "pip install -e . && pytest --cov=bnl --cov-report=term-missing"
 
 # Type checking only (faster when you just need types)
-types = "mypy src/ --ignore-missing-imports"
+types = "mypy src/ apps/ --ignore-missing-imports"
 
 # Clean build artifacts and cache  
 clean = "rm -rf build/ dist/ .pytest_cache/ .coverage .mypy_cache/ src/**/__pycache__/ tests/**/__pycache__/ *.egg-info/ || true"

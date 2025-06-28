@@ -6,9 +6,9 @@ from bnl import core
 
 
 def test_hierarchy_empty():
-    """Test empty hierarchy."""
-    h = core.Hierarchy([])
-    assert len(h) == 0
+    """Test that creating a Hierarchy with no layers raises ValueError."""
+    with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
+        core.Hierarchy([])
 
 
 def test_hierarchy_properties():

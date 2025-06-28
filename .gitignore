@@ -25,6 +25,7 @@ coverage.xml
 # Documentation
 docs/_*/
 docs/**/_generated_*/
+docs/build/
 site/
 
 # Pixi
@@ -35,13 +36,4 @@ site/
 
 # macOS
 .DS_Store
-build/lib/bnl/__init__.py
-build/lib/bnl/core.py
-build/lib/bnl/data.py
-build/lib/bnl/metrics/__init__.py
-build/lib/bnl/metrics/flat.py
-build/lib/bnl/metrics/hier.py
-build/lib/bnl/metrics/utils.py
-build/lib/bnl/ops.py
-build/lib/bnl/resources/manifest_cloud_boolean.csv
-build/lib/bnl/viz.py
+build/

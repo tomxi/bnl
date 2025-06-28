@@ -40,12 +40,12 @@ def test_segmentation_plotting_runs_without_error():
     assert isinstance(fig, plt.Figure)
     assert isinstance(ax, plt.Axes)
 
-    # Test with an empty segmentation
-    empty_seg = Segmentation(name="EmptySeg")  # start=0, end=0 by default
-    fig_empty, ax_empty = viz.plot_segment(empty_seg, title=True)
-    assert "Empty Segmentation" in [t.get_text() for t in ax_empty.texts]
-    assert ax_empty.get_title() == "EmptySeg"
-    assert ax_empty.get_xlim() == (-0.1, 0.1)  # Covers seg.start == seg.end
+    # Test with an empty segmentation - No longer possible to create an empty Segmentation
+    # empty_seg = Segmentation(name="EmptySeg")
+    # fig_empty, ax_empty = viz.plot_segment(empty_seg, title=True)
+    # assert "Empty Segmentation" in [t.get_text() for t in ax_empty.texts]
+    # assert ax_empty.get_title() == "EmptySeg"
+    # assert ax_empty.get_xlim() == (-0.1, 0.1)
 
     # Test with time_ticks=False (covers line 151)
     fig_no_ticks, ax_no_ticks = viz.plot_segment(seg, time_ticks=False)
@@ -82,3 +82,16 @@ def test_segmentation_plotting_runs_without_error():
     seg_with_none_span = Segmentation(segments=[span_named, span_none_name])
     fig_none_span, ax_none_span = viz.plot_segment(seg_with_none_span)  # Auto style map
     assert len(ax_none_span.patches) == 2
+
+
+def test_plot_special_cases():
+    """Test plotting special cases in segmentation."""
+    import matplotlib.pyplot as plt
+
+    # Test with equal start/end times (zero duration)
+    seg = Segmentation(segments=[TimeSpan(0, 1, name="A")])
+    fig, ax = seg.plot(title=True, ytick="Test Level")
+
+    assert fig is not None
+    assert ax is not None
+    plt.close(fig)

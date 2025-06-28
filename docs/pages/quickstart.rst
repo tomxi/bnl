@@ -6,9 +6,10 @@ Installation
 
 .. code-block:: bash
 
-    git clone https://github.com/tomxi/bnl2.git
-    cd bnl2
-    pip install -e ".[dev,docs]"
+    git clone https://github.com/tomxi/bnl.git
+    cd bnl
+    pixi install
+    pixi run pip install -e .[dev,docs]
 
 Basic Usage
 -----------
