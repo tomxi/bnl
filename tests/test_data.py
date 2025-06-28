@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-import requests # Added for requests.exceptions and requests.Response
+import requests
 
 from bnl import data
 
@@ -123,7 +123,7 @@ def test_dataset_init_cloud(mock_cloud_manifest_file: Path, requests_mock):
     """Test initializing a Dataset for cloud usage with a cloud manifest URL."""
     # Mock the cloud manifest URL
     cloud_manifest_url = f"{MOCK_CLOUD_URL_BASE}/manifest_cloud.csv"
-    with open(mock_cloud_manifest_file, "r") as f:
+    with open(mock_cloud_manifest_file) as f:
         manifest_content = f.read()
     requests_mock.get(cloud_manifest_url, text=manifest_content)
 
@@ -175,7 +175,7 @@ def test_load_track_cloud(mock_cloud_manifest_file: Path, requests_mock, monkeyp
     """Test loading a track, parsing JAMS, and loading audio from a cloud dataset."""
     # Mock the cloud manifest URL
     cloud_manifest_url = f"{MOCK_CLOUD_URL_BASE}/manifest_cloud.csv"
-    with open(mock_cloud_manifest_file, "r") as f:
+    with open(mock_cloud_manifest_file) as f:
         manifest_content = f.read()
     requests_mock.get(cloud_manifest_url, text=manifest_content)
 
@@ -251,7 +251,7 @@ def test_dataset_handles_non_numeric_track_ids(tmp_path: Path):
 def test_load_hierarchy_no_multisegment_annotation(mock_local_manifest_file: Path, mocker):
     """Test loading hierarchy when JAMS file has no multi_segment annotation."""
     dataset = data.Dataset(mock_local_manifest_file)
-    track = dataset["1"] # Track "1" has a JAMS file
+    track = dataset["1"]  # Track "1" has a JAMS file
 
     # Mock jams.load to return a JAMS object with other annotations but no multi_segment
     mock_jams_obj = mocker.MagicMock(spec=data.jams.JAMS)
@@ -278,8 +278,8 @@ def test_parse_jams_metadata_error_handling(mocker, capsys):
     mocker.patch("requests.get", side_effect=requests.exceptions.RequestException("Mocked HTTP error"))
     data._parse_jams_metadata("http://example.com/error.jams")
     captured = capsys.readouterr()
-    assert "Warning: Could not parse JAMS metadata" in captured.out # Changed to .out
-    assert "Mocked HTTP error" in captured.out # Changed to .out
+    assert "Warning: Could not parse JAMS metadata" in captured.out  # Changed to .out
+    assert "Mocked HTTP error" in captured.out  # Changed to .out
 
     # Test with a JAMS file that causes a parsing error
     mock_response = mocker.MagicMock()
@@ -289,15 +289,15 @@ def test_parse_jams_metadata_error_handling(mocker, capsys):
     mocker.patch("jams.load", side_effect=Exception("Mocked JAMS load error"))
     data._parse_jams_metadata("http://example.com/bad.jams")
     captured = capsys.readouterr()
-    assert "Warning: Could not parse JAMS metadata" in captured.out # Changed to .out
-    assert "Mocked JAMS load error" in captured.out # Changed to .out
+    assert "Warning: Could not parse JAMS metadata" in captured.out  # Changed to .out
+    assert "Mocked JAMS load error" in captured.out  # Changed to .out
 
 
 def test_track_properties_and_methods(mock_local_manifest_file: Path):
     """Test various Track properties and methods like has_annotations and annotations."""
     dataset = data.Dataset(mock_local_manifest_file)
-    track1 = dataset["1"] # Has annotation_reference
-    track2 = dataset["2"] # No annotations
+    track1 = dataset["1"]  # Has annotation_reference
+    track2 = dataset["2"]  # No annotations
 
     assert track1.has_annotations
     assert "reference" in track1.annotations
@@ -338,12 +338,12 @@ def test_load_hierarchy_local(mock_local_manifest_file: Path, mocker):
 def test_load_hierarchy_cloud(mock_cloud_manifest_file: Path, requests_mock, mocker):
     """Test loading a hierarchy from a cloud JAMS file."""
     cloud_manifest_url = f"{MOCK_CLOUD_URL_BASE}/manifest_cloud.csv"
-    with open(mock_cloud_manifest_file, "r") as f:
+    with open(mock_cloud_manifest_file) as f:
         manifest_content = f.read()
     requests_mock.get(cloud_manifest_url, text=manifest_content)
 
     dataset = data.Dataset(cloud_manifest_url)
-    track = dataset["101"] # Has annotation_reference
+    track = dataset["101"]  # Has annotation_reference
 
     expected_jams_url = f"{MOCK_CLOUD_URL_BASE}/ref-jams/101.jams"
     # Ensure this JAMS content is the same as used in test_load_track_cloud or compatible
@@ -356,7 +356,7 @@ def test_load_hierarchy_cloud(mock_cloud_manifest_file: Path, requests_mock, moc
             "annotation_metadata": {"corpus": "cloud_hier"}
         }]
     }"""
-    requests_mock.get(expected_jams_url, text=jams_content_cloud_hierarchy) # Mock JAMS download
+    requests_mock.get(expected_jams_url, text=jams_content_cloud_hierarchy)  # Mock JAMS download
 
     # Mock bnl.data.Hierarchy.from_jams
     # We want the actual jams.load to be called with the content from requests_mock
@@ -364,13 +364,14 @@ def test_load_hierarchy_cloud(mock_cloud_manifest_file: Path, requests_mock, moc
 
     # Temporarily mock jams.load to inspect its argument if needed, but allow real call
     real_jams_load = data.jams.load
-    def Sideload_jams_load_and_capture(string_io_arg, **kwargs):
+
+    def sideload_jams_load_and_capture(string_io_arg, **kwargs):
         # This allows us to check that jams.load was indeed called with stringIO
         assert isinstance(string_io_arg, io.StringIO)
         # Then call the real jams.load
         return real_jams_load(string_io_arg, **kwargs)
 
-    mocker.patch("jams.load", side_effect=Sideload_jams_load_and_capture)
+    mocker.patch("jams.load", side_effect=sideload_jams_load_and_capture)
 
     hierarchy = track.load_hierarchy("reference")
 
@@ -406,9 +407,9 @@ def test_reconstruct_path_errors(mock_local_manifest_file: Path):
     # Switch to cloud temporarily to test cloud error
     dataset.data_location = "cloud"
     dataset.base_url = "http://foo.bar"
-    with pytest.raises(ValueError, match="Unknown asset structure for source type 'cloud'"):
+    with pytest.raises(ValueError, match="Unknown cloud asset structure"):
         dataset._reconstruct_path("1", "unknown_type", "subtype")
-    with pytest.raises(ValueError, match="Unknown asset structure for source type 'cloud'"):
+    with pytest.raises(ValueError, match="Unknown cloud asset structure"):
         dataset._reconstruct_path("1", "audio", "unknown_subtype")
 
 
@@ -416,7 +417,7 @@ def test_dataset_init_value_errors(tmp_path: Path, mocker):
     """Test ValueErrors during Dataset initialization."""
     # Test manifest without track_id column
     no_track_id_manifest = tmp_path / "no_track_id.csv"
-    pd.DataFrame({"some_col": [1,2,3]}).to_csv(no_track_id_manifest, index=False)
+    pd.DataFrame({"some_col": [1, 2, 3]}).to_csv(no_track_id_manifest, index=False)
     with pytest.raises(ValueError, match="Manifest must contain a 'track_id' column"):
         data.Dataset(no_track_id_manifest)
 
@@ -440,7 +441,7 @@ def test_dataset_init_value_errors(tmp_path: Path, mocker):
 def test_track_audio_load_failure_cases(mock_local_manifest_file: Path, monkeypatch, capsys, mocker):
     """Test failure cases for Track.load_audio()."""
     dataset = data.Dataset(mock_local_manifest_file)
-    track_no_audio_in_manifest = dataset["3"] # Track 3 has no audio asset in manifest
+    track_no_audio_in_manifest = dataset["3"]  # Track 3 has no audio asset in manifest
     y, sr = track_no_audio_in_manifest.load_audio()
     assert y is None
     assert sr is None
@@ -473,7 +474,10 @@ def test_track_audio_load_failure_cases(mock_local_manifest_file: Path, monkeypa
         if url == expected_jams_url_for_info:
             resp = requests.Response()
             resp.status_code = 200
-            resp._content = b'{"file_metadata": {"title":"Cloud JAMS", "artist":"Cloud Artist", "duration":123.0}, "annotations":[]}'
+            resp._content = (
+                b'{"file_metadata": {"title":"Cloud JAMS", "artist":"Cloud Artist", '
+                b'"duration":123.0}, "annotations":[]}'
+            )
             return resp
         return original_requests_get(url, **kwargs)
 
@@ -515,33 +519,48 @@ def test_track_audio_load_failure_cases(mock_local_manifest_file: Path, monkeypa
 def test_adobe_path_reconstruction_local_and_cloud(tmp_path: Path):
     """Test specific Adobe path reconstruction logic."""
     manifest_file = tmp_path / "metadata.csv"
-    df = pd.DataFrame({
-        "track_id": ["adobe_test"],
-        "has_annotation_adobe-mu1gamma1": [True],
-        "has_annotation_adobe-mu0.5gamma0.5": [True]
-    })
+    df = pd.DataFrame(
+        {
+            "track_id": ["adobe_test"],
+            "has_annotation_adobe-mu1gamma1": [True],
+            "has_annotation_adobe-mu5gamma5": [True],
+            "has_annotation_adobe-mu1gamma9": [True],
+        }
+    )
     df.to_csv(manifest_file, index=False)
     dataset = data.Dataset(manifest_file)
 
-    # Local
-    # For adobe-mu1gamma1
-    mu_gamma1_for_test = "mu1gamma1".replace("mu", "mu_").replace("gamma", "_gamma_") # -> mu_1_gamma_1
-    subfolder_token1_for_test = mu_gamma1_for_test.replace('.', '_', 1) # -> mu_1_gamma_1
-    expected_subfolder1_str = f"adobe/def_{subfolder_token1_for_test}"
-    expected_local1 = (dataset.dataset_root / expected_subfolder1_str / "adobe_test.mp3.msdclasscsnmagic.json").resolve()
-    assert str(dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu1gamma1").resolve()) == str(expected_local1)
+    # Local - test the actual asset types we support
+    # For adobe-mu1gamma1 -> def_mu_0.1_gamma_0.1
+    expected_local1 = (
+        dataset.dataset_root / "adobe/def_mu_0.1_gamma_0.1" / "adobe_test.mp3.msdclasscsnmagic.json"
+    ).resolve()
+    assert str(dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu1gamma1").resolve()) == str(
+        expected_local1
+    )
 
-    # For adobe-mu0.5gamma0.5 (the problematic one)
-    mu_gamma05_for_test = "mu0.5gamma0.5".replace("mu", "mu_").replace("gamma", "_gamma_") # -> mu_0.5_gamma_0.5
-    subfolder_token05_for_test = mu_gamma05_for_test.replace('.', '_', 1) # -> mu_0_5_gamma_0.5
-    expected_subfolder05_str = f"adobe/def_{subfolder_token05_for_test}"
-    expected_local2 = (dataset.dataset_root / expected_subfolder05_str / "adobe_test.mp3.msdclasscsnmagic.json").resolve()
-    assert str(dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu0.5gamma0.5").resolve()) == str(expected_local2)
+    # For adobe-mu5gamma5 -> def_mu_0.5_gamma_0.5
+    expected_local2 = (
+        dataset.dataset_root / "adobe/def_mu_0.5_gamma_0.5" / "adobe_test.mp3.msdclasscsnmagic.json"
+    ).resolve()
+    assert str(dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu5gamma5").resolve()) == str(
+        expected_local2
+    )
 
-    # Cloud
+    # For adobe-mu1gamma9 -> def_mu_0.1_gamma_0.9
+    expected_local3 = (
+        dataset.dataset_root / "adobe/def_mu_0.1_gamma_0.9" / "adobe_test.mp3.msdclasscsnmagic.json"
+    ).resolve()
+    assert str(dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu1gamma9").resolve()) == str(
+        expected_local3
+    )
+
+    # Cloud - test the actual asset types we support
     dataset.data_location = "cloud"
     dataset.base_url = "http://cloud.test"
-    expected_cloud1 = "http://cloud.test/adobe21-est/def_mu_1_gamma_1/adobe_test.mp3.msdclasscsnmagic.json"
-    expected_cloud2 = "http://cloud.test/adobe21-est/def_mu_0_5_gamma_0_5/adobe_test.mp3.msdclasscsnmagic.json"
+    expected_cloud1 = "http://cloud.test/adobe21-est/def_mu_0.1_gamma_0.1/adobe_test.mp3.msdclasscsnmagic.json"
+    expected_cloud2 = "http://cloud.test/adobe21-est/def_mu_0.5_gamma_0.5/adobe_test.mp3.msdclasscsnmagic.json"
+    expected_cloud3 = "http://cloud.test/adobe21-est/def_mu_0.1_gamma_0.9/adobe_test.mp3.msdclasscsnmagic.json"
     assert dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu1gamma1") == expected_cloud1
-    assert dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu0.5gamma0.5") == expected_cloud2
+    assert dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu5gamma5") == expected_cloud2
+    assert dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu1gamma9") == expected_cloud3

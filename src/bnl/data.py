@@ -260,6 +260,50 @@ class Dataset:
         for track_id in self.track_ids:
             yield self[track_id]
 
+    def _format_adobe_params(self, asset_subtype: str) -> str:
+        """Convert adobe asset subtype to formatted parameters."""
+        mu_gamma = asset_subtype.split("-")[1]
+        # Convert format: mu1gamma1 -> mu_0.1_gamma_0.1
+        if mu_gamma == "mu1gamma1":
+            return "mu_0.1_gamma_0.1"
+        elif mu_gamma == "mu5gamma5":
+            return "mu_0.5_gamma_0.5"
+        elif mu_gamma == "mu1gamma9":
+            return "mu_0.1_gamma_0.9"
+        else:
+            return mu_gamma  # fallback
+
+    def _reconstruct_local_path(self, track_id: str, asset_type: str, asset_subtype: str) -> Path:
+        """Reconstruct local file path for an asset."""
+        root = cast(Path, self.dataset_root)
+
+        if asset_type == "audio":
+            return root / "audio" / track_id / f"audio.{asset_subtype}"
+        elif asset_type == "annotation":
+            if asset_subtype == "reference":
+                return root / "jams" / f"{track_id}.jams"
+            elif "adobe" in asset_subtype:
+                formatted_params = self._format_adobe_params(asset_subtype)
+                subfolder = f"adobe/def_{formatted_params}"
+                return root / subfolder / f"{track_id}.mp3.msdclasscsnmagic.json"
+
+        raise ValueError(f"Unknown local asset structure for: {asset_type}/{asset_subtype}")
+
+    def _reconstruct_cloud_url(self, track_id: str, asset_type: str, asset_subtype: str) -> str:
+        """Reconstruct cloud URL for an asset."""
+        base = cast(str, self.base_url)
+
+        if asset_type == "audio" and asset_subtype == "mp3":
+            return f"{base}/slm-dataset/{track_id}/audio.mp3"
+        elif asset_type == "annotation" and asset_subtype == "reference":
+            return f"{base}/ref-jams/{track_id}.jams"
+        elif asset_type == "annotation" and "adobe" in asset_subtype:
+            formatted_params = self._format_adobe_params(asset_subtype)
+            subfolder = f"adobe21-est/def_{formatted_params}"
+            return f"{base}/{subfolder}/{track_id}.mp3.msdclasscsnmagic.json"
+
+        raise ValueError(f"Unknown cloud asset structure for: {asset_type}/{asset_subtype}")
+
     def _reconstruct_path(self, track_id: str, asset_type: str, asset_subtype: str) -> Path | str:
         """Reconstructs the full path or URL for an asset.
 
@@ -267,33 +311,8 @@ class Dataset:
         (e.g., `scripts/build_local_manifest.py`).
         """
         if self.data_location == "local":
-            # --- Local Path Reconstruction ---
-            # This logic mirrors the structure in `scripts/build_local_manifest.py`
-            root = cast(Path, self.dataset_root)
-            if asset_type == "audio":
-                return root / "audio" / track_id / f"audio.{asset_subtype}"
-            elif asset_type == "annotation":
-                if asset_subtype == "reference":
-                    return root / "jams" / f"{track_id}.jams"
-                elif "adobe" in asset_subtype:
-                    # e.g., adobe-mu1gamma1 -> adobe/def_mu_0.1_gamma_0.1
-                    mu_gamma = asset_subtype.split("-")[1].replace("mu", "mu_").replace("gamma", "_gamma_")
-                    subfolder = f"adobe/def_{mu_gamma.replace('.', '_', 1)}"
-                    return root / subfolder / f"{track_id}.mp3.msdclasscsnmagic.json"
-            raise ValueError(f"Unknown local asset structure for: {asset_type}/{asset_subtype}")
-
+            return self._reconstruct_local_path(track_id, asset_type, asset_subtype)
         elif self.data_location == "cloud":
-            # --- Cloud URL Reconstruction ---
-            # This logic mirrors the structure in `scripts/build_cloud_manifest.py`
-            base = cast(str, self.base_url)
-            if asset_type == "audio" and asset_subtype == "mp3":
-                return f"{base}/slm-dataset/{track_id}/audio.mp3"
-            elif asset_type == "annotation" and asset_subtype == "reference":
-                return f"{base}/ref-jams/{track_id}.jams"
-            elif asset_type == "annotation" and "adobe" in asset_subtype:
-                # e.g., adobe-mu1gamma1 -> adobe21-est/def_mu_0.1_gamma_0.1
-                mu_gamma = asset_subtype.split("-")[1].replace("mu", "mu_").replace("gamma", "_gamma_")
-                subfolder = f"adobe21-est/def_{mu_gamma.replace('.', '_', 1)}"
-                return f"{base}/{subfolder}/{track_id}.mp3.msdclasscsnmagic.json"
-
-        raise ValueError(f"Unknown asset structure for source type '{self.data_location}'")
+            return self._reconstruct_cloud_url(track_id, asset_type, asset_subtype)
+        else:
+            raise ValueError(f"Unknown asset structure for source type '{self.data_location}'")

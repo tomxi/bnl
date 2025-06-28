@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import pytest
 
-from bnl import Segmentation, viz, TimeSpan # Added TimeSpan
+from bnl import Segmentation, TimeSpan, viz  # Added TimeSpan
 
 
 @pytest.fixture(autouse=True)
@@ -29,7 +29,7 @@ def test_label_style_dict():
     # This is an indirect check; direct check of cmap is harder.
     # If it used tab10, colors would repeat much sooner.
     # Here, we just ensure it runs and produces the expected structure.
-    assert many_styles["Label_0"]["facecolor"] != many_styles["Label_15"]["facecolor"] # tab20 has 20 distinct colors
+    assert many_styles["Label_0"]["facecolor"] != many_styles["Label_15"]["facecolor"]  # tab20 has 20 distinct colors
 
 
 def test_segmentation_plotting_runs_without_error():
@@ -41,20 +41,20 @@ def test_segmentation_plotting_runs_without_error():
     assert isinstance(ax, plt.Axes)
 
     # Test with an empty segmentation
-    empty_seg = Segmentation(name="EmptySeg") # start=0, end=0 by default
+    empty_seg = Segmentation(name="EmptySeg")  # start=0, end=0 by default
     fig_empty, ax_empty = viz.plot_segment(empty_seg, title=True)
     assert "Empty Segmentation" in [t.get_text() for t in ax_empty.texts]
     assert ax_empty.get_title() == "EmptySeg"
-    assert ax_empty.get_xlim() == (-0.1, 0.1) # Covers seg.start == seg.end
+    assert ax_empty.get_xlim() == (-0.1, 0.1)  # Covers seg.start == seg.end
 
     # Test with time_ticks=False (covers line 151)
     fig_no_ticks, ax_no_ticks = viz.plot_segment(seg, time_ticks=False)
     assert len(ax_no_ticks.get_xticks()) == 0
 
     # Test with seg.name = None (covers conditional title)
-    seg_no_name = Segmentation.from_boundaries([0, 1], ["X"]) # name will be None
+    seg_no_name = Segmentation.from_boundaries([0, 1], ["X"])  # name will be None
     fig_no_name, ax_no_name = viz.plot_segment(seg_no_name, title=True)
-    assert ax_no_name.get_title() == "" # No title should be set
+    assert ax_no_name.get_title() == ""  # No title should be set
 
     # Test for span.name not in style_map or span.name is None (covers line 108 default get)
     # Create a segmentation where one span has a name that won't be in the auto-style_map
@@ -65,13 +65,13 @@ def test_segmentation_plotting_runs_without_error():
 
     # Case 1: Explicit style_map that misses "UnknownInMap" and handles "" for None
     seg_mixed_names = Segmentation(segments=[span_named, span_none_name, span_unknown_name])
-    custom_style_map = viz.label_style_dict(["Known"]) # Only "Known" is in map
-    custom_style_map[""] = {"facecolor": "gray"} # Style for None name (becomes "" key)
+    custom_style_map = viz.label_style_dict(["Known"])  # Only "Known" is in map
+    custom_style_map[""] = {"facecolor": "gray"}  # Style for None name (becomes "" key)
 
     fig_mixed, ax_mixed = viz.plot_segment(seg_mixed_names, style_map=custom_style_map)
     # This ensures that get(span.name or "", {}) was called and didn't crash.
     # Further checks could inspect the actual colors if specific defaults were expected.
-    assert len(ax_mixed.patches) == 3 # Check that all spans were plotted
+    assert len(ax_mixed.patches) == 3  # Check that all spans were plotted
 
     # Case 2: Auto-generated style_map with a None name span
     # The auto-style map generated from `seg_mixed_names.labels` (["Known", None, "UnknownInMap"])
@@ -80,5 +80,5 @@ def test_segmentation_plotting_runs_without_error():
     # label_style_dict filters out None labels before creating styles.
     # So, a span with name=None will result in style_map.get("", {})
     seg_with_none_span = Segmentation(segments=[span_named, span_none_name])
-    fig_none_span, ax_none_span = viz.plot_segment(seg_with_none_span) # Auto style map
+    fig_none_span, ax_none_span = viz.plot_segment(seg_with_none_span)  # Auto style map
     assert len(ax_none_span.patches) == 2

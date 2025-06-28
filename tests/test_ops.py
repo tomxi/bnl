@@ -2,11 +2,14 @@
 
 import pytest
 
-from bnl import ops
-from bnl import core # For creating dummy Hierarchy objects
+from bnl import (
+    core,  # For creating dummy Hierarchy objects
+    ops,
+)
 
 # It's good practice to also test with type hints if they are complex
 # but for these stubs, basic calls are sufficient for coverage.
+
 
 def test_to_monotonic_stub():
     """Test the to_monotonic stub function."""
@@ -49,6 +52,7 @@ def test_boundary_salience_stub():
         assert result_with_r is None
     except Exception as e:
         pytest.fail(f"ops.boundary_salience with r param raised an exception: {e}")
+
 
 # To run this test specifically:
 # pixi run pytest tests/test_ops.py

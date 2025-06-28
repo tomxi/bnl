@@ -122,9 +122,8 @@ def test_plotting_runs_without_error():
 
     # Test Segmentation plotting with no segments
     empty_seg = bnl.Segmentation()
-    fig, ax = empty_seg.plot() # Should plot an empty axes
+    fig, ax = empty_seg.plot()  # Should plot an empty axes
     plt.close(fig)
-
 
     # Test Hierarchy plotting
     seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0], ["A"])
@@ -146,6 +145,7 @@ def test_plotting_runs_without_error():
     with pytest.raises(ValueError, match="Cannot plot empty hierarchy"):
         empty_hierarchy = bnl.Hierarchy()
         empty_hierarchy.plot()
+
 
 def test_segmentation_from_jams(mocker):
     """Test creating a Segmentation from a JAMS annotation."""
@@ -170,6 +170,7 @@ def test_segmentation_from_jams(mocker):
     assert seg.segments[1].end == 2.5
     assert seg.segments[1].name == "segment2"
 
+
 def test_hierarchy_from_jams(mocker):
     """Test creating a Hierarchy from a JAMS multi_segment annotation."""
     # Mock JAMS annotation and hierarchy_flatten
@@ -180,14 +181,8 @@ def test_hierarchy_from_jams(mocker):
     # Represents two levels:
     # Level 0: [(0.0, 5.0, "A")]
     # Level 1: [(0.0, 2.0, "a"), (2.0, 5.0, "b")]
-    mock_hier_intervals = [
-        [(0.0, 5.0)],
-        [(0.0, 2.0), (2.0, 5.0)]
-    ]
-    mock_hier_labels = [
-        ["A"],
-        ["a", "b"]
-    ]
+    mock_hier_intervals = [[(0.0, 5.0)], [(0.0, 2.0), (2.0, 5.0)]]
+    mock_hier_labels = [["A"], ["a", "b"]]
     mocker.patch("jams.eval.hierarchy_flatten", return_value=(mock_hier_intervals, mock_hier_labels))
 
     hierarchy = bnl.Hierarchy.from_jams(mock_anno)
