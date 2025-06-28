@@ -280,21 +280,20 @@ class Hierarchy(TimeSpan):
     def plot(  # type: ignore[override]
         self,
         figsize: tuple[float, float] = (6, 4),
-        **style_map: Any,
-    ) -> tuple:
+        **kwargs: Any,
+    ) -> Figure:
         """Plot the hierarchy with each layer in a separate subplot.
 
         Parameters
         ----------
         figsize : tuple, optional
             Figure size (width, height)
-        style_map : dict, optional
-            A dictionary of style parameters for the plot.
-            See `bnl.viz.label_style_dict` for available parameters.
+        **kwargs : dict, optional
+            Additional keyword arguments passed to layer plotting.
 
         Returns
         -------
-        fig, axes : matplotlib figure and axes
+        fig : matplotlib figure
         """
         from .viz import label_style_dict
 
@@ -309,9 +308,11 @@ class Hierarchy(TimeSpan):
 
         # Plot each layer using Segmentation.plot()
         for i, (layer, ax) in enumerate(zip(self.layers, axes)):
-            style_map = label_style_dict(layer.labels) if len(layer) > 0 else None
+            layer_style_map: dict[str, Any] | None = label_style_dict(layer.labels) if len(layer) > 0 else None
             # Use Segmentation.plot() which will call TimeSpan.plot() for each segment
-            layer.plot(ax=ax, style_map=style_map, title=False, ytick=f"Level {i}", time_ticks=(i == n_layers - 1))
+            layer.plot(
+                ax=ax, style_map=layer_style_map, title=False, ytick=f"Level {i}", time_ticks=(i == n_layers - 1)
+            )
 
         # Set x-label only on bottom subplot
         axes[-1].set_xlabel("Time (s)")
@@ -335,38 +336,15 @@ class Hierarchy(TimeSpan):
         if jams_annotation.namespace != "multi_segment":
             raise ValueError(f"Expected 'multi_segment' namespace, got '{jams_annotation.namespace}'")
 
-        # Group observations by level
-        levels: dict[int, list[tuple[float, float, str]]] = {}
-        for obs in jams_annotation.data:
-            level = obs.value["level"]
-            label = obs.value["label"]
+        # Use JAMS' built-in hierarchy flattening function
+        from jams.eval import hierarchy_flatten
 
-            if level not in levels:
-                levels[level] = []
-            levels[level].append((obs.time, obs.time + obs.duration, label))
+        hier_intervals, hier_labels = hierarchy_flatten(jams_annotation)
 
-        # Create Segmentation objects for each level
+        # Convert each level to a Segmentation using existing constructor
         segmentations = []
-        for level in sorted(levels.keys()):
-            # Extract boundaries and labels for this level
-            intervals = levels[level]
-            boundaries = sorted(
-                set([start for start, end, label in intervals] + [end for start, end, label in intervals])
-            )
-
-            # Create labels list corresponding to segments between boundaries
-            labels: list[str | None] = []
-            for i in range(len(boundaries) - 1):
-                seg_start, seg_end = boundaries[i], boundaries[i + 1]
-                # Find the label for this segment
-                for start, end, label in intervals:
-                    if start <= seg_start and seg_end <= end:
-                        labels.append(label)
-                        break
-                else:
-                    labels.append(None)  # No label found for this segment
-
-            seg = Segmentation.from_boundaries(boundaries, labels)
+        for intervals, labels in zip(hier_intervals, hier_labels):
+            seg = Segmentation.from_intervals(np.array(intervals), labels)
             segmentations.append(seg)
 
         return cls(layers=segmentations)
@@ -379,12 +357,12 @@ class Hierarchy(TimeSpan):
 
     @classmethod
     def from_boundaries(
-        cls, boundaries: list[float], labels: list[str | None] | None = None, name: str | None = None
+        cls, boundaries: list[list[float]], labels: list[list[str] | None] | None = None, name: str | None = None
     ) -> "Hierarchy":
         raise NotImplementedError
 
     @classmethod
     def from_intervals(
-        cls, intervals: np.ndarray, labels: list[str | None] | None = None, name: str | None = None
+        cls, intervals: list[np.ndarray], labels: list[list[str] | None] | None = None, name: str | None = None
     ) -> "Hierarchy":
         raise NotImplementedError
