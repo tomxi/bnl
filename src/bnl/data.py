@@ -130,7 +130,7 @@ class Track:
         audio_path = self.info[audio_path_key]
 
         # Expand user path if it's a local path
-        expanded_audio_path = Path(audio_path).expanduser() if isinstance(audio_path, (str, Path)) else audio_path
+        expanded_audio_path = Path(audio_path).expanduser() if isinstance(audio_path, str | Path) else audio_path
 
         try:
             if isinstance(audio_path, str) and audio_path.startswith("http"):

@@ -32,6 +32,10 @@ class TimeSpan:
     name: str | None = None
 
     def __post_init__(self) -> None:
+        # Round time values to 4 decimal places for consistent JSON serialization
+        self.start = np.round(self.start, 4)
+        self.end = np.round(self.end, 4)
+
         if self.start > self.end:
             raise ValueError(f"Start time ({self.start}) must be less than end time ({self.end})")
         if self.name is None:
@@ -214,15 +218,11 @@ class Segmentation(TimeSpan):
 
     @classmethod
     def from_jams(cls, anno: jams.Annotation) -> "Segmentation":
-        """Create segmentation from a JAMS annotation. (Not yet implemented)"""
-        # TODO: Implement JAMS open_segment annotation parsing
-        raise NotImplementedError
-
-    @classmethod
-    def from_json(cls, json_data: dict[str, Any]) -> "Segmentation":
-        """Create segmentation from a JAMS annotation. (Not yet implemented)"""
-        # TODO: Implement JSON open_segment annotation parsing
-        raise NotImplementedError
+        """Create segmentation from a JAMS open segment annotation."""
+        segments = []
+        for obs in anno:
+            segments.append(TimeSpan(start=obs.time, end=obs.time + obs.duration, name=obs.value))
+        return cls(segments=segments)
 
 
 @dataclass
