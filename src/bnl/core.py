@@ -277,15 +277,108 @@ class Hierarchy(TimeSpan):
 
         return f"Hierarchy({len(self)} levels over {self.start:.2f}s-{self.end:.2f}s)"
 
-    def plot(self, **kwargs: Any) -> None:  # type: ignore[override]
-        """Plots the hierarchy. (Not yet implemented)"""
-        raise NotImplementedError
+    def plot(  # type: ignore[override]
+        self, figsize: tuple[float, float] = (8, 6), layer_height: float = 1.0, layer_spacing: float = 0.2
+    ) -> tuple:
+        """Plot the hierarchy with each layer in a separate subplot.
+
+        Parameters
+        ----------
+        figsize : tuple, optional
+            Figure size (width, height)
+        layer_height : float, optional
+            Height of each layer in the plot
+        layer_spacing : float, optional
+            Spacing between layers
+
+        Returns
+        -------
+        fig, axes : matplotlib figure and axes
+        """
+        from .viz import label_style_dict
+
+        n_layers = len(self.layers)
+        if n_layers == 0:
+            raise ValueError("Cannot plot empty hierarchy")
+
+        # Create subplots - one for each layer
+        fig, axes = plt.subplots(n_layers, 1, figsize=figsize, sharex=True)
+        if n_layers == 1:
+            axes = [axes]
+
+        # Plot each layer using Segmentation.plot()
+        for i, (layer, ax) in enumerate(zip(self.layers, axes)):
+            # Create style map for this layer with ymin/ymax for positioning
+            if len(layer) > 0:
+                style_map = label_style_dict(layer.labels)
+                # Add ymin/ymax to each style to position segments properly
+                for label_style in style_map.values():
+                    label_style.update({"ymin": 0, "ymax": layer_height})
+            else:
+                style_map = None
+
+            # Use Segmentation.plot() which will call TimeSpan.plot() for each segment
+            layer.plot(ax=ax, style_map=style_map, title=False, ytick=f"Level {i}")
+
+            # Set y limits for this subplot
+            ax.set_ylim(0, layer_height)
+
+        # Set x-label only on bottom subplot
+        axes[-1].set_xlabel("Time (s)")
+        return fig
 
     @classmethod
-    def from_jams(cls, anno: jams.Annotation) -> "Hierarchy":
-        """Create hierarchy from a JAMS annotation. (Not yet implemented)"""
-        # TODO: Implement JAMS multilevel annotation parsing
-        raise NotImplementedError
+    def from_jams(cls, jams_annotation: "jams.Annotation") -> "Hierarchy":
+        """Create a Hierarchy from a JAMS multi_segment annotation.
+
+        Parameters
+        ----------
+        jams_annotation : jams.Annotation
+            A JAMS annotation with namespace 'multi_segment'
+
+        Returns
+        -------
+        Hierarchy
+            A new Hierarchy object with multiple segmentation layers
+        """
+        if jams_annotation.namespace != "multi_segment":
+            raise ValueError(f"Expected 'multi_segment' namespace, got '{jams_annotation.namespace}'")
+
+        # Group observations by level
+        levels: dict[int, list[tuple[float, float, str]]] = {}
+        for obs in jams_annotation.data:
+            level = obs.value["level"]
+            label = obs.value["label"]
+
+            if level not in levels:
+                levels[level] = []
+            levels[level].append((obs.time, obs.time + obs.duration, label))
+
+        # Create Segmentation objects for each level
+        segmentations = []
+        for level in sorted(levels.keys()):
+            # Extract boundaries and labels for this level
+            intervals = levels[level]
+            boundaries = sorted(
+                set([start for start, end, label in intervals] + [end for start, end, label in intervals])
+            )
+
+            # Create labels list corresponding to segments between boundaries
+            labels: list[str | None] = []
+            for i in range(len(boundaries) - 1):
+                seg_start, seg_end = boundaries[i], boundaries[i + 1]
+                # Find the label for this segment
+                for start, end, label in intervals:
+                    if start <= seg_start and seg_end <= end:
+                        labels.append(label)
+                        break
+                else:
+                    labels.append(None)  # No label found for this segment
+
+            seg = Segmentation.from_boundaries(boundaries, labels)
+            segmentations.append(seg)
+
+        return cls(layers=segmentations)
 
     @classmethod
     def from_json(cls, json_data: dict[str, Any]) -> "Hierarchy":

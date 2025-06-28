@@ -98,6 +98,23 @@ class Track:
         self._info_cache = info
         return self._info_cache
 
+    @property
+    def has_annotations(self) -> bool:
+        """Checks if the track has any associated annotations."""
+        # Check for any column that starts with 'has_annotation_' and is True
+        return self.manifest_row.filter(like="has_annotation_").any()
+
+    @property
+    def annotations(self) -> dict[str, str | Path]:
+        """Returns a dictionary of available annotation paths."""
+        ann_paths = {}
+        for key, value in self.info.items():
+            if key.startswith("annotation_") and key.endswith("_path"):
+                # e.g., annotation_reference_path -> reference
+                ann_type = key.replace("annotation_", "").replace("_path", "")
+                ann_paths[ann_type] = value
+        return ann_paths
+
     def load_audio(self) -> tuple[np.ndarray | None, float | None]:
         """Loads the audio waveform and sample rate for this track."""
         # Find the primary audio asset path from the info dictionary
@@ -126,6 +143,49 @@ class Track:
         except Exception as e:
             print(f"Warning: Failed to load audio from {audio_path}: {e}")
             return None, None
+
+    def load_hierarchy(self, annotation_type: str) -> "bnl.Hierarchy":
+        """Load a hierarchical annotation as a Hierarchy object.
+
+        Parameters
+        ----------
+        annotation_type : str
+            Type of annotation to load (e.g., 'reference')
+
+        Returns
+        -------
+        bnl.Hierarchy
+            The loaded hierarchical annotation
+        """
+        import jams
+
+        # Get the annotation path
+        if annotation_type not in self.annotations:
+            raise ValueError(f"Annotation type '{annotation_type}' not available for this track")
+
+        annotation_path = self.annotations[annotation_type]
+
+        # Load the JAMS file
+        if self.dataset.data_source_type == "cloud":
+            # For cloud data, download and load
+            response = requests.get(str(annotation_path))
+            response.raise_for_status()
+            jam = jams.load(io.StringIO(response.text))
+        else:
+            # For local data, load directly
+            jam = jams.load(str(annotation_path))
+
+        # Find multi_segment annotation
+        multi_segment_ann = None
+        for ann in jam.annotations:
+            if ann.namespace == "multi_segment":
+                multi_segment_ann = ann
+                break
+
+        if multi_segment_ann is None:
+            raise ValueError(f"No multi_segment annotation found in {annotation_path}")
+
+        return Hierarchy.from_jams(multi_segment_ann)
 
 
 class Dataset:
