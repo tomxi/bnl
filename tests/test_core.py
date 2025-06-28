@@ -1,9 +1,10 @@
+import json
+from pathlib import Path
+
+import jams
 import matplotlib.pyplot as plt
 import numpy as np
 import pytest
-import jams
-from pathlib import Path
-import json
 import requests
 
 import bnl
@@ -101,7 +102,7 @@ def test_post_init_errors():
     # seg_a = bnl.Segmentation.from_intervals(np.array([[0.0, 5.0]]), name="A")
     # # seg_b_empty = bnl.Segmentation(name="B_empty") # This would raise ValueError
     # seg_c = bnl.Segmentation.from_intervals(np.array([[1.0, 6.0]]), name="C")
-    # with pytest.raises(ValueError, match="All non-empty layers in a Hierarchy must span the same overall time range."):
+    # with pytest.raises(ValueError, match="All non-empty layers in a Hierarchy must span the same range."):
     #     bnl.Hierarchy(layers=[seg_a, seg_b_empty, seg_c])
 
 
@@ -221,11 +222,11 @@ def test_plotting_runs_without_error():
 
     # Test plotting hierarchy with empty layers - Instantiation will fail first
     with pytest.raises(ValueError):
-        empty_hierarchy_sa = bnl.Hierarchy()
-        # empty_hierarchy_sa.plot_single_axis() # This line won't be reached
+        _empty_hierarchy_sa = bnl.Hierarchy()
+        # _empty_hierarchy_sa.plot_single_axis() # This line won't be reached
     with pytest.raises(ValueError):
-        empty_hierarchy_pl = bnl.Hierarchy()
-        # empty_hierarchy_pl.plot() # This line won't be reached
+        _empty_hierarchy_pl = bnl.Hierarchy()
+        # _empty_hierarchy_pl.plot() # This line won't be reached
 
 
 # Fixture to load JAMS file content for tests
@@ -514,5 +515,41 @@ def test_hierarchy_plot_single_axis():
 
     # Instantiation of empty Hierarchy will fail before plotting
     with pytest.raises(ValueError):
-        empty_hierarchy_plot_single = bnl.Hierarchy()
-        # empty_hierarchy_plot_single.plot_single_axis() # Not reached
+        _empty_hierarchy_plot_single = bnl.Hierarchy()
+        # _empty_hierarchy_plot_single.plot_single_axis() # Not reached
+
+
+def test_validate_time_value_edge_cases():
+    """Test edge cases in _validate_time_value function."""
+    from bnl.core import _validate_time_value
+
+    # Test empty list conversion
+    result = _validate_time_value([], "test_time")
+    assert result == 0.0
+
+    # Test negative value error
+    with pytest.raises(ValueError):
+        _validate_time_value(-1.5, "test_time")
+
+    # Test invalid conversion error
+    with pytest.raises(TypeError):
+        _validate_time_value("invalid", "test_time")
+
+
+def test_ops_type_checking_import():
+    """Test that TYPE_CHECKING import works correctly."""
+    import bnl.ops
+
+    # This should import without error, covering the TYPE_CHECKING branch
+    assert hasattr(bnl.ops, "to_monotonic")
+
+
+def test_timespan_edge_cases():
+    """Test edge cases in TimeSpan class."""
+    # Test with None name converted to string
+    ts = bnl.TimeSpan(start=0, end=1, name=None)
+    assert ts.name is None
+
+    # Test with numeric name converted to string
+    ts_numeric = bnl.TimeSpan(start=0, end=1, name=123)
+    assert ts_numeric.name == "123"

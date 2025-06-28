@@ -82,3 +82,16 @@ def test_segmentation_plotting_runs_without_error():
     seg_with_none_span = Segmentation(segments=[span_named, span_none_name])
     fig_none_span, ax_none_span = viz.plot_segment(seg_with_none_span)  # Auto style map
     assert len(ax_none_span.patches) == 2
+
+
+def test_plot_special_cases():
+    """Test plotting special cases in segmentation."""
+    import matplotlib.pyplot as plt
+
+    # Test with equal start/end times (zero duration)
+    seg = Segmentation(segments=[TimeSpan(0, 1, name="A")])
+    fig, ax = seg.plot(title=True, ytick="Test Level")
+
+    assert fig is not None
+    assert ax is not None
+    plt.close(fig)

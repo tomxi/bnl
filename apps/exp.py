@@ -225,9 +225,8 @@ if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
                 ref_annotation = track.load_annotation("reference")
                 st.write(f"Loaded 'reference' annotation (type: {type(ref_annotation)}).")
                 if hasattr(ref_annotation, "plot"):
-                    # Assuming Hierarchy and Segmentation objects have a .plot() method
-                    # that returns a matplotlib Figure.
-                    fig = ref_annotation.plot()
+                    # BNL plot methods return (fig, ax) tuple
+                    fig, _ = ref_annotation.plot()
                     st.pyplot(fig)
                 else:
                     st.write("Loaded annotation object does not have a direct .plot() method.")

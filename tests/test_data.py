@@ -650,7 +650,8 @@ def annotation_test_dataset(
                 return original_dataset_root / "jams" / f"{track_id}.jams"
 
         # This print can be noisy but useful for debugging which paths are requested
-        # print(f"Warning: Mock _reconstruct_path unhandled or fallback: track_id='{track_id}', asset_type='{asset_type}', asset_subtype='{asset_subtype}'")
+        # print(f"Warning: Mock _reconstruct_path unhandled or fallback: track_id='{track_id}', "
+        #       f"asset_type='{asset_type}', asset_subtype='{asset_subtype}'")
 
         if asset_type == "audio" and asset_subtype == "mp3":
             return original_dataset_root / "audio" / track_id / f"audio.{asset_subtype}"  # dummy path
@@ -661,7 +662,8 @@ def annotation_test_dataset(
         # or an unexpected path reconstruction request.
         err_msg = (
             f"Mock _reconstruct_path explicitly unhandled in test: "
-            f"track_id='{track_id}', asset_type='{asset_type}', asset_subtype='{asset_subtype}'"
+            f"track_id='{track_id}', asset_type='{asset_type}', "
+            f"asset_subtype='{asset_subtype}'"
         )
         raise ValueError(err_msg)
 

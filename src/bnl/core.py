@@ -192,7 +192,7 @@ class Segmentation(TimeSpan):
         return cls.from_intervals(intervals, labels, name)
 
     @classmethod
-    def from_jams(cls, anno: jams.Annotation) -> "Segmentation":
+    def from_jams(cls, anno: "jams.Annotation") -> "Segmentation":
         """Create a Segmentation object from a JAMS annotation."""
         segments = [TimeSpan(start=obs.time, end=obs.time + obs.duration, name=obs.value) for obs in anno]
         return cls(segments=segments, name=anno.namespace)
@@ -260,9 +260,6 @@ class Hierarchy(TimeSpan):
         figsize = kwargs.pop("figsize", None)
         n_layers = len(self.layers)
 
-        if n_layers == 0:
-            raise ValueError("Cannot plot empty hierarchy")
-
         fig, axes = plt.subplots(
             n_layers, 1, figsize=figsize or (6, 0.5 + 0.5 * n_layers), sharex=True, constrained_layout=True
         )
@@ -272,13 +269,13 @@ class Hierarchy(TimeSpan):
         for i, (layer, ax) in enumerate(zip(self.layers, axes)):
             layer.plot(
                 ax=ax,
-                style_map=label_style_dict(layer.labels) if layer.segments else None,
+                style_map=label_style_dict(layer.labels),
                 title=False,
                 ytick=f"Level {i}",
                 time_ticks=(i == n_layers - 1),
             )
 
-        # We always have at least one axis since we check n_layers == 0 above
+        # We always have at least one axis since Hierarchy is guaranteed to have at least one layer
         axes[-1].set_xlabel("Time (s)")
         return fig, axes[-1]
 
@@ -295,8 +292,6 @@ class Hierarchy(TimeSpan):
         from .viz import label_style_dict
 
         n_layers = len(self.layers)
-        if n_layers == 0:
-            raise ValueError("Cannot plot empty hierarchy")
 
         fig: Figure | SubFigure
         if ax is None:
@@ -346,9 +341,6 @@ class Hierarchy(TimeSpan):
         total_height: float,
     ) -> None:
         """Helper to plot a single layer on the axis."""
-        if not layer.segments:
-            return
-
         style_map = style_provider(layer.labels)
         layer_ymax = layer_ymin + layer_height
 
