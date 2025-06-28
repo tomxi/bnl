@@ -348,10 +348,178 @@ class Hierarchy(TimeSpan):
         return cls(layers=segmentations)
 
     @classmethod
-    def from_json(cls, json_data: dict[str, Any]) -> "Hierarchy":
-        """Create hierarchy from a JSON annotation. (Not yet implemented)"""
-        # TODO: Implement JSON multilevel annotation parsing
-        raise NotImplementedError
+    def from_json(cls, json_data: list[list[list[Any]]], name: str | None = None) -> "Hierarchy":
+        """Create hierarchy from a JSON annotation (Adobe EST format).
+
+        The JSON data is expected to be a list of layers. Each layer is a list
+        containing two sub-lists:
+        1. A list of intervals, where each interval is `[start_time, end_time]`.
+        2. A list of corresponding labels for these intervals.
+
+        Example structure:
+        [
+            [[[0.0, 10.0]], ["A"]],  # Layer 0
+            [[[0.0, 5.0], [5.0, 10.0]], ["a", "b"]]  # Layer 1
+        ]
+
+        Parameters
+        ----------
+        json_data : list[list[list[Any]]]
+            The Adobe EST JSON data.
+        name : str, optional
+            A name for the hierarchy.
+
+        Returns
+        -------
+        Hierarchy
+            A new Hierarchy object.
+        """
+        segmentations = []
+        if not isinstance(json_data, list):
+            raise ValueError("JSON data must be a list of layers.")
+
+        for i, layer_data in enumerate(json_data):
+            if not (isinstance(layer_data, list) and len(layer_data) == 2):
+                raise ValueError(
+                    f"Layer {i} is malformed. Expected a list of [intervals, labels], got: {layer_data}"
+                )
+
+            intervals_data, labels_data = layer_data
+
+            if not (isinstance(intervals_data, list) and isinstance(labels_data, list)):
+                raise ValueError(
+                    f"Layer {i} intervals or labels are not lists. Got intervals: {type(intervals_data)}, labels: {type(labels_data)}"
+                )
+
+            if len(intervals_data) != len(labels_data):
+                raise ValueError(
+                    f"Layer {i} has mismatched number of intervals and labels. "
+                    f"{len(intervals_data)} intervals, {len(labels_data)} labels."
+                )
+
+            segments = []
+            for interval, label in zip(intervals_data, labels_data):
+                # Accommodate for intervals possibly being nested e.g. [[[0.0, 10.0]]] vs [[0.0, 10.0]]
+                actual_interval = interval
+                if isinstance(interval, list) and len(interval) == 1 and \
+                   isinstance(interval[0], list) and len(interval[0]) == 2:
+                    actual_interval = interval[0]
+
+                if not (isinstance(actual_interval, list) and len(actual_interval) == 2):
+                     raise ValueError(f"Malformed interval structure in layer {i}: {actual_interval}. Expected [start, end].")
+
+                start, end = actual_interval
+                try:
+                    segments.append(TimeSpan(start=float(start), end=float(end), name=str(label)))
+                except ValueError as e: # Catch errors from float conversion or TimeSpan post_init
+                    raise ValueError(f"Error creating TimeSpan for interval {actual_interval} with label '{label}' in layer {i}: {e}")
+
+            segments.sort(key=lambda s: s.start)
+            segmentations.append(Segmentation(segments=segments))
+
+        return cls(layers=segmentations, name=name)
+
+    def plot_single_axis(
+        self,
+        ax: Axes | None = None,
+        figsize: tuple[float, float] | None = None,
+        title: bool = True,
+        time_ticks: bool = True,
+        layer_height: float = 0.8,
+        layer_gap: float = 0.1,
+    ) -> tuple[Figure | SubFigure, Axes]:
+        """Plot all layers of the hierarchy on a single axis.
+
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            An existing axes to plot on.
+        figsize : tuple, optional
+            Figure size (width, height) if creating a new figure.
+        title : bool, default=True
+            Whether to display the hierarchy's name as a title.
+        time_ticks : bool, default=True
+            Whether to display time ticks on the x-axis.
+        layer_height : float, default=0.8
+            The vertical height allocated to each layer's segments on the axis.
+        layer_gap : float, default=0.1
+            The vertical gap between layers on the axis.
+
+        Returns
+        -------
+        fig : matplotlib.figure.Figure or SubFigure
+        ax : matplotlib.axes.Axes
+        """
+        from .viz import label_style_dict  # Local import for viz functions
+
+        n_layers = len(self.layers)
+        if n_layers == 0:
+            raise ValueError("Cannot plot empty hierarchy")
+
+        if ax is None:
+            fig, ax = plt.subplots(figsize=figsize or (10, 2 + 0.5 * n_layers))
+        else:
+            fig = ax.figure
+
+        # Calculate total height needed for all layers for y-axis scaling of axvspan
+        total_plot_height = n_layers * (layer_height + layer_gap) - layer_gap
+        if total_plot_height <= 0: total_plot_height = 1 # Avoid division by zero for empty plots
+
+        current_y_base = total_plot_height # Start plotting from the top
+
+        for i, layer in enumerate(self.layers):
+            # Calculate ymin and ymax for the current layer's segments
+            # These are absolute data coordinates for the ax.text, but relative for axvspan
+            layer_ymin_abs = current_y_base - layer_height
+            layer_ymax_abs = current_y_base
+
+            if layer.segments: # Check if layer has segments
+                style_map = label_style_dict(layer.labels)
+                for span in layer.segments:
+                    span_style = style_map.get(span.name if span.name is not None else "", {})
+
+                    # axvspan ymin/ymax are relative to the axes (0-1)
+                    rect_ymin_rel = layer_ymin_abs / total_plot_height
+                    rect_ymax_rel = layer_ymax_abs / total_plot_height
+
+                    ax.axvspan(span.start, span.end,
+                               ymin=rect_ymin_rel, ymax=rect_ymax_rel,
+                               **span_style, alpha=span_style.get("alpha", 0.7))
+
+                    if span.name:
+                        ax.text(
+                            span.start + 0.005 * (self.end - self.start),
+                            layer_ymin_abs + layer_height / 2,
+                            f"{span.name}",
+                            va='center', ha='left', fontsize=7, clip_on=True,
+                            bbox=dict(boxstyle="round,pad=0.1", facecolor="white", alpha=0.7, edgecolor='none')
+                        )
+
+            current_y_base -= (layer_height + layer_gap)
+
+
+        if title and self.name:
+            ax.set_title(self.name)
+
+        if self.start != self.end:
+            ax.set_xlim(self.start, self.end)
+        else:
+            ax.set_xlim(-0.1, 0.1)
+
+        ax.set_ylim(0, total_plot_height) # Y-axis uses data coordinates reflecting the structure
+
+        if time_ticks:
+            ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+            ax.set_xlabel("Time (s)")
+        else:
+            ax.set_xticks([])
+
+        # Set y-ticks to correspond to the center of each layer's band
+        ytick_positions = [total_plot_height - (i * (layer_height + layer_gap) + layer_height / 2) for i in range(n_layers)]
+        ax.set_yticks(ytick_positions)
+        ax.set_yticklabels([f"Level {i}" for i in range(n_layers)])
+
+        return fig, ax
 
     @classmethod
     def from_boundaries(
