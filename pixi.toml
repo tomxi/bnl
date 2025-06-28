@@ -75,52 +75,60 @@ cloud = ["cloud"]
 
 [tasks]
 # ===================================================================
-# Primary Workflow: Format, Fix, Check, Test
+# Core Development Loop
 # ===================================================================
 
-# Auto-formats all code in the project. Run this often.
-format = "ruff format ."
+# Format source code (run frequently during development)
+format = "ruff format src/"
 
-# Lints the code and automatically fixes any safe violations.
-fix = "ruff check . --fix"
+# Check code style without fixing (useful for CI)
+lint = "ruff check src/"
 
-# Verifies code is formatted and passes linting checks (ideal for CI).
-check = "ruff format --check . && ruff check ."
+# Fix code style issues automatically
+fix = "ruff check src/ --fix"
 
-# Runs all tests using pytest.
+# Run all tests
 test = "pip install -e . && pytest"
 
+# Run full validation pipeline (format + lint + types + test)
+check = "pip install -e . && ruff format --check src/ && ruff check . && mypy src/ --ignore-missing-imports && pytest"
+
 # ===================================================================
-# In-depth & Optional Tasks
+# Extended Development Tasks
 # ===================================================================
 
-# Runs tests and generates a code coverage report in the terminal.
-test-cov = "pytest --cov=bnl --cov-report=term-missing"
+# Run tests with coverage report
+test-cov = "pip install -e . && pytest --cov=bnl --cov-report=term-missing"
 
-# Runs mypy for static type analysis. Can be slow on large codebases.
-# Kept separate from the main 'check' task for a faster core loop.
+# Type checking only (faster when you just need types)
 types = "mypy src/ --ignore-missing-imports"
 
-# Builds the cloud manifest with full asset URLs for R2 deployment.
-# This task now requires the 'cloud' environment.
-# Run with: pixi run -e cloud build-cloud-manifest
-build-cloud-manifest = "python scripts/build_cloud_manifest.py"
+# Clean build artifacts and cache  
+clean = "rm -rf build/ dist/ .pytest_cache/ .coverage .mypy_cache/ src/**/__pycache__/ tests/**/__pycache__/ *.egg-info/ || true"
 
-# Runs the Streamlit experiment app.
+# ===================================================================
+# Application & Data Tasks
+# ===================================================================
+
+# Run the Streamlit experiment app
 exp = "streamlit run ./apps/exp.py"
 
-# Builds the local manifest for your project.
+# Build local data manifest for development
 build-local-manifest = "python scripts/build_local_manifest.py"
 
+# Build cloud manifest with R2 URLs (requires cloud environment)
+# Usage: pixi run -e cloud build-cloud-manifest
+build-cloud-manifest = "python scripts/build_cloud_manifest.py"
+
 # ===================================================================
-# Documentation
+# Documentation Tasks
 # ===================================================================
 
-# Builds the Sphinx documentation into the docs/_build/html directory.
+# Build documentation (output to docs/_build/html)
 docs-build = "sphinx-build -b html docs docs/_build/html"
 
-# Serves the documentation with live-reloading for easy editing.
+# Serve docs with live reload for development
 docs-serve = "sphinx-autobuild docs docs/_build/html --host 127.0.0.1"
 
-# Cleans out the built documentation files.
+# Clean documentation build artifacts
 docs-clean = "rm -rf docs/_build"

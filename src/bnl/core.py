@@ -42,10 +42,10 @@ class TimeSpan:
         if self.name is not None:
             self.name = str(self.name)
         # else: # If name is None, TimeSpan.__str__ will handle it. Or could set a default like ""
-            # self.name = str(self) # This would make name default to the string representation of the TimeSpan itself
+        # self.name = str(self) # This would make name default to the string representation of the TimeSpan itself
 
     def __str__(self) -> str:
-        lab = self.name if self.name is not None else "" # Ensure lab is string
+        lab = self.name if self.name is not None else ""  # Ensure lab is string
         return f"[{self.start:.1f}-{self.end:.1f}s]{lab}"
 
     def __repr__(self) -> str:
@@ -104,7 +104,7 @@ class Segmentation(TimeSpan):
         self.segments = sorted(self.segments, key=lambda x: x.start)
         # I should check that the segments are non-overlapping and contiguous.
         # Relax this check for common event-like namespaces where contiguity is not expected.
-        event_namespaces = ["beat", "chord", "onset", "note"] # Add more if needed
+        event_namespaces = ["beat", "chord", "onset", "note"]  # Add more if needed
         is_event_segmentation = self.name in event_namespaces
 
         if not is_event_segmentation:
@@ -114,7 +114,7 @@ class Segmentation(TimeSpan):
                     raise ValueError(
                         f"Segments must be non-overlapping and contiguous. "
                         f"Gap found between segment {i} (end: {self.segments[i].end}) and "
-                        f"segment {i+1} (start: {self.segments[i+1].start}). "
+                        f"segment {i + 1} (start: {self.segments[i + 1].start}). "
                         f"Segmentation name: '{self.name}'"
                     )
 
@@ -423,7 +423,8 @@ class Hierarchy(TimeSpan):
 
             if not (isinstance(intervals_data, list) and isinstance(labels_data, list)):
                 raise ValueError(
-                    f"Layer {i} intervals or labels are not lists. Got intervals: {type(intervals_data)}, labels: {type(labels_data)}"
+                    f"Layer {i} intervals or labels are not lists. "
+                    f"Got intervals: {type(intervals_data)}, labels: {type(labels_data)}"
                 )
 
             if len(intervals_data) != len(labels_data):
@@ -455,7 +456,7 @@ class Hierarchy(TimeSpan):
                 except ValueError as e:  # Catch errors from float conversion or TimeSpan post_init
                     raise ValueError(
                         f"Error creating TimeSpan for interval {actual_interval} with label '{label}' in layer {i}: {e}"
-                    )
+                    ) from e
 
             segments.sort(key=lambda s: s.start)
             segmentations.append(Segmentation(segments=segments))
@@ -499,6 +500,7 @@ class Hierarchy(TimeSpan):
         if n_layers == 0:
             raise ValueError("Cannot plot empty hierarchy")
 
+        fig: Figure | SubFigure
         if ax is None:
             fig, ax = plt.subplots(figsize=figsize or (10, 2 + 0.5 * n_layers))
         else:
@@ -511,7 +513,7 @@ class Hierarchy(TimeSpan):
 
         current_y_base = total_plot_height  # Start plotting from the top
 
-        for i, layer in enumerate(self.layers):
+        for _i, layer in enumerate(self.layers):
             # Calculate ymin and ymax for the current layer's segments
             # These are absolute data coordinates for the ax.text, but relative for axvspan
             layer_ymin_abs = current_y_base - layer_height

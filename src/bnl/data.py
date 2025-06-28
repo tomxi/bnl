@@ -15,7 +15,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from .core import Hierarchy
+from .core import Hierarchy, Segmentation
 
 
 def _parse_jams_metadata(jams_path: Path | str) -> dict[str, Any]:
@@ -58,7 +58,7 @@ class Track:
 
     track_id: str
     manifest_row: pd.Series  # Stores the boolean flags for this track's assets
-    dataset: "Dataset"  # Reference to the parent dataset
+    dataset: Dataset  # Reference to the parent dataset
 
     def __post_init__(self) -> None:
         """Initializes cache attributes after the object is created."""
@@ -151,7 +151,7 @@ class Track:
 
     def load_annotation(
         self, annotation_type: str, annotation_id: str | int | None = None
-    ) -> Hierarchy | "Segmentation":  # "Segmentation" forward ref for type checker
+    ) -> Hierarchy | Segmentation:  # "Segmentation" forward ref for type checker
         """Load an annotation as a Hierarchy or Segmentation object.
 
         Parameters
@@ -189,7 +189,10 @@ class Track:
         from .core import Segmentation
 
         if annotation_type not in self.annotations:
-            raise ValueError(f"Annotation type '{annotation_type}' not available for this track. Available: {list(self.annotations.keys())}")
+            raise ValueError(
+                f"Annotation type '{annotation_type}' not available for this track. "
+                f"Available: {list(self.annotations.keys())}"
+            )
 
         annotation_path = self.annotations[annotation_type]
 
@@ -204,27 +207,28 @@ class Track:
                 response.raise_for_status()
                 if is_jams or is_json:
                     file_content = io.StringIO(response.text)
-                else: # Should not happen for current annotation types (jams/json are text)
+                else:  # Should not happen for current annotation types (jams/json are text)
                     file_content = io.BytesIO(response.content)
             elif Path(annotation_path).exists():
                 if is_jams or is_json:
-                    with open(annotation_path, "r", encoding="utf-8") as f:
+                    with open(annotation_path, encoding="utf-8") as f:
                         file_content = io.StringIO(f.read())
-                else: # Should not happen
+                else:  # Should not happen
                     with open(annotation_path, "rb") as f:
                         file_content = io.BytesIO(f.read())
             else:
                 raise FileNotFoundError(f"Annotation file not found: {annotation_path}")
         except requests.exceptions.RequestException as e:
-            raise ValueError(f"Failed to fetch cloud annotation from {annotation_path}: {e}")
-        except FileNotFoundError as e: # Already a ValueError in context, but explicit is fine
-            raise ValueError(str(e))
-        except Exception as e: # General catch for other IO errors
-            raise ValueError(f"Error reading annotation file {annotation_path}: {e}")
+            raise ValueError(f"Failed to fetch cloud annotation from {annotation_path}: {e}") from e
+        except FileNotFoundError as e:  # Already a ValueError in context, but explicit is fine
+            raise ValueError(str(e)) from e
+        except Exception as e:  # General catch for other IO errors
+            raise ValueError(f"Error reading annotation file {annotation_path}: {e}") from e
 
         # --- JAMS Loading Logic ---
         if is_jams:
             import jams
+
             jam = jams.load(file_content)
 
             selected_ann: jams.Annotation | None = None
@@ -245,22 +249,27 @@ class Track:
                         if ann.namespace == annotation_id:
                             found_annotations.append(ann)
                         # Also check by ann.id if it exists (not a standard JAMS search, but was in previous code)
-                        elif hasattr(ann, 'id') and ann.id == annotation_id:
+                        elif hasattr(ann, "id") and ann.id == annotation_id:
                             found_annotations.append(ann)
-                            break # Exact ID match is usually unique
+                            break  # Exact ID match is usually unique
 
                     if found_annotations:
                         if len(found_annotations) > 1:
                             # If multiple were found by namespace, and not by a unique ID, print warning.
                             # If found by ID, it implies uniqueness, so warning might be less relevant,
                             # but keeping original logic for now.
-                            print(f"Warning: Multiple annotations found for id/namespace '{annotation_id}' in {annotation_path}. Using the first one.")
+                            print(
+                                f"Warning: Multiple annotations found for id/namespace '{annotation_id}' "
+                                f"in {annotation_path}. Using the first one."
+                            )
                         selected_ann = found_annotations[0]
                     else:
-                        raise ValueError(f"No annotation found with id or namespace '{annotation_id}' in {annotation_path}")
+                        raise ValueError(
+                            f"No annotation found with id or namespace '{annotation_id}' in {annotation_path}"
+                        )
                 else:
                     raise TypeError(f"Invalid annotation_id type: {type(annotation_id)}. Must be int or str.")
-            else: # annotation_id is None (default loading)
+            else:  # annotation_id is None (default loading)
                 # Replace jam.annotations.find with manual iteration for default loading
                 multi_segment_annotations = []
                 for ann in jam.annotations:
@@ -269,10 +278,13 @@ class Track:
 
                 if multi_segment_annotations:
                     if len(multi_segment_annotations) > 1:
-                        print(f"Warning: Multiple 'multi_segment' annotations found in {annotation_path}. Using the first one.")
+                        print(
+                            f"Warning: Multiple 'multi_segment' annotations found in {annotation_path}. "
+                            f"Using the first one."
+                        )
                     selected_ann = multi_segment_annotations[0]
                 else:
-                    common_segment_namespaces = ["segment_open"] # Add other common namespaces if needed
+                    common_segment_namespaces = ["segment_open"]  # Add other common namespaces if needed
                     for ns_to_find in common_segment_namespaces:
                         segment_annotations_for_ns = []
                         for ann in jam.annotations:
@@ -281,9 +293,12 @@ class Track:
 
                         if segment_annotations_for_ns:
                             if len(segment_annotations_for_ns) > 1:
-                                print(f"Warning: Multiple '{ns_to_find}' annotations found in {annotation_path} for default. Using the first one.")
+                                print(
+                                    f"Warning: Multiple '{ns_to_find}' annotations found in {annotation_path} "
+                                    f"for default. Using the first one."
+                                )
                             selected_ann = segment_annotations_for_ns[0]
-                            break # Found a suitable default, stop searching
+                            break  # Found a suitable default, stop searching
 
             if not selected_ann:
                 if not jam.annotations:
@@ -292,8 +307,10 @@ class Track:
                     available_ns = sorted(list(set(ann.namespace for ann in jam.annotations)))
                     raise ValueError(
                         f"Could not automatically determine which annotation to load from {annotation_path}. "
-                        f"No 'multi_segment' or other default segmentation types (e.g., {common_segment_namespaces}) found. "
-                        f"Available namespaces: {available_ns}. Please specify an 'annotation_id' (namespace, ann.id, or index)."
+                        f"No 'multi_segment' or other default segmentation types "
+                        f"(e.g., {common_segment_namespaces}) found. "
+                        f"Available namespaces: {available_ns}. "
+                        f"Please specify an 'annotation_id' (namespace, ann.id, or index)."
                     )
 
             if selected_ann.namespace == "multi_segment":
@@ -305,15 +322,16 @@ class Track:
                     raise ValueError(
                         f"Failed to load annotation (namespace: '{selected_ann.namespace}') as Segmentation "
                         f"from {annotation_path}: {e}"
-                    )
+                    ) from e
 
         # --- JSON Loading Logic ---
         elif is_json:
             import json
+
             try:
                 json_data = json.load(file_content)
             except json.JSONDecodeError as e:
-                raise ValueError(f"Invalid JSON in {annotation_path}: {e}")
+                raise ValueError(f"Invalid JSON in {annotation_path}: {e}") from e
             return Hierarchy.from_json(json_data)
 
         # --- Unsupported File Type ---

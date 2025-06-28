@@ -8,7 +8,7 @@ import pytest
 import requests
 
 from bnl import data
-from bnl.core import Segmentation # Added import
+from bnl.core import Segmentation  # Added import
 
 # --- Constants for Mocking ---
 MOCK_CLOUD_URL_BASE = "https://mock-r2-bucket.com"
@@ -393,7 +393,9 @@ def test_load_hierarchy_cloud(mock_cloud_manifest_file: Path, requests_mock, moc
 
     # Test error if JAMS download fails
     requests_mock.get(expected_jams_url, status_code=404)
-    with pytest.raises(ValueError, match="Failed to fetch cloud annotation"): # Check specific error from load_annotation
+    with pytest.raises(
+        ValueError, match="Failed to fetch cloud annotation"
+    ):  # Check specific error from load_annotation
         track.load_annotation("reference")
 
 
@@ -568,15 +570,22 @@ def test_adobe_path_reconstruction_local_and_cloud(tmp_path: Path):
     # Cloud - test the actual asset types we support
     dataset.data_location = "cloud"
     dataset.base_url = "http://cloud.test"
-    expected_cloud1_corrected = "http://cloud.test/adobe21-est/def_mu_0.1_gamma_0.1/adobe_test.mp3.msdclasscsnmagic.json"
-    expected_cloud2_corrected = "http://cloud.test/adobe21-est/def_mu_0.5_gamma_0.5/adobe_test.mp3.msdclasscsnmagic.json"
-    expected_cloud3_corrected = "http://cloud.test/adobe21-est/def_mu_0.1_gamma_0.9/adobe_test.mp3.msdclasscsnmagic.json"
+    expected_cloud1_corrected = (
+        "http://cloud.test/adobe21-est/def_mu_0.1_gamma_0.1/adobe_test.mp3.msdclasscsnmagic.json"
+    )
+    expected_cloud2_corrected = (
+        "http://cloud.test/adobe21-est/def_mu_0.5_gamma_0.5/adobe_test.mp3.msdclasscsnmagic.json"
+    )
+    expected_cloud3_corrected = (
+        "http://cloud.test/adobe21-est/def_mu_0.1_gamma_0.9/adobe_test.mp3.msdclasscsnmagic.json"
+    )
     assert dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu1gamma1") == expected_cloud1_corrected
     assert dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu5gamma5") == expected_cloud2_corrected
     assert dataset._reconstruct_path("adobe_test", "annotation", "adobe-mu1gamma9") == expected_cloud3_corrected
 
 
 # --- Tests for Track.load_annotation ---
+
 
 @pytest.fixture
 def annotation_fixtures_dir() -> Path:
@@ -586,7 +595,7 @@ def annotation_fixtures_dir() -> Path:
 @pytest.fixture
 def load_annotation_test_manifest_path(tmp_path: Path, annotation_fixtures_dir: Path) -> Path:
     """Creates a manifest that points to the pre-made annotation fixtures."""
-    manifest_content = f"""track_id,has_annotation_hier_jams,has_annotation_seg_jams,has_annotation_multi_jams,has_annotation_hier_json,has_annotation_empty_jams,has_annotation_malformed_json,has_annotation_unsupported_txt,has_annotation_nonexistent_file
+    manifest_content = """track_id,has_annotation_hier_jams,has_annotation_seg_jams,has_annotation_multi_jams,has_annotation_hier_json,has_annotation_empty_jams,has_annotation_malformed_json,has_annotation_unsupported_txt,has_annotation_nonexistent_file
 track1,True,False,False,False,False,False,False,False
 track2,False,True,False,False,False,False,False,False
 track3,False,False,True,False,False,False,False,False
@@ -602,7 +611,9 @@ track8,False,False,False,False,False,False,False,True
 
 
 @pytest.fixture
-def annotation_test_dataset(load_annotation_test_manifest_path: Path, annotation_fixtures_dir: Path, monkeypatch) -> data.Dataset:
+def annotation_test_dataset(
+    load_annotation_test_manifest_path: Path, annotation_fixtures_dir: Path, monkeypatch
+) -> data.Dataset:
     """
     Creates a Dataset instance for testing load_annotation.
     It mocks Dataset._reconstruct_path to directly provide paths to test fixture files.
@@ -639,20 +650,22 @@ def annotation_test_dataset(load_annotation_test_manifest_path: Path, annotation
         # Fallback for any other types or if not in map for some reason
         original_dataset_root = load_annotation_test_manifest_path.parent
         if asset_type == "annotation":
-            if asset_subtype == "reference" : # Default JAMS location for "reference" if not mapped
-                 return original_dataset_root / "jams" / f"{track_id}.jams"
+            if asset_subtype == "reference":  # Default JAMS location for "reference" if not mapped
+                return original_dataset_root / "jams" / f"{track_id}.jams"
 
         # This print can be noisy but useful for debugging which paths are requested
         # print(f"Warning: Mock _reconstruct_path unhandled or fallback: track_id='{track_id}', asset_type='{asset_type}', asset_subtype='{asset_subtype}'")
 
         if asset_type == "audio" and asset_subtype == "mp3":
-             return original_dataset_root / "audio" / track_id / f"audio.{asset_subtype}" # dummy path
+            return original_dataset_root / "audio" / track_id / f"audio.{asset_subtype}"  # dummy path
 
         # If we reach here, the path request was not for a mapped annotation
         # and not for a handled fallback. This indicates a potential issue in
         # the test setup (e.g. manifest column vs fixture_path_map key mismatch)
         # or an unexpected path reconstruction request.
-        raise ValueError(f"Mock _reconstruct_path explicitly unhandled in test: track_id='{track_id}', asset_type='{asset_type}', asset_subtype='{asset_subtype}'")
+        raise ValueError(
+            f"Mock _reconstruct_path explicitly unhandled in test: track_id='{track_id}', asset_type='{asset_type}', asset_subtype='{asset_subtype}'"
+        )
 
     monkeypatch.setattr(dataset, "_reconstruct_path", mock_reconstruct_path)
     return dataset
@@ -662,7 +675,7 @@ def test_load_annotation_jams_hierarchy_default(annotation_test_dataset: data.Da
     assert isinstance(annotation_test_dataset, data.Dataset)
     # print(f"\nManifest Index: {annotation_test_dataset.manifest.index}")
     # print(f"Track IDs: {annotation_test_dataset.track_ids}")
-    track = annotation_test_dataset["track1"] # has_annotation_hier_jams = True
+    track = annotation_test_dataset["track1"]  # has_annotation_hier_jams = True
     annotation = track.load_annotation("hier_jams")
     assert isinstance(annotation, data.Hierarchy)
     assert len(annotation.layers) == 2
@@ -670,20 +683,20 @@ def test_load_annotation_jams_hierarchy_default(annotation_test_dataset: data.Da
 
 
 def test_load_annotation_jams_segmentation_default(annotation_test_dataset: data.Dataset):
-    track = annotation_test_dataset["track2"] # has_annotation_seg_jams = True
+    track = annotation_test_dataset["track2"]  # has_annotation_seg_jams = True
     annotation = track.load_annotation("seg_jams")
-    assert isinstance(annotation, Segmentation) # Use imported Segmentation
-    assert annotation.name == "segment_open" # Check the namespace was set as name
+    assert isinstance(annotation, Segmentation)  # Use imported Segmentation
+    assert annotation.name == "segment_open"  # Check the namespace was set as name
     assert len(annotation.segments) == 2
     assert annotation.segments[0].name == "verse"
 
 
 def test_load_annotation_jams_multi_select_namespace(annotation_test_dataset: data.Dataset):
-    track = annotation_test_dataset["track3"] # has_annotation_multi_jams = True
+    track = annotation_test_dataset["track3"]  # has_annotation_multi_jams = True
     # Default load should pick the first multi_segment
     default_annot = track.load_annotation("multi_jams")
     assert isinstance(default_annot, data.Hierarchy)
-    assert default_annot.layers[0][0].name == "S" # From first multi_segment
+    assert default_annot.layers[0][0].name == "S"  # From first multi_segment
 
     # Select multi_segment explicitly (should be the first one)
     hier_annot = track.load_annotation("multi_jams", annotation_id="multi_segment")
@@ -692,46 +705,47 @@ def test_load_annotation_jams_multi_select_namespace(annotation_test_dataset: da
 
     # Select segment_open
     seg_annot = track.load_annotation("multi_jams", annotation_id="segment_open")
-    assert isinstance(seg_annot, Segmentation) # Use imported Segmentation
+    assert isinstance(seg_annot, Segmentation)  # Use imported Segmentation
     assert seg_annot.name == "segment_open"
     assert seg_annot.segments[0].name == "part1"
 
     # Select beat by namespace
     beat_annot = track.load_annotation("multi_jams", annotation_id="beat")
-    assert isinstance(beat_annot, Segmentation) # Use imported Segmentation
+    assert isinstance(beat_annot, Segmentation)  # Use imported Segmentation
     assert beat_annot.name == "beat"
-    assert beat_annot.segments[0].name == "1" # JAMS values are often numbers for beats
+    assert beat_annot.segments[0].name == "1"  # JAMS values are often numbers for beats
 
     # The ann.id "beat_annot_123" was removed from the JAMS file due to parsing issues
     # with the current jams library version. Selection by namespace "beat" is tested above.
 
+
 def test_load_annotation_jams_multi_select_index(annotation_test_dataset: data.Dataset):
     track = annotation_test_dataset["track3"]
     # Select by index
-    hier_annot_idx0 = track.load_annotation("multi_jams", annotation_id=0) # First multi_segment
+    hier_annot_idx0 = track.load_annotation("multi_jams", annotation_id=0)  # First multi_segment
     assert isinstance(hier_annot_idx0, data.Hierarchy)
     assert hier_annot_idx0.layers[0][0].name == "S"
 
-    seg_annot_idx1 = track.load_annotation("multi_jams", annotation_id=1) # segment_open
-    assert isinstance(seg_annot_idx1, Segmentation) # Use imported Segmentation
+    seg_annot_idx1 = track.load_annotation("multi_jams", annotation_id=1)  # segment_open
+    assert isinstance(seg_annot_idx1, Segmentation)  # Use imported Segmentation
     assert seg_annot_idx1.name == "segment_open"
 
     # Test warning for multiple 'multi_segment' when loading default (covered by print warning in implementation)
     # test_multi_ann.jams has two 'multi_segment'. Default load picks the first.
     # A more direct test for the warning would require capturing stdout.
     # For now, verify behavior (loads first).
-    default_multi_hier = track.load_annotation("multi_jams") # Default behavior
+    default_multi_hier = track.load_annotation("multi_jams")  # Default behavior
     assert isinstance(default_multi_hier, data.Hierarchy)
-    assert default_multi_hier.layers[0][0].name == "S" # From the first multi_segment
+    assert default_multi_hier.layers[0][0].name == "S"  # From the first multi_segment
 
     # Select the second multi_segment by index
-    second_multi_hier = track.load_annotation("multi_jams", annotation_id=3) # Index of the second multi_segment
+    second_multi_hier = track.load_annotation("multi_jams", annotation_id=3)  # Index of the second multi_segment
     assert isinstance(second_multi_hier, data.Hierarchy)
     assert second_multi_hier.layers[0][0].name == "Z"
 
 
 def test_load_annotation_json_hierarchy(annotation_test_dataset: data.Dataset):
-    track = annotation_test_dataset["track4"] # has_annotation_hier_json = True
+    track = annotation_test_dataset["track4"]  # has_annotation_hier_json = True
     annotation = track.load_annotation("hier_json")
     assert isinstance(annotation, data.Hierarchy)
     assert len(annotation.layers) == 2
@@ -739,25 +753,25 @@ def test_load_annotation_json_hierarchy(annotation_test_dataset: data.Dataset):
 
 
 def test_load_annotation_empty_jams(annotation_test_dataset: data.Dataset):
-    track = annotation_test_dataset["track5"] # has_annotation_empty_jams = True
+    track = annotation_test_dataset["track5"]  # has_annotation_empty_jams = True
     with pytest.raises(ValueError, match="No annotations found in JAMS file"):
         track.load_annotation("empty_jams")
 
 
 def test_load_annotation_malformed_json(annotation_test_dataset: data.Dataset):
-    track = annotation_test_dataset["track6"] # has_annotation_malformed_json = True
+    track = annotation_test_dataset["track6"]  # has_annotation_malformed_json = True
     with pytest.raises(ValueError, match="Invalid JSON"):
         track.load_annotation("malformed_json")
 
 
 def test_load_annotation_unsupported_file_type(annotation_test_dataset: data.Dataset):
-    track = annotation_test_dataset["track7"] # has_annotation_unsupported_txt = True
+    track = annotation_test_dataset["track7"]  # has_annotation_unsupported_txt = True
     with pytest.raises(NotImplementedError, match="Unsupported annotation file type"):
         track.load_annotation("unsupported_txt")
 
 
 def test_load_annotation_file_not_found(annotation_test_dataset: data.Dataset):
-    track = annotation_test_dataset["track8"] # has_annotation_nonexistent_file = True
+    track = annotation_test_dataset["track8"]  # has_annotation_nonexistent_file = True
     with pytest.raises(ValueError, match="Annotation file not found"):
         track.load_annotation("nonexistent_file")
 
@@ -769,7 +783,7 @@ def test_load_annotation_type_not_in_manifest(annotation_test_dataset: data.Data
 
 
 def test_load_annotation_jams_invalid_annotation_id(annotation_test_dataset: data.Dataset):
-    track = annotation_test_dataset["track3"] # multi_jams
+    track = annotation_test_dataset["track3"]  # multi_jams
     with pytest.raises(ValueError, match="Annotation index 50 out of range"):
         track.load_annotation("multi_jams", annotation_id=50)
     with pytest.raises(ValueError, match="No annotation found with id or namespace 'nonexistent_namespace'"):
@@ -778,7 +792,9 @@ def test_load_annotation_jams_invalid_annotation_id(annotation_test_dataset: dat
         track.load_annotation("multi_jams", annotation_id=object())
 
 
-def test_load_annotation_jams_no_default_found(annotation_test_dataset: data.Dataset, annotation_fixtures_dir: Path, monkeypatch):
+def test_load_annotation_jams_no_default_found(
+    annotation_test_dataset: data.Dataset, annotation_fixtures_dir: Path, monkeypatch
+):
     # Create a JAMS file with only an unsupported/unknown namespace for default loading
     temp_jams_content = """
 {
@@ -804,19 +820,20 @@ def test_load_annotation_jams_no_default_found(annotation_test_dataset: data.Dat
 
     def new_mock_annotations_property(self_track_instance):
         base_fixtures = original_annotations_property_func(self_track_instance)
-        base_fixtures["valid_non_default_jams"] = temp_jams_file # Add our temporary file
+        base_fixtures["valid_non_default_jams"] = temp_jams_file  # Add our temporary file
         return base_fixtures
 
     monkeypatch.setattr(data.Track, "annotations", property(new_mock_annotations_property))
 
-    track = annotation_test_dataset["track1"] # Arbitrary track, its annotations prop is now globally mocked
+    track = annotation_test_dataset["track1"]  # Arbitrary track, its annotations prop is now globally mocked
 
     with pytest.raises(ValueError, match="Could not automatically determine which annotation to load"):
-        track.load_annotation("valid_non_default_jams") # No annotation_id, should fail default search
+        track.load_annotation("valid_non_default_jams")  # No annotation_id, should fail default search
 
     # Cleanup
     temp_jams_file.unlink()
-    monkeypatch.setattr(data.Track, "annotations", original_annotations_property_func) # Restore original mock
+    monkeypatch.setattr(data.Track, "annotations", original_annotations_property_func)  # Restore original mock
+
 
 # Test that Hierarchy.from_jams and Segmentation.from_jams are called correctly
 # These are indirectly tested by the above, but more direct mocks can confirm
