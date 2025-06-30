@@ -29,3 +29,5 @@ Concise guidance for AI agents working with this music information retrieval cod
 - building the app in streamlit to interactive ask research questions about the data.
 
 ### User Feedbacks
+- now there are new, real data in the test fixtures: REPOROOT/tests/fixtures/annotations/8.jams and 8.mp3.msdclasscsnmagic.json for testing. Let's see if we can use these to do future tests when possible.
+

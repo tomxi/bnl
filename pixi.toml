@@ -89,11 +89,8 @@ cloud = ["cloud"]
 # Format source code (run frequently during development)
 format = "ruff format"
 
-# Check code style without fixing (useful for CI)
-lint = "ruff check"
-
 # Fix code style issues automatically
-fix = "ruff check --fix"
+lint = "ruff check --fix"
 
 # Run all tests
 test = "pip install -e . && pytest"
@@ -104,9 +101,6 @@ check = "pip install -e . && ruff format --check && ruff check && mypy src/ apps
 # ===================================================================
 # Extended Development Tasks
 # ===================================================================
-
-# Install package in development mode (editable install)
-install = "pip install -e ."
 
 # Run tests with coverage report
 test-cov = "pip install -e . && pytest --cov=bnl --cov-report=term-missing"
