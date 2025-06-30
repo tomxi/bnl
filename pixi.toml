@@ -110,12 +110,13 @@ install = "pip install -e ."
 
 # Run tests with coverage report
 test-cov = "pip install -e . && pytest --cov=bnl --cov-report=term-missing"
+test-cov-html = "pip install -e . && pytest --cov=bnl --cov-report=html"
 
 # Type checking only (faster when you just need types)
 types = "mypy src/ apps/ --ignore-missing-imports"
 
 # Clean build artifacts and cache  
-clean = "rm -rf build/ dist/ .pytest_cache/ .coverage .mypy_cache/ src/**/__pycache__/ tests/**/__pycache__/ *.egg-info/ || true"
+clean = "cd \"$(git rev-parse --show-toplevel)\" && rm -rf build/ htmlcov/ dist/ docs/_build/ .pytest_cache/ .coverage .mypy_cache/ && find . -name '*.egg-info' -type d -delete && find . -name '__pycache__' -type d -delete || true"
 
 # ===================================================================
 # Application & Data Tasks
