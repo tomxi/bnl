@@ -20,7 +20,7 @@ __version__ = "0.2.1"
 from . import data, ops, viz
 
 # --- Promote the core data structures to the top level ---
-from .core import Hierarchy, Segmentation, TimeSpan
+from .core import Hierarchy, Segmentation, TimeSpan, RatedBoundaries, ProperHierarchy
 
 # --- Define the public-facing API of the `bnl` package ---
 __all__ = [
@@ -28,6 +28,8 @@ __all__ = [
     "TimeSpan",
     "Segmentation",
     "Hierarchy",
+    "RatedBoundaries",
+    "ProperHierarchy",
     # Submodules (toolboxes)
     "viz",
     "data",

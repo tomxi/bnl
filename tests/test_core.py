@@ -19,8 +19,8 @@ def test_segmentation_basic_init():
         ],
         name="song_structure",
     )
-    assert seg.boundaries == [0.0, 1.5, 3.0]
-    assert seg.labels == ["verse", "chorus"]
+    assert seg.boundaries == (0.0, 1.5, 3.0) # Tuple
+    assert seg.labels == ("verse", "chorus") # Tuple
     assert len(seg) == 2
     assert seg.name == "song_structure"
     assert seg.duration == 3.0
@@ -29,13 +29,13 @@ def test_segmentation_basic_init():
 def test_hierarchy_basic():
     """Test basic hierarchy functionality."""
     seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0], ["A"], name="Coarse")
-    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ["a", "b"], name="Fine")
+    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ("a", "b"), name="Fine") # Labels as tuple
     hierarchy = bnl.Hierarchy(layers=[seg1, seg2], name="MyHierarchy")
     assert len(hierarchy) == 2
     assert hierarchy[0] == seg1
     assert hierarchy.name == "MyHierarchy"
     assert hierarchy.duration == 2.0
-    assert hierarchy.layers[0].name == "Coarse"
+    assert hierarchy.layers[0].name == "Coarse" # layers is a tuple
 
 
 def test_post_init_errors():
@@ -116,14 +116,14 @@ def test_post_init_errors():
 def test_segmentation_constructors(constructor, data):
     """Test Segmentation constructors with and without labels and names."""
     # Test with labels and a name
-    seg1 = constructor(data, labels=["A", "B"], name="TestName")
-    assert seg1.labels == ["A", "B"]
+    seg1 = constructor(data, labels=["A", "B"], name="TestName") # Input labels can be list
+    assert seg1.labels == ("A", "B") # Property returns tuple
     assert seg1.name == "TestName"
     np.testing.assert_array_equal(seg1.intervals, np.array([[0.0, 1.0], [1.0, 2.5]]))
 
     # Test without labels (default labels should be None)
     seg2 = constructor(data, name="NoLabelsSeg")  # Name the segmentation itself
-    assert seg2.labels == [None, None]
+    assert seg2.labels == (None, None) # Property returns tuple
     assert seg2[0].name is None  # TimeSpan name should be None
     assert seg2.name == "NoLabelsSeg"  # Segmentation name
     assert seg2[0] == bnl.TimeSpan(start=0.0, end=1.0, name=None)
@@ -191,7 +191,7 @@ def test_plotting_runs_without_error():
     plt.close(fig)
 
     # Test Segmentation plotting
-    seg = bnl.Segmentation.from_boundaries([0, 1, 2], ["X", "Y"])
+    seg = bnl.Segmentation.from_boundaries([0, 1, 2], ("X", "Y")) # Labels as tuple
     fig, ax = seg.plot()
     plt.close(fig)
 
@@ -201,8 +201,8 @@ def test_plotting_runs_without_error():
     # plt.close(fig)
 
     # Test Hierarchy plotting
-    seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0], ["A"])
-    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ["a", "b"], name="FineLayer")
+    seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0], ("A",)) # Labels as tuple
+    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0], ("a", "b"), name="FineLayer") # Labels as tuple
     hierarchy = bnl.Hierarchy(layers=[seg1, seg2], name="TestHierPlot")
     fig_single_axis, _ = hierarchy.plot_single_axis()  # plot_single_axis still returns fig, ax
     plt.close(fig_single_axis)
@@ -210,7 +210,7 @@ def test_plotting_runs_without_error():
     plt.close(fig_subplots)
 
     # Test Hierarchy plotting with one layer
-    hierarchy_single_layer = bnl.Hierarchy(layers=[seg1], name="SingleLayerHier")
+    hierarchy_single_layer = bnl.Hierarchy(layers=[seg1], name="SingleLayerHier") # seg1 already created with tuple label
     fig_single_axis_single, _ = hierarchy_single_layer.plot_single_axis()
     plt.close(fig_single_axis_single)
     fig_subplots_single, _ = hierarchy_single_layer.plot()
@@ -475,8 +475,8 @@ def test_hierarchy_from_json_real_file():
 
 def test_hierarchy_plot_single_axis():
     """Test the plot_single_axis method for Hierarchy."""
-    seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0, 4.0], ["A1", "A2"], name="L0")
-    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0, 3.0, 4.0], ["b1", "b2", "b3", "b4"], name="L1")
+    seg1 = bnl.Segmentation.from_boundaries([0.0, 2.0, 4.0], ("A1", "A2"), name="L0") # Labels as tuple
+    seg2 = bnl.Segmentation.from_boundaries([0.0, 1.0, 2.0, 3.0, 4.0], ("b1", "b2", "b3", "b4"), name="L1") # Labels as tuple
     hierarchy = bnl.Hierarchy(layers=[seg1, seg2], name="SingleAxisTest")
 
     fig, ax = hierarchy.plot_single_axis()
@@ -491,7 +491,7 @@ def test_hierarchy_plot_single_axis():
     plt.close(fig)
 
     # Test with a layer that has no name (should default to "Level X")
-    seg_no_name = bnl.Segmentation.from_boundaries([0.0, 1.0, 4.0], ["n1", "n2"])  # No name for seg_no_name
+    seg_no_name = bnl.Segmentation.from_boundaries([0.0, 1.0, 4.0], ("n1", "n2"))  # No name for seg_no_name, labels as tuple
     hierarchy_with_mixed_names = bnl.Hierarchy(
         layers=[seg1, seg_no_name, seg2], name="MixedNames"
     )  # seg1 is L0, seg2 is L1
@@ -534,6 +534,164 @@ def test_validate_time_value_edge_cases():
     # Test invalid conversion error
     with pytest.raises(TypeError):
         _validate_time_value("invalid", "test_time")
+
+
+def test_rated_boundaries_init():
+    """Test RatedBoundaries initialization and basic properties."""
+    # Valid initialization
+    events_ok = ((0.5, 0.8), (1.0, 0.5), (1.0, 0.7), (2.3, 0.9))
+    rb_ok = bnl.RatedBoundaries(events=events_ok)
+    assert rb_ok.events == events_ok
+    assert len(rb_ok) == 4
+    assert rb_ok[0] == (0.5, 0.8)
+    assert list(rb_ok) == list(events_ok) # Test __iter__
+
+    # Default initialization (empty events)
+    rb_empty = bnl.RatedBoundaries()
+    assert rb_empty.events == tuple()
+    assert len(rb_empty) == 0
+
+def test_rated_boundaries_validation():
+    """Test validation in RatedBoundaries."""
+    # Malformed event: not a tuple
+    with pytest.raises(ValueError, match="Event at index 0 is not a tuple of length 2"):
+        bnl.RatedBoundaries(events=([0.5, 0.8],)) # type: ignore
+
+    # Malformed event: wrong length
+    with pytest.raises(ValueError, match="Event at index 0 is not a tuple of length 2"):
+        bnl.RatedBoundaries(events=((0.5, 0.8, 0.9),))
+
+    # Malformed event: non-numeric timestamp
+    with pytest.raises(ValueError, match="timestamp and salience must be numeric"):
+        bnl.RatedBoundaries(events=(("zero", 0.8),)) # type: ignore
+
+    # Malformed event: non-numeric salience
+    with pytest.raises(ValueError, match="timestamp and salience must be numeric"):
+        bnl.RatedBoundaries(events=((0.5, "high"),)) # type: ignore
+
+    # Malformed event: negative timestamp
+    with pytest.raises(ValueError, match="timestamp .* cannot be negative"):
+        bnl.RatedBoundaries(events=((-0.1, 0.8),))
+
+    # Unsorted events by timestamp
+    events_unsorted = ((1.0, 0.5), (0.5, 0.8))
+    with pytest.raises(ValueError, match="Events in RatedBoundaries must be sorted by timestamp"):
+        bnl.RatedBoundaries(events=events_unsorted)
+
+    # Events with same timestamp (should be OK by current timestamp-only sort check)
+    events_same_ts_ok = ((0.5, 0.9), (0.5, 0.8), (1.0, 0.1))
+    rb_same_ts = bnl.RatedBoundaries(events=events_same_ts_ok)
+    assert rb_same_ts.events == events_same_ts_ok
+
+    # Test just one event (always sorted)
+    rb_single = bnl.RatedBoundaries(events=((0.1, 0.2),))
+    assert len(rb_single) == 1
+
+
+def test_proper_hierarchy_from_rated_boundaries_simple():
+    """Test ProperHierarchy.from_rated_boundaries with a simple case."""
+    events = (
+        (1.0, 0),
+        (2.0, 1),
+        (3.0, 0),
+    )
+    rb = bnl.RatedBoundaries(events=events)
+    ph = bnl.ProperHierarchy.from_rated_boundaries(rb, name="TestProper")
+
+    assert isinstance(ph, bnl.ProperHierarchy)
+    assert ph.name == "TestProper"
+    assert len(ph.layers) == 2  # Max depth is 1, so layers 0 and 1
+
+    assert ph.layers[0].name == "level_0"
+    assert ph.layers[0].boundaries == (1.0, 3.0)
+    assert ph.layers[0].start == 1.0
+    assert ph.layers[0].end == 3.0
+
+    assert ph.layers[1].name == "level_1"
+    assert ph.layers[1].boundaries == (1.0, 2.0, 3.0)
+    assert ph.layers[1].start == 1.0
+    assert ph.layers[1].end == 3.0
+
+    assert ph.start == 1.0
+    assert ph.end == 3.0
+
+    assert set(ph.layers[0].boundaries).issubset(set(ph.layers[1].boundaries))
+
+def test_proper_hierarchy_empty_rated_boundaries():
+    """Test ProperHierarchy from empty RatedBoundaries."""
+    rb_empty = bnl.RatedBoundaries(events=tuple())
+    ph = bnl.ProperHierarchy.from_rated_boundaries(rb_empty, name="EmptyProper")
+
+    assert len(ph.layers) == 1
+    assert ph.layers[0].name == "level_0"
+    assert ph.layers[0].segments[0].start == 0.0
+    assert ph.layers[0].segments[0].end == 0.0
+    assert ph.layers[0].segments[0].name == "default_segment"
+    assert ph.start == 0.0
+    assert ph.end == 0.0
+    assert ph.name == "EmptyProper"
+
+def test_proper_hierarchy_single_event():
+    """Test ProperHierarchy from RatedBoundaries with a single event."""
+    events = ((1.5, 0),)
+    rb = bnl.RatedBoundaries(events=events)
+    ph = bnl.ProperHierarchy.from_rated_boundaries(rb, name="SingleEventProper")
+
+    assert len(ph.layers) == 1
+    assert ph.layers[0].name == "level_0"
+    assert ph.layers[0].boundaries == (1.5,)
+    assert ph.layers[0].start == 1.5
+    assert ph.layers[0].end == 1.5
+    assert len(ph.layers[0].segments) == 1
+    assert ph.layers[0].segments[0].start == 1.5 and ph.layers[0].segments[0].end == 1.5
+
+    assert ph.start == 1.5
+    assert ph.end == 1.5
+
+def test_proper_hierarchy_complex_case_and_global_span():
+    """Test complex ProperHierarchy ensuring layers span global event time."""
+    events = (
+        (0.0, 1),
+        (2.0, 0),
+        (2.0, 2),
+        (4.0, 1),
+        (5.0, 0)
+    )
+    rb = bnl.RatedBoundaries(events=events)
+    ph = bnl.ProperHierarchy.from_rated_boundaries(rb)
+
+    assert len(ph.layers) == 3
+    assert ph.start == 0.0 and ph.end == 5.0
+
+    assert ph.layers[0].name == "level_0"
+    assert ph.layers[0].boundaries == (0.0, 2.0, 5.0)
+    assert ph.layers[0].start == 0.0 and ph.layers[0].end == 5.0
+
+    assert ph.layers[1].name == "level_1"
+    assert ph.layers[1].boundaries == (0.0, 2.0, 4.0, 5.0)
+    assert ph.layers[1].start == 0.0 and ph.layers[1].end == 5.0
+
+    assert ph.layers[2].name == "level_2"
+    assert ph.layers[2].boundaries == (0.0, 2.0, 4.0, 5.0)
+    assert ph.layers[2].start == 0.0 and ph.layers[2].end == 5.0
+
+    assert set(ph.layers[0].boundaries).issubset(set(ph.layers[1].boundaries))
+    assert set(ph.layers[1].boundaries).issubset(set(ph.layers[2].boundaries))
+
+
+def test_proper_hierarchy_validation_errors():
+    """Test validation errors in ProperHierarchy.from_rated_boundaries."""
+    rb_float_salience = bnl.RatedBoundaries(events=((1.0, 0.5),))
+    with pytest.raises(ValueError, match="cannot be cast to an integer depth"):
+        bnl.ProperHierarchy.from_rated_boundaries(rb_float_salience)
+
+    rb_neg_depth_float = bnl.RatedBoundaries(events=((1.0, -1.0),))
+    with pytest.raises(ValueError, match="must be a non-negative integer depth"):
+        bnl.ProperHierarchy.from_rated_boundaries(rb_neg_depth_float)
+
+    rb_neg_depth_int = bnl.RatedBoundaries(events=((1.0, -1),)) # RatedBoundaries allows int here
+    with pytest.raises(ValueError, match="must be a non-negative integer depth"):
+        bnl.ProperHierarchy.from_rated_boundaries(rb_neg_depth_int)
 
 
 def test_ops_type_checking_import():
