@@ -239,14 +239,11 @@ class MultiSegment(TimeSpan):
         layers = []
         for _, group in grouped_data:
             group_list = list(group)
-            boundary_points = {obs.time: obs.value["label"] for obs in group_list}
-            if group_list:
-                last_obs = group_list[-1]
-                boundary_points[last_obs.time + last_obs.duration] = None
+            boundaries = [Boundary(obs.time, obs.value["label"]) for obs in group_list]
+            last_obs = max(group_list, key=lambda obs: obs.time + obs.duration)
+            boundaries.append(Boundary(last_obs.time + last_obs.duration, None))
+            layers.append(Segment(boundaries=boundaries))
 
-            boundaries = [Boundary(time, label) for time, label in sorted(boundary_points.items())]
-            if len(boundaries) >= 2:
-                layers.append(Segment(boundaries=boundaries))
         try:
             return cls(layers=layers)
         except ValueError as e:
@@ -282,12 +279,13 @@ class MultiSegment(TimeSpan):
         except ValueError as e:
             raise ValueError("No valid segments could be created from the JSON data.") from e
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, ax: Axes | None = None, reverse_layers: bool = True, **kwargs: Any) -> Axes:
         """
         Plots all layers of the MultiSegment on a single axis, stacked vertically.
 
         Args:
             ax: Matplotlib axes to plot on. If None, a new figure is created.
+            reverse_layers: If True, plot layers in reverse order (top to bottom becomes bottom to top).
             **kwargs: Additional keyword arguments to customize the plot.
         """
         import matplotlib.colors as mcolors
@@ -306,9 +304,14 @@ class MultiSegment(TimeSpan):
 
         bar_height = kwargs.pop("bar_height", 0.8)
 
+        # Determine layer order
+        layers_to_plot = list(enumerate(self.layers))
+        if reverse_layers:
+            layers_to_plot = list(reversed(layers_to_plot))
+
         # Plot layers from bottom (index 0) to top
-        for i, layer in enumerate(self.layers):
-            y_center = i + 0.5
+        for plot_i, (original_i, layer) in enumerate(layers_to_plot):
+            y_center = plot_i + 0.5
             for span in layer.segments:
                 color = color_map.get(span.start.label or str(span.start), "gray")
                 ax.barh(
@@ -334,7 +337,13 @@ class MultiSegment(TimeSpan):
         ax.set_xlim(self.start.time, self.end.time)
         ax.set_ylim(0, len(self.layers))
         ax.set_yticks([i + 0.5 for i in range(len(self.layers))])
-        ax.set_yticklabels([f"Layer {i}" for i in range(len(self.layers))])
+
+        # Update y-axis labels to reflect the actual layer order
+        if reverse_layers:
+            ax.set_yticklabels([f"Layer {len(self.layers) - 1 - i}" for i in range(len(self.layers))])
+        else:
+            ax.set_yticklabels([f"Layer {i}" for i in range(len(self.layers))])
+
         ax.set_title(kwargs.get("title", "MultiSegment"))
 
         return ax
