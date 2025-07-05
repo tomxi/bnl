@@ -10,6 +10,7 @@ import pytest
 import requests
 
 from bnl import data
+from bnl import core # Import core module
 from bnl.core import Segmentation
 
 # --- Constants for Mocking ---
@@ -316,30 +317,37 @@ def test_track_properties_and_methods(mock_local_manifest_file: Path):
 
 
 def test_load_hierarchy_local(mock_local_manifest_file: Path, mocker):
-    """Test loading a hierarchy from a local JAMS file."""
+    """Test loading a MultiSegment from a local JAMS file.""" # Renamed
     dataset = data.Dataset(mock_local_manifest_file)
     track = dataset["1"]
 
-    # Mock bnl.data.Hierarchy.from_jams, let actual jams.load run
-    mock_hierarchy_from_jams = mocker.patch("bnl.data.Hierarchy.from_jams")
+    # Mock bnl.core.MultiSegment.from_jams, as Track._load_jams calls this
+    mock_multisegment_from_jams = mocker.patch("bnl.core.MultiSegment.from_jams")
+    # Configure a return value for the mock
+    # Assuming 'core' is imported as 'from bnl import core' in the test file or globally accessible
+    mock_multisegment_from_jams.return_value = core.MultiSegment(
+        start=core.Boundary(0), duration=1, layers=[core.Segmentation.from_boundaries([0,1])]
+    )
 
     annotation = track.load_annotation("reference")
 
     # The real jams.load is called by track.load_annotation inside the method.
-    # Then Hierarchy.from_jams is called with the multi_segment annotation from the loaded JAMS.
-    mock_hierarchy_from_jams.assert_called_once()
-    loaded_jams_annotation_arg = mock_hierarchy_from_jams.call_args[0][0]
+    # Then MultiSegment.from_jams is called with the multi_segment annotation from the loaded JAMS.
+    mock_multisegment_from_jams.assert_called_once()
+    loaded_jams_annotation_arg = mock_multisegment_from_jams.call_args[0][0]
     assert isinstance(loaded_jams_annotation_arg, data.jams.Annotation)
     assert loaded_jams_annotation_arg.namespace == "multi_segment"
-    assert annotation == mock_hierarchy_from_jams.return_value
+    assert annotation == mock_multisegment_from_jams.return_value
+    assert isinstance(annotation, core.MultiSegment) # Changed to core.MultiSegment
+
 
     # Test error if annotation type is not available
     with pytest.raises(ValueError):
         track.load_annotation("nonexistent")
 
 
-def test_load_hierarchy_cloud(mock_cloud_manifest_file: Path, requests_mock, mocker):
-    """Test loading a hierarchy from a cloud JAMS file."""
+def test_load_multisegment_cloud(mock_cloud_manifest_file: Path, requests_mock, mocker):
+    """Test loading a MultiSegment from a cloud JAMS file."""
     cloud_manifest_url = f"{MOCK_CLOUD_URL_BASE}/manifest_cloud.csv"
     with open(mock_cloud_manifest_file) as f:
         manifest_content = f.read()
@@ -361,9 +369,13 @@ def test_load_hierarchy_cloud(mock_cloud_manifest_file: Path, requests_mock, moc
     }"""
     requests_mock.get(expected_jams_url, text=jams_content_cloud_hierarchy)  # Mock JAMS download
 
-    # Mock bnl.data.Hierarchy.from_jams
-    # We want the actual jams.load to be called with the content from requests_mock
-    mock_hierarchy_from_jams = mocker.patch("bnl.data.Hierarchy.from_jams")
+    # Mock bnl.core.MultiSegment.from_jams
+    mock_multisegment_from_jams = mocker.patch("bnl.core.MultiSegment.from_jams")
+    # Configure a return value for the mock
+    mock_multisegment_from_jams.return_value = core.MultiSegment(
+        start=core.Boundary(0), duration=1, layers=[core.Segmentation.from_boundaries([0,1])]
+    )
+
 
     # Temporarily mock jams.load to inspect its argument if needed, but allow real call
     real_jams_load = data.jams.load
@@ -378,13 +390,14 @@ def test_load_hierarchy_cloud(mock_cloud_manifest_file: Path, requests_mock, moc
 
     annotation = track.load_annotation("reference")
 
-    # Assert that our mocked Hierarchy.from_jams was called
-    # The argument to it would be the multi_segment JAMS Annotation object
-    mock_hierarchy_from_jams.assert_called_once()
-    jams_annotation_arg = mock_hierarchy_from_jams.call_args[0][0]
+    # Assert that our mocked MultiSegment.from_jams was called
+    mock_multisegment_from_jams.assert_called_once()
+    jams_annotation_arg = mock_multisegment_from_jams.call_args[0][0]
     assert isinstance(jams_annotation_arg, data.jams.Annotation)
     assert jams_annotation_arg.namespace == "multi_segment"
-    assert annotation == mock_hierarchy_from_jams.return_value
+    assert annotation == mock_multisegment_from_jams.return_value
+    assert isinstance(annotation, core.MultiSegment) # Changed to core.MultiSegment
+
 
     # Test error if JAMS download fails
     requests_mock.get(expected_jams_url, status_code=404)
@@ -644,60 +657,60 @@ def annotation_test_dataset(
 
 
 def test_load_jams_hierarchies(annotation_test_dataset: data.Dataset):
-    """Tests loading various JAMS files into Hierarchy objects, including complex cases."""
-    # --- 1. Test with a simple, well-formed hierarchical file ---
-    track_hier = annotation_test_dataset["track1"]
-    hier = track_hier.load_annotation("hier.jams")
-    assert isinstance(hier, data.Hierarchy)
-    assert hier.label == "multi_segment"
-    assert len(hier.layers) == 2
-    assert np.isclose(hier.duration, 10.0)
+    """Tests loading various JAMS files into MultiSegment objects, including complex cases."""
+    # --- 1. Test with a simple, well-formed hierarchical file (now MultiSegment) ---
+    track_ms = annotation_test_dataset["track1"]
+    ms = track_ms.load_annotation("hier.jams")
+    assert isinstance(ms, core.MultiSegment) # Changed to core.MultiSegment
+    assert ms.label == "multi_segment"
+    assert len(ms.layers) == 2
+    assert np.isclose(ms.duration, 10.0)
     # Check that both layers span the full duration
-    assert np.isclose(hier.layers[0].duration, 10.0)
-    assert np.isclose(hier.layers[1].duration, 10.0)
+    assert np.isclose(ms.layers[0].duration, 10.0)
+    assert np.isclose(ms.layers[1].duration, 10.0)
     # Check boundaries
-    assert len(hier.layers[0].boundaries) == 2  # [0, 10]
-    assert len(hier.layers[1].boundaries) == 3  # [0, 5, 10]
+    assert len(ms.layers[0].boundaries) == 2  # [0, 10]
+    assert len(ms.layers[1].boundaries) == 3  # [0, 5, 10]
 
     # --- 2. Test with a file containing multiple annotations ---
-    track_multi = annotation_test_dataset["track3"]
+    track_multi_ann = annotation_test_dataset["track3"]
     # a) Load the first multi_segment annotation by default
-    hier_multi_default = track_multi.load_annotation("multi_ann.jams")
-    assert isinstance(hier_multi_default, data.Hierarchy)
-    assert len(hier_multi_default.layers) == 2
-    assert np.isclose(hier_multi_default.duration, 20.0)
-    assert hier_multi_default.layers[0].segments[0].label == "S"  # From the first annotation
+    ms_multi_default = track_multi_ann.load_annotation("multi_ann.jams")
+    assert isinstance(ms_multi_default, core.MultiSegment) # Changed to core.MultiSegment
+    assert len(ms_multi_default.layers) == 2
+    assert np.isclose(ms_multi_default.duration, 20.0)
+    assert ms_multi_default.layers[0].segments[0].label == "S"  # From the first annotation
 
     # b) Load the second multi_segment annotation by specifying index
-    hier_multi_idx1 = track_multi.load_annotation("multi_ann.jams", annotation_id=3)
-    assert isinstance(hier_multi_idx1, data.Hierarchy)
-    assert len(hier_multi_idx1.layers) == 1
-    assert np.isclose(hier_multi_idx1.duration, 20.0)
-    assert hier_multi_idx1.layers[0].segments[0].label == "Z"  # From the second annotation
+    ms_multi_idx1 = track_multi_ann.load_annotation("multi_ann.jams", annotation_id=3)
+    assert isinstance(ms_multi_idx1, core.MultiSegment) # Changed to core.MultiSegment
+    assert len(ms_multi_idx1.layers) == 1
+    assert np.isclose(ms_multi_idx1.duration, 20.0)
+    assert ms_multi_idx1.layers[0].segments[0].label == "Z"  # From the second annotation
 
     # c) Test for invalid index
     with pytest.raises(ValueError, match="out of range"):
-        track_multi.load_annotation("multi_ann.jams", annotation_id=99)
+        track_multi_ann.load_annotation("multi_ann.jams", annotation_id=99)
 
 
-def test_load_salami_jams_hierarchy(annotation_test_dataset: data.Dataset):
-    """Tests loading a real-world SALAMI JAMS file."""
+def test_load_salami_jams_multisegment(annotation_test_dataset: data.Dataset):
+    """Tests loading a real-world SALAMI JAMS file as MultiSegment."""
     track = annotation_test_dataset["track_salami"]
-    hier = track.load_annotation("8.jams", annotation_id=6)  # SALAMI has multi_segment at index 6
-    assert isinstance(hier, data.Hierarchy)
-    assert hier.label == "multi_segment"
-    assert len(hier.layers) == 2  # Coarse and fine layers
-    assert np.isclose(hier.duration, 227.803, atol=1e-3)
-    assert np.isclose(hier.start.time, 0.0)
+    ms = track.load_annotation("8.jams", annotation_id=6)  # SALAMI has multi_segment at index 6 # Renamed hier to ms
+    assert isinstance(ms, core.MultiSegment) # Changed to core.MultiSegment
+    assert ms.label == "multi_segment"
+    assert len(ms.layers) == 2  # Coarse and fine layers
+    assert np.isclose(ms.duration, 227.803, atol=1e-3)
+    assert np.isclose(ms.start.time, 0.0)
     # Check layer alignment
-    assert np.isclose(hier.layers[0].duration, hier.duration)
-    assert np.isclose(hier.layers[1].duration, hier.duration)
+    assert np.isclose(ms.layers[0].duration, ms.duration)
+    assert np.isclose(ms.layers[1].duration, ms.duration)
 
 
 def test_load_annotation_jams_segmentation_default(annotation_test_dataset: data.Dataset):
     track = annotation_test_dataset["track2"]  # has_annotation_seg_jams = True
     annotation = track.load_annotation("seg.jams")
-    assert isinstance(annotation, Segmentation)
+    assert isinstance(annotation, Segmentation) # This should be core.Segmentation if not already
     assert annotation.label == "segment_open"
     assert len(annotation.segments) == 2
     assert np.isclose(annotation.duration, 10.0)
@@ -705,10 +718,10 @@ def test_load_annotation_jams_segmentation_default(annotation_test_dataset: data
     assert annotation.segments[1].label == "chorus"
 
 
-def test_load_annotation_json_hierarchy(annotation_test_dataset: data.Dataset):
+def test_load_annotation_json_multisegment(annotation_test_dataset: data.Dataset):
     track = annotation_test_dataset["track1"]
-    annotation = track.load_annotation("hier.json")
-    assert isinstance(annotation, data.Hierarchy)
+    annotation = track.load_annotation("hier.json") # This file contains list of layers for MultiSegment
+    assert isinstance(annotation, core.MultiSegment) # Changed to core.MultiSegment
     assert len(annotation.layers) == 2
     assert np.isclose(annotation.duration, 10.0)
 
