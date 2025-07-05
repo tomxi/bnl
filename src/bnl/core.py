@@ -19,10 +19,12 @@ __all__ = [
     "Boundary",
     "TimeSpan",
     "Segmentation",
-    "Hierarchy",
+    "MultiSegment",
     "RatedBoundary",
+    "LeveledBoundary",
+    "BoundaryContour",
     "RatedBoundaries",
-    "ProperHierarchy",
+    "Hierarchy",
 ]
 
 
@@ -380,8 +382,8 @@ class Segmentation(TimeSpan):
 
 
 @dataclass(frozen=True)
-class Hierarchy(TimeSpan):
-    """A hierarchical structure of `Segmentation`s."""
+class MultiSegment(TimeSpan):
+    """A multi-layer structure of `Segmentation`s."""
 
     layers: Sequence[Segmentation] = field(default_factory=tuple)
 
@@ -402,14 +404,14 @@ class Hierarchy(TimeSpan):
         object.__setattr__(self, "layers", tuple(self.layers))
 
         if not self.layers:
-            raise ValueError("Hierarchy must contain at least one layer.")
+            raise ValueError("MultiSegment must contain at least one layer.")
 
         for i, layer in enumerate(self.layers):
             if not (np.isclose(layer.start.time, self.start.time) and np.isclose(layer.end.time, self.end.time)):
                 raise ValueError(
                     f"All layers must span the same time range. Layer {i} "
                     f"({layer.start.time:.2f}-{layer.end.time:.2f}) does not match "
-                    f"Hierarchy ({self.start.time:.2f}-{self.end.time:.2f})."
+                    f"MultiSegment ({self.start.time:.2f}-{self.end.time:.2f})."
                 )
 
     def __len__(self) -> int:
@@ -420,17 +422,17 @@ class Hierarchy(TimeSpan):
 
     def __repr__(self) -> str:
         label_str = f"label='{self.label}'" if self.label else ""
-        return f"Hierarchy({label_str}, {len(self)} layers, duration={self.duration:.2f}s)"
+        return f"MultiSegment({label_str}, {len(self)} layers, duration={self.duration:.2f}s)"
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """
-        Plots all layers of the hierarchy on a single axis, stacked vertically.
+        Plots all layers of the multi-segment structure on a single axis, stacked vertically.
 
         Args:
             ax: Matplotlib axes to plot on. If None, a new figure is created.
             **kwargs: Additional keyword arguments including:
                 figsize (tuple): Size of the figure to create if `ax` is not provided.
-                title (bool or str): If True, uses the Hierarchy's label as the title.
+                title (bool or str): If True, uses the MultiSegment's label as the title.
                 time_ticks (bool): If True, display time ticks on the x-axis.
                 layer_height (float): The height of the rectangle for each layer.
                 layer_gap (float): The gap between layers.
@@ -501,8 +503,8 @@ class Hierarchy(TimeSpan):
         return ax
 
     @classmethod
-    def from_jams(cls, anno: jams.Annotation, label: str | None = None) -> Hierarchy:
-        """Creates a `Hierarchy` from a JAMS multi-segment annotation."""
+    def from_jams(cls, anno: jams.Annotation, label: str | None = None) -> MultiSegment:
+        """Creates a `MultiSegment` from a JAMS multi-segment annotation."""
         from collections import defaultdict
 
         if anno.namespace != "multi_segment":
@@ -517,9 +519,9 @@ class Hierarchy(TimeSpan):
                 layers_data[level].append(obs)
 
         if not layers_data:
-            raise ValueError("Cannot create a Hierarchy from a JAMS annotation with no levels.")
+            raise ValueError("Cannot create a MultiSegment from a JAMS annotation with no levels.")
 
-        # Determine the overall time range for the hierarchy.
+        # Determine the overall time range for the multi-segment structure.
         # It's defined by the earliest start time and the specified annotation duration.
         start_time = min((obs.time for obs in anno), default=0.0)
         duration = anno.duration
@@ -543,7 +545,7 @@ class Hierarchy(TimeSpan):
             end_time = max(all_times)
             duration = end_time - start_time
 
-        # Create a segmentation for each level, ensuring it spans the full hierarchy duration
+        # Create a segmentation for each level, ensuring it spans the full multi-segment duration
         layers = []
         for level in sorted(layers_data.keys()):
             level_obs = layers_data[level]
@@ -556,7 +558,7 @@ class Hierarchy(TimeSpan):
                 annotation_metadata=anno.annotation_metadata,
             )
 
-            # Create the segmentation, forcing it to align with the parent hierarchy's time range
+            # Create the segmentation, forcing it to align with the parent multi-segment's time range
             segmentation = Segmentation.from_jams(
                 sub_anno,
                 label=f"level_{level}",
@@ -573,9 +575,9 @@ class Hierarchy(TimeSpan):
         )
 
     @classmethod
-    def from_json(cls, data: list, label: str | None = None) -> Hierarchy:
+    def from_json(cls, data: list, label: str | None = None) -> MultiSegment:
         """
-        Creates a `Hierarchy` from a JSON-like structure.
+        Creates a `MultiSegment` from a JSON-like structure.
         e.g., a list of layers, where each layer is a list of [intervals, labels].
         """
         layers = []
@@ -587,7 +589,7 @@ class Hierarchy(TimeSpan):
             all_boundaries.update(b.time for b in seg.boundaries)
 
         if not layers:
-            raise ValueError("Cannot create a Hierarchy from empty JSON data.")
+            raise ValueError("Cannot create a MultiSegment from empty JSON data.")
 
         start_time = min(all_boundaries) if all_boundaries else 0
         end_time = max(all_boundaries) if all_boundaries else 0
@@ -598,21 +600,52 @@ class Hierarchy(TimeSpan):
 
 @dataclass(order=True, frozen=True)
 class RatedBoundary:
-    """A boundary with a salience level."""
+    """A boundary with a rate level."""
 
     time: float
-    salience: float | int
+    rate: float | int
     label: str | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "time", _validate_time(self.time))
-        if not isinstance(self.salience, int | float):
-            raise TypeError(f"Salience must be a number, not {type(self.salience).__name__}.")
+        if not isinstance(self.rate, int | float):
+            raise TypeError(f"Rate must be a number, not {type(self.rate).__name__}.")
         if self.label is not None:
             object.__setattr__(self, "label", str(self.label))
 
     def __repr__(self) -> str:
-        return f"RatedBoundary(time={self.time:.2f}, salience={self.salience:.2f}, label={self.label!r})"
+        return f"RatedBoundary(time={self.time:.2f}, rate={self.rate:.2f}, label={self.label!r})"
+
+
+@dataclass(order=True, frozen=True)
+class LeveledBoundary(RatedBoundary):
+    """A RatedBoundary where the rate is constrained to be a positive integer level."""
+
+    def __init__(self, time: float, level: int, label: str | None = None):
+        if not isinstance(level, int):
+            raise TypeError(f"Level must be an integer, not {type(level).__name__}.")
+        if level <= 0:
+            raise ValueError(f"Level must be positive, but got {level}.")
+        super().__init__(time=time, rate=level, label=label)
+
+    @property
+    def level(self) -> int:
+        """The positive integer level of the boundary."""
+        # The rate is guaranteed to be an int by the constructor and setter.
+        return int(self.rate)
+
+    @level.setter
+    def level(self, value: int) -> None:
+        if not isinstance(value, int):
+            raise TypeError(f"Level must be an integer, not {type(value).__name__}.")
+        if value <= 0:
+            raise ValueError(f"Level must be positive, but got {value}.")
+        # Since the class is frozen, we have to use object.__setattr__
+        # Also, we are setting the 'rate' attribute of the parent class.
+        object.__setattr__(self, "rate", value)
+
+    def __repr__(self) -> str:
+        return f"LeveledBoundary(time={self.time:.2f}, level={self.level}, label={self.label!r})"
 
 
 @dataclass(frozen=True)
@@ -628,14 +661,72 @@ class RatedBoundaries:
         grouped_events = strategy.group(self.events)
         return RatedBoundaries(events=grouped_events, start_time=self.start_time, end_time=self.end_time)
 
-    def quantize_level(self, strategy: strategies.LevelGroupingStrategy) -> ProperHierarchy:
-        """Converts saliences to levels and synthesizes a `ProperHierarchy`."""
+    def quantize_level(self, strategy: strategies.LevelGroupingStrategy) -> Hierarchy: # type: ignore
+        """Converts rates to levels and synthesizes a `Hierarchy`."""
         return strategy.quantize(self)
 
 
 @dataclass(frozen=True)
-class ProperHierarchy(Hierarchy):
-    """A `Hierarchy` with monotonically nested layers."""
+class BoundaryContour(TimeSpan):
+    """A time span containing a sequence of rated boundaries."""
+
+    boundaries: Sequence[RatedBoundary] = field(default_factory=tuple)
+
+    # Adding explicit init to bypass dataclass inheritance issues if any complex logic arises
+    def __init__(
+        self,
+        start: Boundary, # Start boundary of the TimeSpan
+        duration: float,  # Duration of the TimeSpan
+        boundaries: Sequence[RatedBoundary],
+        label: str | None = None,
+    ):
+        object.__setattr__(self, "boundaries", tuple(sorted(boundaries))) # Keep them sorted
+        super().__init__(start, duration, label)
+
+    def __post_init__(self) -> None:
+        # Call parent's post_init if it has one and it's not implicitly called.
+        # TimeSpan's __init__ calls its __post_init__.
+        # super().__post_init__() # Not strictly needed due to TimeSpan's structure
+
+        # Ensure boundaries are sorted, done in __init__ to be safe with frozen=True
+        # object.__setattr__(self, "boundaries", tuple(sorted(self.boundaries)))
+
+        if not self.boundaries:
+            # Depending on requirements, an empty BoundaryContour might be valid or not.
+            # For now, let's allow it.
+            # raise ValueError("BoundaryContour requires at least one boundary.")
+            pass
+
+        # Optional: Validate that all boundaries fall within the TimeSpan's overall start and end
+        # This depends on whether boundaries define the span or are contained by a predefined span.
+        # Based on TimeSpan having its own start/duration, boundaries should be within.
+        if self.boundaries:
+            min_boundary_time = self.boundaries[0].time
+            max_boundary_time = self.boundaries[-1].time
+            # Ensure TimeSpan's start and end encompass the boundaries
+            if not np.isclose(self.start.time, min_boundary_time) and self.start.time > min_boundary_time :
+                 raise ValueError(
+                    f"BoundaryContour start time {self.start.time} must be <= first boundary time {min_boundary_time}."
+                )
+            if not np.isclose(self.end.time, max_boundary_time) and self.end.time < max_boundary_time:
+                raise ValueError(
+                    f"BoundaryContour end time {self.end.time} must be >= last boundary time {max_boundary_time}."
+                )
+
+    def __repr__(self) -> str:
+        label_str = f", label='{self.label}'" if self.label else ""
+        return (f"BoundaryContour(start={self.start.time:.2f}s, end={self.end.time:.2f}s, "
+                f"num_boundaries={len(self.boundaries)}{label_str})")
+
+
+@dataclass(frozen=True)
+class Hierarchy(MultiSegment):
+    """A `MultiSegment` with monotonically nested layers and `LeveledBoundary` instances."""
+
+    # Note: The `layers` attribute inherited from MultiSegment will store Segmentations,
+    # but for a Hierarchy, these Segmentations should ideally consist of LeveledBoundaries.
+    # This is enforced by how Hierarchy instances are constructed, particularly via
+    # from_rated_boundaries or similar synthesis methods.
 
     def __post_init__(self) -> None:
         # First, run the parent's post-init
@@ -651,11 +742,21 @@ class ProperHierarchy(Hierarchy):
                     f"Monotonicity violation: Layer {i} has boundaries not present in the finer layer {i + 1}."
                 )
 
+        # Validate that boundaries are LeveledBoundary instances
+        for layer in self.layers:
+            for boundary in layer.boundaries:
+                if not isinstance(boundary, LeveledBoundary):
+                    raise TypeError(
+                        f"All boundaries in a Hierarchy must be LeveledBoundary instances, "
+                        f"but found {type(boundary).__name__}."
+                    )
+
+
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """
-        Plots the proper hierarchy.
+        Plots the hierarchy.
 
-        This method calls the parent `Hierarchy.plot()` method. The layers are
+        This method calls the parent `MultiSegment.plot()` method. The layers are
         plotted with the coarsest layer at the top and the finest at the bottom.
 
         Args:
@@ -670,13 +771,15 @@ class ProperHierarchy(Hierarchy):
     @staticmethod
     def from_rated_boundaries(
         events: Sequence[RatedBoundary], start_time: float, end_time: float, label: str | None = None
-    ) -> ProperHierarchy:
-        """Synthesizes a `ProperHierarchy` from rated boundaries."""
-        from .strategies import DirectSynthesisStrategy
+    ) -> Hierarchy:
+        """Synthesizes a `Hierarchy` from rated boundaries."""
+        from .strategies import DirectSynthesisStrategy # TODO: This might need adjustment if DirectSynthesisStrategy produces LeveledBoundary
 
         # Wrap in RatedBoundaries to use the strategy
         rated_boundaries = RatedBoundaries(events=events, start_time=start_time, end_time=end_time)
 
         # Use the strategy to perform the synthesis
+        # The synthesis strategy is now responsible for ensuring that the
+        # boundaries within the returned Hierarchy's layers are LeveledBoundary instances.
         strategy = DirectSynthesisStrategy()
         return strategy.quantize(rated_boundaries)

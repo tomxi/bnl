@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from .core import Hierarchy, Segmentation
+from .core import MultiSegment, Segmentation # Hierarchy is now MultiSegment
 
 
 def _parse_jams_metadata(jams_path: Path | str) -> dict[str, Any]:
@@ -123,7 +123,7 @@ class Track:
             print(f"Warning: Failed to load audio from {audio_path}: {e}")
             return None, None
 
-    def load_annotation(self, annotation_type: str, annotation_id: str | int | None = None) -> Hierarchy | Segmentation:
+    def load_annotation(self, annotation_type: str, annotation_id: str | int | None = None) -> MultiSegment | Segmentation:
         """Loads a specific annotation."""
         if annotation_type not in self.annotations:
             raise ValueError(
@@ -142,7 +142,7 @@ class Track:
         if str(annotation_path).lower().endswith(".jams"):
             return self._load_jams(content, annotation_path, annotation_id)
         elif str(annotation_path).lower().endswith(".json"):
-            return self._load_json(content, annotation_type)
+            return self._load_json(content, annotation_type) # type: ignore
         else:
             raise NotImplementedError(f"Unsupported file type: {annotation_path}")
 
@@ -160,7 +160,7 @@ class Track:
 
     def _load_jams(
         self, content: io.StringIO, path: str | Path, annotation_id: str | int | None
-    ) -> Hierarchy | Segmentation:
+    ) -> MultiSegment | Segmentation:
         """Loads a JAMS annotation from a file buffer."""
         jam = jams.load(content)
 
@@ -172,7 +172,7 @@ class Track:
 
         # Convert to appropriate type
         if selected_ann.namespace == "multi_segment":
-            return Hierarchy.from_jams(selected_ann)
+            return MultiSegment.from_jams(selected_ann)
         else:
             try:
                 return Segmentation.from_jams(selected_ann)
@@ -228,11 +228,11 @@ class Track:
             f"Cannot auto-load from {path}. No default types found. Available: {available}. Specify 'annotation_id'."
         )
 
-    def _load_json(self, content: io.StringIO, label: str | None = None) -> Hierarchy:
-        """Loads a JSON annotation as a Hierarchy."""
+    def _load_json(self, content: io.StringIO, label: str | None = None) -> MultiSegment:
+        """Loads a JSON annotation as a MultiSegment."""
         try:
             json_data = json.load(content)
-            return Hierarchy.from_json(json_data, label=label)
+            return MultiSegment.from_json(json_data, label=label)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON: {e}") from e
 

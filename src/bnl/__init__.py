@@ -22,11 +22,14 @@ from . import core, data, ops, strategies
 # --- Promote the core data structures to the top level ---
 from .core import (
     Boundary,
-    Hierarchy,
-    ProperHierarchy,
-    RatedBoundary,
-    Segmentation,
     TimeSpan,
+    Segmentation,
+    MultiSegment, # Renamed from Hierarchy
+    RatedBoundary,
+    LeveledBoundary, # New
+    BoundaryContour, # New
+    Hierarchy,       # Renamed from ProperHierarchy
+    RatedBoundaries, # Was missing, but useful
 )
 from .ops import Pipeline
 
@@ -36,9 +39,12 @@ __all__ = [
     "Boundary",
     "TimeSpan",
     "Segmentation",
-    "Hierarchy",
-    "ProperHierarchy",
+    "MultiSegment",
     "RatedBoundary",
+    "LeveledBoundary",
+    "BoundaryContour",
+    "Hierarchy",
+    "RatedBoundaries",
     # Promoted from .ops
     "Pipeline",
     # Submodules (toolboxes)

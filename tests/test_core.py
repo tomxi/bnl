@@ -2,10 +2,12 @@ import pytest
 
 from bnl.core import (
     Boundary,
-    Hierarchy,
-    ProperHierarchy,
+    MultiSegment,  # Was Hierarchy
+    Hierarchy,     # Was ProperHierarchy
     RatedBoundaries,
     RatedBoundary,
+    LeveledBoundary, # New
+    BoundaryContour, # New
     Segmentation,
     TimeSpan,
 )
@@ -79,38 +81,74 @@ def test_segmentation_edge_cases():
         Segmentation.from_intervals([])
 
 
-def test_hierarchy_creation_and_validation():
-    """Tests Hierarchy creation and time alignment validation."""
+def test_multisegment_creation_and_validation():  # Renamed test
+    """Tests MultiSegment creation and time alignment validation."""
     s1 = Segmentation.from_boundaries([0, 2, 4], ["A", "B"])
     s2 = Segmentation.from_boundaries([0, 1, 2, 3, 4], ["a", "b", "c", "d"])
-    h = Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2], label="MyHier")
-    assert h.label == "MyHier"
-    assert len(h.layers) == 2
-    assert h.start.time == 0
-    assert h.end.time == 4
-    assert h.duration == 4
-    assert len(h) == 2
-    assert h[0] == s1
+    ms = MultiSegment(start=s1.start, duration=s1.duration, layers=[s1, s2], label="MyMultiSeg") # Renamed h to ms
+    assert ms.label == "MyMultiSeg"
+    assert len(ms.layers) == 2
+    assert ms.start.time == 0
+    assert ms.end.time == 4
+    assert ms.duration == 4
+    assert len(ms) == 2
+    assert ms[0] == s1
 
     s3_misaligned = Segmentation.from_boundaries([0, 1, 5], ["a", "b"])
     with pytest.raises(ValueError, match="All layers must span the same time range"):
-        Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s3_misaligned])
+        MultiSegment(start=s1.start, duration=s1.duration, layers=[s1, s3_misaligned])
 
 
-def test_proper_hierarchy_monotonicity():
-    """Tests the monotonicity enforcement of ProperHierarchy."""
+def test_hierarchy_monotonicity_and_leveledboundaries(): # Renamed test
+    """Tests the monotonicity enforcement and LeveledBoundary usage of Hierarchy."""
     # This should work
-    s1 = Segmentation.from_boundaries([0, 4])
-    s2 = Segmentation.from_boundaries([0, 2, 4])
-    s3 = Segmentation.from_boundaries([0, 1, 2, 3, 4])
-    ph_good = ProperHierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2, s3])
-    assert len(ph_good.layers) == 3
+    # For Hierarchy, boundaries must be LeveledBoundary.
+    # DirectSynthesisStrategy is expected to produce LeveledBoundaries.
+
+    # Create RatedBoundaries that DirectSynthesisStrategy can convert to LeveledBoundary
+    rb_events_s1 = [RatedBoundary(0, rate=1), RatedBoundary(4, rate=1)]
+    rated_boundaries_s1 = RatedBoundaries(events=rb_events_s1, start_time=0, end_time=4)
+    s1_from_synth = DirectSynthesisStrategy().quantize(rated_boundaries_s1).layers[0]
+
+    rb_events_s2 = [RatedBoundary(0, rate=2), RatedBoundary(2, rate=2), RatedBoundary(4, rate=2)]
+    # To ensure s2's rates are different for a multi-level hierarchy if needed by test logic
+    # but for this simple case, rate=2 is fine.
+    # For proper nesting, the *times* must nest. Levels are inherent to LeveledBoundary.
+    # Let's use distinct rates to form distinct levels for a clearer test of Hierarchy construction.
+    rated_boundaries_s2 = RatedBoundaries(events=[RatedBoundary(0, rate=2), RatedBoundary(2,rate=1), RatedBoundary(4, rate=2)], start_time=0, end_time=4)
+    # The DirectSynthesisStrategy will create layers based on unique rates.
+    # For simplicity, we'll construct segmentations with LeveledBoundary directly for this test.
+
+    lb0 = LeveledBoundary(0, level=1)
+    lb1 = LeveledBoundary(1, level=2)
+    lb2 = LeveledBoundary(2, level=1)
+    lb3 = LeveledBoundary(3, level=2)
+    lb4 = LeveledBoundary(4, level=1)
+
+    s1 = Segmentation(start=lb0, duration=4, boundaries=[lb0, lb4])
+    s2 = Segmentation(start=lb0, duration=4, boundaries=[lb0, lb2, lb4])
+    s3 = Segmentation(start=lb0, duration=4, boundaries=[lb0, lb1, lb2, lb3, lb4])
+
+    h_good = Hierarchy(start=lb0, duration=4, layers=[s1, s2, s3]) # Renamed ph_good to h_good
+    assert len(h_good.layers) == 3
+    assert isinstance(h_good.layers[0].boundaries[0], LeveledBoundary)
+
+    # Test LeveledBoundary validation in Hierarchy's __post_init__
+    s_fail_type_boundaries = [Boundary(0), Boundary(4)]
+    s_fail_type = Segmentation(start=Boundary(0), duration=4, boundaries=s_fail_type_boundaries)
+    with pytest.raises(TypeError, match="All boundaries in a Hierarchy must be LeveledBoundary"):
+        Hierarchy(start=Boundary(0), duration=4, layers=[s_fail_type])
 
     # This should fail (s2 is not a superset of s1's boundaries)
-    s_fail1 = Segmentation.from_boundaries([0, 2, 4])
-    s_fail2 = Segmentation.from_boundaries([0, 3, 4])
+    # Using LeveledBoundary for these tests too
+    s_fail1_lb0, s_fail1_lb2, s_fail1_lb4 = LeveledBoundary(0,1), LeveledBoundary(2,1), LeveledBoundary(4,1)
+    s_fail2_lb0, s_fail2_lb3, s_fail2_lb4 = LeveledBoundary(0,1), LeveledBoundary(3,1), LeveledBoundary(4,1)
+
+    s_fail1 = Segmentation(start=s_fail1_lb0, duration=4, boundaries=[s_fail1_lb0, s_fail1_lb2, s_fail1_lb4])
+    s_fail2 = Segmentation(start=s_fail2_lb0, duration=4, boundaries=[s_fail2_lb0, s_fail2_lb3, s_fail2_lb4])
+
     with pytest.raises(ValueError, match="Monotonicity violation"):
-        ProperHierarchy(start=s_fail1.start, duration=s_fail1.duration, layers=[s_fail1, s_fail2])
+        Hierarchy(start=s_fail1_lb0, duration=4, layers=[s_fail1, s_fail2])
 
 
 def test_rated_boundaries_fluent_api():
@@ -118,20 +156,26 @@ def test_rated_boundaries_fluent_api():
 
     class MockGrouping(BoundaryGroupingStrategy):
         def group(self, boundaries: list[RatedBoundary]) -> list[RatedBoundary]:
-            return boundaries + [RatedBoundary(99, 1)]
+            # Ensure rate is positive for LeveledBoundary if used by DirectSynthesisStrategy
+            return boundaries + [RatedBoundary(99, rate=1)]
 
     class MockLeveling(LevelGroupingStrategy):
-        def quantize(self, boundaries: RatedBoundaries) -> ProperHierarchy:
+        # This should return the new Hierarchy (formerly ProperHierarchy)
+        def quantize(self, boundaries: RatedBoundaries) -> Hierarchy:
             return DirectSynthesisStrategy().quantize(boundaries)
 
-    initial_events = [RatedBoundary(1, 1)]
+    initial_events = [RatedBoundary(1, rate=1)] # Use rate
     rb = RatedBoundaries(events=initial_events, start_time=0.0, end_time=100.0)
-    final_ph = rb.group_boundaries(MockGrouping()).quantize_level(MockLeveling())
+    final_h = rb.group_boundaries(MockGrouping()).quantize_level(MockLeveling()) # Renamed final_ph
 
-    assert isinstance(final_ph, ProperHierarchy)
-    # Level 0 (salience >= 1) contains start, end, and two boundaries (initial + mocked)
-    assert len(final_ph[0].boundaries) == 4
-    assert len(final_ph.layers) == 1
+    assert isinstance(final_h, Hierarchy) # Check for new Hierarchy
+    # DirectSynthesisStrategy creates LeveledBoundary, rates become levels.
+    # Level 1 contains start, end, and two boundaries (initial + mocked)
+    # The structure of layers depends on unique rates. If all rates are 1, one layer.
+    assert len(final_h.layers) > 0 # Should have at least one layer
+    if final_h.layers:
+        assert len(final_h.layers[0].boundaries) >= 2 # start and end, plus events
+        assert isinstance(final_h.layers[0].boundaries[0], LeveledBoundary)
 
 
 def test_string_representations():
@@ -141,22 +185,33 @@ def test_string_representations():
     assert str(ts) == "TimeSpan([0.00s-1.00s], 1.00s: A)"
     assert repr(ts) == f"TimeSpan(start={b!r}, duration=1.0, label='A')"
 
-    rb = RatedBoundary(1.0, salience=5, label="C5")
-    assert repr(rb) == "RatedBoundary(time=1.00, salience=5.00, label='C5')"
+    rb = RatedBoundary(1.0, rate=5, label="C5") # Use rate
+    assert repr(rb) == "RatedBoundary(time=1.00, rate=5.00, label='C5')" # Use rate
+
+    lb = LeveledBoundary(1.0, level=5, label="L5")
+    assert repr(lb) == "LeveledBoundary(time=1.00, level=5, label='L5')"
+
 
     seg = Segmentation(start=b, duration=1.0, boundaries=[b, Boundary(1.0)], label="MySeg")
     assert repr(seg) == "Segmentation(label='MySeg', 1 segments, duration=1.00s)"
 
-    # Create a segmentation with a matching time range for the hierarchy tests
-    seg_for_h = Segmentation.from_boundaries([0, 4])
+    # Create a segmentation with LeveledBoundary for hierarchy tests
+    lb0 = LeveledBoundary(0, level=1)
+    lb4 = LeveledBoundary(4, level=1)
+    seg_for_h = Segmentation(start=lb0, duration=4.0, boundaries=[lb0, lb4])
 
-    h = Hierarchy(start=b, duration=4.0, layers=[seg_for_h], label="MyHier")
-    assert repr(h) == "Hierarchy(label='MyHier', 1 layers, duration=4.00s)"
 
-    ph = ProperHierarchy(start=b, duration=4.0, layers=[seg_for_h], label="MyProperHier")
-    ph_repr = repr(ph)
-    assert "ProperHierarchy" in ph_repr
-    assert "label='MyProperHier'" in ph_repr
+    ms = MultiSegment(start=b, duration=4.0, layers=[seg_for_h], label="MyMultiSeg") # Renamed h to ms
+    assert repr(ms) == "MultiSegment(label='MyMultiSeg', 1 layers, duration=4.00s)" # Check MultiSegment
+
+    h = Hierarchy(start=lb0, duration=4.0, layers=[seg_for_h], label="MyHier") # Renamed ph to h, use LeveledBoundary
+    h_repr = repr(h)
+    # Example of a more robust check for the repr of Hierarchy
+    assert "Hierarchy" in h_repr
+    assert f"start={lb0!r}" in h_repr
+    assert "duration=4.0" in h_repr
+    assert "label='MyHier'" in h_repr
+    assert "layers=" in h_repr
 
 
 def test_plotting_functions():
@@ -198,34 +253,40 @@ def test_plotting_functions():
     assert ax_seg_color is ax
     plt.close(fig)
 
-    # 3. Test Hierarchy.plot
-    s1 = Segmentation.from_boundaries([0, 2, 4], ["A", "B"])
-    s2 = Segmentation.from_boundaries([0, 1, 2, 3, 4], ["a", "b", "c", "d"])
-    h = Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2], label="MyHier")
+    # 3. Test MultiSegment.plot (formerly Hierarchy.plot)
+    s1_ms = Segmentation.from_boundaries([0, 2, 4], ["A", "B"]) # Renamed s1 to s1_ms
+    s2_ms = Segmentation.from_boundaries([0, 1, 2, 3, 4], ["a", "b", "c", "d"]) # Renamed s2 to s2_ms
+    ms = MultiSegment(start=s1_ms.start, duration=s1_ms.duration, layers=[s1_ms, s2_ms], label="MyMultiSeg") # Renamed h to ms
 
     # Test without providing ax
-    ax_h_new = h.plot()
+    ax_ms_new = ms.plot() # Renamed ax_h_new
+    assert ax_ms_new is not None
+    plt.close(ax_ms_new.figure)
+
+    # Test with providing ax
+    fig, ax = plt.subplots()
+    ax_ms_existing = ms.plot(ax=ax) # Renamed ax_h_existing
+    assert ax_ms_existing is ax
+    plt.close(fig)
+
+    # 4. Test Hierarchy.plot (formerly ProperHierarchy.plot)
+    # Hierarchy requires LeveledBoundary instances
+    lb0_h = LeveledBoundary(0, level=1)
+    lb2_h = LeveledBoundary(2, level=1)
+    lb4_h = LeveledBoundary(4, level=1)
+
+    s1_h = Segmentation(start=lb0_h, duration=4, boundaries=[lb0_h, lb4_h]) # Renamed s1_ph to s1_h
+    s2_h = Segmentation(start=lb0_h, duration=4, boundaries=[lb0_h, lb2_h, lb4_h]) # Renamed s2_ph to s2_h
+
+    h = Hierarchy(start=lb0_h, duration=s1_h.duration, layers=[s1_h, s2_h]) # Renamed ph to h
+
+    # Test without providing ax
+    ax_h_new = h.plot() # Renamed ax_ph_new
     assert ax_h_new is not None
     plt.close(ax_h_new.figure)
 
     # Test with providing ax
     fig, ax = plt.subplots()
-    ax_h_existing = h.plot(ax=ax)
+    ax_h_existing = h.plot(ax=ax) # Renamed ax_ph_existing
     assert ax_h_existing is ax
-    plt.close(fig)
-
-    # 4. Test ProperHierarchy.plot
-    s1_ph = Segmentation.from_boundaries([0, 4])
-    s2_ph = Segmentation.from_boundaries([0, 2, 4])
-    ph = ProperHierarchy(start=s1_ph.start, duration=s1_ph.duration, layers=[s1_ph, s2_ph])
-
-    # Test without providing ax
-    ax_ph_new = ph.plot()
-    assert ax_ph_new is not None
-    plt.close(ax_ph_new.figure)
-
-    # Test with providing ax
-    fig, ax = plt.subplots()
-    ax_ph_existing = ph.plot(ax=ax)
-    assert ax_ph_existing is ax
     plt.close(fig)

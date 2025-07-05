@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from .core import Hierarchy, ProperHierarchy
+from .core import MultiSegment, Hierarchy
 from .strategies import (
     BoundaryGroupingStrategy,
     LevelGroupingStrategy,
@@ -18,8 +18,8 @@ from .strategies import (
 
 class Pipeline:
     """
-    Orchestrates the end-to-end process of transforming a raw `Hierarchy`
-    into a `ProperHierarchy` using a sequence of pluggable strategies.
+    Orchestrates the end-to-end process of transforming a raw `MultiSegment`
+    into a `Hierarchy` using a sequence of pluggable strategies.
 
     This class provides a high-level API to convert potentially non-monotonic
     or unstructured boundary data into a formal, monotonically nested hierarchy.
@@ -37,53 +37,53 @@ class Pipeline:
         Parameters
         ----------
         salience_strategy : SalienceStrategy
-            The strategy to calculate a salience value for each boundary.
+            The strategy to calculate a rate value for each boundary.
         grouping_strategy : BoundaryGroupingStrategy | None
             The strategy to consolidate boundaries that are close in time. If
             None, this step is skipped.
         leveling_strategy : LevelGroupingStrategy
-            The strategy to quantize salience values into discrete levels and
-            synthesize the final `ProperHierarchy`.
+            The strategy to quantize rate values into discrete levels and
+            synthesize the final `Hierarchy`.
         """
         self.salience_strategy = salience_strategy
         self.grouping_strategy = grouping_strategy
         self.leveling_strategy = leveling_strategy
 
-    def __call__(self, hierarchy: Hierarchy, label: str | None = None) -> ProperHierarchy:
+    def __call__(self, multi_segment: MultiSegment, label: str | None = None) -> Hierarchy:
         """
-        Executes the full transformation pipeline on a given hierarchy.
+        Executes the full transformation pipeline on a given multi-segment structure.
 
         The process follows these steps:
-        1.  **Salience Calculation:** A `SalienceStrategy` is used to compute
-            a `RatedBoundaries` object from the input `Hierarchy`.
+        1.  **Rate Calculation:** A `SalienceStrategy` (conceptually now a "RateStrategy")
+            is used to compute a `RatedBoundaries` object from the input `MultiSegment`.
         2.  **Boundary Grouping (Optional):** If a `BoundaryGroupingStrategy`
             is provided, it consolidates nearby boundaries.
         3.  **Level Quantization & Synthesis:** A `LevelGroupingStrategy`
-            converts the rated boundaries into a `ProperHierarchy`.
+            converts the rated boundaries into a `Hierarchy`.
 
         Parameters
         ----------
-        hierarchy : Hierarchy
-            The input hierarchy to process.
+        multi_segment : MultiSegment
+            The input multi-segment structure to process.
         label : str | None, optional
-            An optional label for the resulting `ProperHierarchy`. If None, the
-            label of the input hierarchy is used.
+            An optional label for the resulting `Hierarchy`. If None, the
+            label of the input multi-segment structure is used.
 
         Returns
         -------
-        ProperHierarchy
+        Hierarchy
             A new, monotonically nested hierarchy.
         """
-        # 1. Analyze salience
-        rated_boundaries = self.salience_strategy.calculate(hierarchy)
+        # 1. Analyze salience/rate
+        rated_boundaries = self.salience_strategy.calculate(multi_segment)
 
         # 2. Group boundaries in time (optional)
         if self.grouping_strategy:
             rated_boundaries = rated_boundaries.group_boundaries(self.grouping_strategy)
 
         # 3. Quantize saliences into levels and synthesize
-        proper_hierarchy = rated_boundaries.quantize_level(self.leveling_strategy)
+        hierarchy = rated_boundaries.quantize_level(self.leveling_strategy)
 
         # 4. Return the final object with the correct label
-        final_label = label if label is not None else hierarchy.label
-        return dataclasses.replace(proper_hierarchy, label=final_label)
+        final_label = label if label is not None else multi_segment.label
+        return dataclasses.replace(hierarchy, label=final_label)
