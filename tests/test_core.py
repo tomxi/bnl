@@ -147,10 +147,85 @@ def test_string_representations():
     seg = Segmentation(start=b, duration=1.0, boundaries=[b, Boundary(1.0)], label="MySeg")
     assert repr(seg) == "Segmentation(label='MySeg', 1 segments, duration=1.00s)"
 
-    h = Hierarchy(start=b, duration=4.0, layers=[seg], label="MyHier")
+    # Create a segmentation with a matching time range for the hierarchy tests
+    seg_for_h = Segmentation.from_boundaries([0, 4])
+
+    h = Hierarchy(start=b, duration=4.0, layers=[seg_for_h], label="MyHier")
     assert repr(h) == "Hierarchy(label='MyHier', 1 layers, duration=4.00s)"
 
-    ph = ProperHierarchy(start=b, duration=4.0, layers=[seg], label="MyProperHier")
+    ph = ProperHierarchy(start=b, duration=4.0, layers=[seg_for_h], label="MyProperHier")
     ph_repr = repr(ph)
     assert "ProperHierarchy" in ph_repr
     assert "label='MyProperHier'" in ph_repr
+
+
+def test_plotting_functions():
+    """Tests the plot methods of core objects."""
+    import matplotlib.pyplot as plt
+
+    # 1. Test TimeSpan.plot
+    b = Boundary(0.0)
+    ts = TimeSpan(b, 1.0, "A")
+
+    # Test without providing ax
+    ax_ts_new = ts.plot()
+    assert ax_ts_new is not None
+    plt.close(ax_ts_new.figure)
+
+    # Test with providing ax
+    fig, ax = plt.subplots()
+    ax_ts_existing = ts.plot(ax=ax)
+    assert ax_ts_existing is ax
+    plt.close(fig)
+
+    # 2. Test Segmentation.plot
+    seg = Segmentation.from_boundaries([0, 1.5, 3], ["A", "B"])
+
+    # Test without providing ax
+    ax_seg_new = seg.plot()
+    assert ax_seg_new is not None
+    plt.close(ax_seg_new.figure)
+
+    # Test with providing ax
+    fig, ax = plt.subplots()
+    ax_seg_existing = seg.plot(ax=ax)
+    assert ax_seg_existing is ax
+    plt.close(fig)
+
+    # Test with color_map
+    fig, ax = plt.subplots()
+    ax_seg_color = seg.plot(ax=ax, color_map={"A": "red", "B": "blue"})
+    assert ax_seg_color is ax
+    plt.close(fig)
+
+    # 3. Test Hierarchy.plot
+    s1 = Segmentation.from_boundaries([0, 2, 4], ["A", "B"])
+    s2 = Segmentation.from_boundaries([0, 1, 2, 3, 4], ["a", "b", "c", "d"])
+    h = Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2], label="MyHier")
+
+    # Test without providing ax
+    ax_h_new = h.plot()
+    assert ax_h_new is not None
+    plt.close(ax_h_new.figure)
+
+    # Test with providing ax
+    fig, ax = plt.subplots()
+    ax_h_existing = h.plot(ax=ax)
+    assert ax_h_existing is ax
+    plt.close(fig)
+
+    # 4. Test ProperHierarchy.plot
+    s1_ph = Segmentation.from_boundaries([0, 4])
+    s2_ph = Segmentation.from_boundaries([0, 2, 4])
+    ph = ProperHierarchy(start=s1_ph.start, duration=s1_ph.duration, layers=[s1_ph, s2_ph])
+
+    # Test without providing ax
+    ax_ph_new = ph.plot()
+    assert ax_ph_new is not None
+    plt.close(ax_ph_new.figure)
+
+    # Test with providing ax
+    fig, ax = plt.subplots()
+    ax_ph_existing = ph.plot(ax=ax)
+    assert ax_ph_existing is ax
+    plt.close(fig)

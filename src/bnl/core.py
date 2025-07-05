@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import jams
 import numpy as np
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
-    from matplotlib.figure import Figure
+    from matplotlib.typing import ColorType
 
     from . import strategies
 
@@ -82,26 +82,30 @@ class TimeSpan:
     def __repr__(self) -> str:
         return f"TimeSpan(start={self.start!r}, duration={self.duration!r}, label={self.label!r})"
 
-    def plot(
-        self,
-        ax: Axes,
-        ymin: float = 0.0,
-        ymax: float = 1.0,
-        color: str = "gray",
-        text_offset: float = 0.0,
-        **kwargs,
-    ) -> None:
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """
         Plots the time span as a horizontal bar on a given axes.
 
         Args:
-            ax: The Matplotlib axes to plot on.
-            ymin: The minimum y-extent of the bar, in axes coordinates (0-1).
-            ymax: The maximum y-extent of the bar, in axes coordinates (0-1).
-            color: The face color of the bar.
-            text_offset: The horizontal offset for the label text.
-            **kwargs: Additional keyword arguments passed to `ax.axvspan`.
+            ax: The Matplotlib axes to plot on. If None, a new figure is created.
+            **kwargs: Additional keyword arguments including:
+                ymin (float): The minimum y-extent of the bar.
+                ymax (float): The maximum y-extent of the bar.
+                color (ColorType): The face color of the bar.
+                text_offset (float): The horizontal offset for the label.
+                figsize (tuple): The size of the figure if creating a new one.
         """
+        if ax is None:
+            import matplotlib.pyplot as plt
+
+            _, ax = plt.subplots(figsize=kwargs.get("figsize", (10, 2)))
+        fig = ax.figure
+
+        ymin = kwargs.pop("ymin", 0.0)
+        ymax = kwargs.pop("ymax", 1.0)
+        color = kwargs.pop("color", "gray")
+        text_offset = kwargs.pop("text_offset", 0.0)
+
         plot_kwargs = kwargs.copy()
         plot_kwargs.setdefault("edgecolor", "white")
         plot_kwargs.setdefault("alpha", 0.7)
@@ -131,6 +135,17 @@ class TimeSpan:
                     edgecolor="none",
                 ),
             )
+
+        if fig.get_axes() == [ax]:  # Standalone plot configuration
+            if self.duration > 0:
+                ax.set_xlim(self.start.time, self.end.time)
+            else:
+                ax.set_xlim(-0.1, 0.1)
+            ax.set_yticks([])
+            ax.set_title(self.label or "TimeSpan")
+            fig.tight_layout()
+
+        return ax
 
 
 @dataclass(frozen=True)
@@ -194,45 +209,63 @@ class Segmentation(TimeSpan):
         label_str = f"label='{self.label}', " if self.label else ""
         return f"Segmentation({label_str}{len(self)} segments, duration={self.duration:.2f}s)"
 
-    def plot(
-        self,
-        ax: Axes | None = None,
-        **kwargs,
-    ) -> tuple[Figure, Axes]:
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """
-        Plots the segmentation using jams.display.
+        Plots the segmentation as a single-level hierarchy.
 
         Args:
             ax: Matplotlib axes to plot on. If None, a new figure is created.
-            **kwargs: Additional keyword arguments passed to jams.display.display().
+            **kwargs: Additional keyword arguments including:
+                ymin (float): The minimum y-extent of the layer.
+                ymax (float): The maximum y-extent of the layer.
+                color_map (dict): A mapping from labels to colors.
+                text_offset (float): The horizontal offset for the label text.
+                figsize (tuple): The size of the figure if creating a new one.
 
         Returns:
-            A tuple of the figure and axes.
+            The Matplotlib axes containing the plot.
         """
-        import jams.display
+        figsize = kwargs.pop("figsize", (10, 2))
 
-        # 1. Create a temporary JAMS annotation
-        anno = jams.Annotation(namespace="segment_open")
-        for seg in self.segments:
-            anno.append(
-                time=seg.start.time,
-                duration=seg.duration,
-                value=seg.label or "",
-                confidence=None,
-            )
-
-        # 2. Plot it using jams
         if ax is None:
             import matplotlib.pyplot as plt
 
-            fig, ax = plt.subplots()
-        else:
-            fig = ax.get_figure()
+            _, ax = plt.subplots(figsize=figsize)
+        fig = ax.figure
 
-        jams.display.display(anno, ax=ax, **kwargs)
-        ax.set_title(self.label or "Segmentation")
-        fig.tight_layout()
-        return fig, ax
+        ymin = kwargs.pop("ymin", 0.0)
+        ymax = kwargs.pop("ymax", 1.0)
+        color_map = kwargs.pop("color_map", None)
+        text_offset = kwargs.pop("text_offset", 0.0)
+
+        # Create a color map if one isn't provided
+        if color_map is None:
+            import matplotlib.colors as mcolors
+
+            all_labels = {s.label for s in self.segments if s.label}
+            palette = list(mcolors.TABLEAU_COLORS.values())
+            color_map = {label: palette[i % len(palette)] for i, label in enumerate(sorted(all_labels))}
+
+        # Plot each time span
+        for span in self.segments:
+            span.plot(
+                ax,
+                ymin=ymin,
+                ymax=ymax,
+                color=color_map.get(span.label, "gray"),
+                text_offset=text_offset,
+            )
+
+        if fig.get_axes() == [ax]:
+            if self.duration > 0:
+                ax.set_xlim(self.start.time, self.end.time)
+            else:
+                ax.set_xlim(-0.1, 0.1)
+            ax.set_yticks([])
+            ax.set_title(self.label or "Segmentation")
+            fig.tight_layout()
+
+        return ax
 
     @classmethod
     def from_boundaries(
@@ -365,20 +398,19 @@ class Hierarchy(TimeSpan):
         super().__init__(start, duration, label)
 
     def __post_init__(self) -> None:
-        if not self.layers:
-            raise ValueError("Hierarchy must contain at least one layer.")
-
         # Ensure layers are a tuple
         object.__setattr__(self, "layers", tuple(self.layers))
 
-        if len(self.layers) > 1:
-            for i, layer in enumerate(self.layers):
-                if not (np.isclose(layer.start.time, self.start.time) and np.isclose(layer.end.time, self.end.time)):
-                    raise ValueError(
-                        f"All layers must span the same time range. Layer {i} "
-                        f"({layer.start.time:.2f}-{layer.end.time:.2f}) does not match "
-                        f"Hierarchy ({self.start.time:.2f}-{self.end.time:.2f})."
-                    )
+        if not self.layers:
+            raise ValueError("Hierarchy must contain at least one layer.")
+
+        for i, layer in enumerate(self.layers):
+            if not (np.isclose(layer.start.time, self.start.time) and np.isclose(layer.end.time, self.end.time)):
+                raise ValueError(
+                    f"All layers must span the same time range. Layer {i} "
+                    f"({layer.start.time:.2f}-{layer.end.time:.2f}) does not match "
+                    f"Hierarchy ({self.start.time:.2f}-{self.end.time:.2f})."
+                )
 
     def __len__(self) -> int:
         return len(self.layers)
@@ -390,47 +422,43 @@ class Hierarchy(TimeSpan):
         label_str = f"label='{self.label}'" if self.label else ""
         return f"Hierarchy({label_str}, {len(self)} layers, duration={self.duration:.2f}s)"
 
-    def plot(
-        self,
-        ax: Axes | None = None,
-        figsize: tuple[float, float] | None = None,
-        title: bool | str | None = True,
-        time_ticks: bool = True,
-        layer_height: float = 0.8,
-        layer_gap: float = 0.1,
-    ) -> tuple[Figure, Axes]:
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """
         Plots all layers of the hierarchy on a single axis, stacked vertically.
 
         Args:
             ax: Matplotlib axes to plot on. If None, a new figure is created.
-            figsize: Size of the figure to create if `ax` is not provided.
-            title: If True, uses the Hierarchy's label as the title. If a string,
-                   uses that string as the title. If False or None, no title is shown.
-            time_ticks: If True, display time ticks on the x-axis.
-            layer_height: The height of the rectangle for each layer.
-            layer_gap: The gap between layers.
+            **kwargs: Additional keyword arguments including:
+                figsize (tuple): Size of the figure to create if `ax` is not provided.
+                title (bool or str): If True, uses the Hierarchy's label as the title.
+                time_ticks (bool): If True, display time ticks on the x-axis.
+                layer_height (float): The height of the rectangle for each layer.
+                layer_gap (float): The gap between layers.
 
         Returns:
-            A tuple of the (figure, axes) containing the plot.
+            The Matplotlib axes containing the plot.
         """
         import matplotlib.colors as mcolors
         import matplotlib.pyplot as plt
 
-        if not self.layers:
-            fig, ax = plt.subplots(figsize=figsize)
-            return fig, ax
+        # Pop kwargs for this function before passing to children
+        figsize = kwargs.pop("figsize", None)
+        title = kwargs.pop("title", True)
+        time_ticks = kwargs.pop("time_ticks", True)
+        layer_height = kwargs.pop("layer_height", 0.8)
+        layer_gap = kwargs.pop("layer_gap", 0.1)
 
         # 1. Setup figure and axes
         if ax is None:
-            fig, ax = plt.subplots(figsize=figsize or (10, 1 + 0.5 * len(self.layers)))
-        else:
-            fig = ax.figure
+            _, ax = plt.subplots(figsize=figsize or (10, 1 + 0.5 * len(self.layers)))
+        fig = ax.figure
 
         # 2. Create a single color map for all unique labels
         all_labels = {s.label for layer in self.layers for s in layer.segments if s.label}
         palette = list(mcolors.TABLEAU_COLORS.values())
-        color_map = {label: palette[i % len(palette)] for i, label in enumerate(sorted(all_labels))}
+        color_map: dict[str, ColorType] = {
+            label: palette[i % len(palette)] for i, label in enumerate(sorted(all_labels))
+        }
 
         # 3. Plot layers (coarsest at top)
         total_height = len(self.layers) * (layer_height + layer_gap) - layer_gap
@@ -438,20 +466,22 @@ class Hierarchy(TimeSpan):
 
         for i, layer in enumerate(self.layers):
             layer_ymin = total_height - (i + 1) * layer_height - i * layer_gap
-            for span in layer.segments:
-                span.plot(
-                    ax,
-                    ymin=layer_ymin / total_height,
-                    ymax=(layer_ymin + layer_height) / total_height,
-                    color=color_map.get(span.label, "gray"),
-                    text_offset=text_offset,
-                )
+            layer.plot(
+                ax,
+                ymin=layer_ymin / total_height,
+                ymax=(layer_ymin + layer_height) / total_height,
+                color_map=color_map,
+                text_offset=text_offset,
+            )
 
         # 4. Configure axes
         if title and self.label:
             ax.set_title(self.label if title is True else str(title))
 
-        ax.set_xlim(self.start.time, self.end.time) if self.duration > 0 else ax.set_xlim(-0.1, 0.1)
+        if self.duration > 0:
+            ax.set_xlim(self.start.time, self.end.time)
+        else:
+            ax.set_xlim(-0.1, 0.1)
         ax.set_ylim(0, total_height)
 
         if time_ticks:
@@ -468,7 +498,7 @@ class Hierarchy(TimeSpan):
         ax.set_yticklabels(ytick_labels)
 
         fig.tight_layout()
-        return fig, ax
+        return ax
 
     @classmethod
     def from_jams(cls, anno: jams.Annotation, label: str | None = None) -> Hierarchy:
@@ -621,15 +651,7 @@ class ProperHierarchy(Hierarchy):
                     f"Monotonicity violation: Layer {i} has boundaries not present in the finer layer {i + 1}."
                 )
 
-    def plot(
-        self,
-        ax: Axes | None = None,
-        figsize: tuple[float, float] | None = None,
-        title: bool | str | None = True,
-        time_ticks: bool = True,
-        layer_height: float = 0.8,
-        layer_gap: float = 0.1,
-    ) -> tuple[Figure, Axes]:
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """
         Plots the proper hierarchy.
 
@@ -638,24 +660,12 @@ class ProperHierarchy(Hierarchy):
 
         Args:
             ax: Matplotlib axes to plot on. If None, a new figure/axes is created.
-            figsize: Size of the figure to create if `ax` is not provided.
-            title: If True, uses the Hierarchy's label as the title. If a string,
-                   uses that string as the title. If False or None, no title is shown.
-            time_ticks: If True, display time ticks on the x-axis.
-            layer_height: The height of the rectangle for each layer.
-            layer_gap: The gap between layers.
+            **kwargs: Additional keyword arguments passed to the parent plot method.
 
         Returns:
-            A tuple of the (figure, axes) containing the plot.
+            The Matplotlib axes containing the plot.
         """
-        return super().plot(
-            ax=ax,
-            figsize=figsize,
-            title=title,
-            time_ticks=time_ticks,
-            layer_height=layer_height,
-            layer_gap=layer_gap,
-        )
+        return super().plot(ax=ax, **kwargs)
 
     @staticmethod
     def from_rated_boundaries(
