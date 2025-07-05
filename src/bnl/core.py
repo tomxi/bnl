@@ -195,6 +195,10 @@ class BoundaryContour(TimeSpan):
         object.__setattr__(self, "boundaries", sorted_boundaries)
         super().__init__(start=start, duration=duration)
 
+    def to_hierarchy(self, labels: Sequence[str] | None = None) -> Hierarchy:
+        """Converts the BoundaryContour into a Hierarchy."""
+        raise NotImplementedError("Not implemented yet.")
+
 
 @dataclass(frozen=True)
 class MultiSegment(TimeSpan):
@@ -310,7 +314,7 @@ class MultiSegment(TimeSpan):
             layers_to_plot = list(reversed(layers_to_plot))
 
         # Plot layers from bottom (index 0) to top
-        for plot_i, (original_i, layer) in enumerate(layers_to_plot):
+        for plot_i, (_original_i, layer) in enumerate(layers_to_plot):
             y_center = plot_i + 0.5
             for span in layer.segments:
                 color = color_map.get(span.start.label or str(span.start), "gray")
@@ -348,7 +352,7 @@ class MultiSegment(TimeSpan):
 
         return ax
 
-    def to_boundary_contour(self, method: str = "frequency") -> BoundaryContour:
+    def to_contour(self, method: str = "frequency") -> BoundaryContour:
         """
         Converts the MultiSegment into a BoundaryContour by calculating salience.
 
@@ -366,12 +370,10 @@ class MultiSegment(TimeSpan):
         from . import ops
 
         if method == "frequency":
-            salience_map = ops.calculate_frequency_salience(self)
+            payload = ops.naive_salience(self)
+            return payload.contour
         else:
             raise ValueError(f"Unsupported salience method: '{method}'")
-
-        rated_boundaries = [RatedBoundary(time=time, salience=salience) for time, salience in salience_map.items()]
-        return BoundaryContour(boundaries=rated_boundaries)
 
 
 @dataclass(frozen=True)

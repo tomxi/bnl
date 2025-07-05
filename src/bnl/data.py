@@ -282,7 +282,7 @@ class Dataset:
             return root / "audio" / f"{track_id}.{asset_subtype}"
         elif asset_type == "annotation":
             if asset_subtype.startswith("ref_") or asset_subtype == "reference":
-                # Reference JAMS annotations are located in the annotations/ directory for local datasets
+                # Reference JAMS annotations are located in the jams/ directory for local datasets
                 return root / "jams" / f"{track_id}.jams"
             elif "adobe" in asset_subtype:
                 # Adobe annotations have a specific subfolder structure.

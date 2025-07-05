@@ -169,7 +169,7 @@ def test_multisegment_to_boundary_contour():
     s2 = Segment.from_intervals([[0, 4], [4, 8]])
     mseg = MultiSegment(layers=[s1, s2])
 
-    contour = mseg.to_boundary_contour(method="frequency")
+    contour = mseg.to_contour(method="frequency")
     assert isinstance(contour, BoundaryContour)
     assert len(contour.boundaries) == 4
 
@@ -181,4 +181,4 @@ def test_multisegment_to_boundary_contour():
     assert salience_map[8] == 1
 
     with pytest.raises(ValueError, match="Unsupported"):
-        mseg.to_boundary_contour(method="invalid_method")
+        mseg.to_contour(method="invalid_method")
