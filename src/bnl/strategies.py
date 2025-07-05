@@ -97,12 +97,12 @@ class LevelGroupingStrategy(ABC):
 
 class DirectSynthesisStrategy(LevelGroupingStrategy):
     """
-    Synthesizes a `ProperHierarchy` directly from rated boundaries.
+    Synthesizes a `ProperHierarchy` from rated boundaries based on salience thresholds.
 
-    This strategy assumes that the salience values in the `RatedBoundaries`
-    are already integer-like and represent discrete hierarchy levels (e.g.,
-    0, 1, 2...). It creates one layer for each integer level from 0 up to the
-    maximum salience value found.
+        This strategy creates one layer for each unique salience value found in the
+        boundaries. A layer contains all boundaries with a salience greater than
+        or equal to that layer's threshold, resulting in a monotonically nested
+        hierarchy. Assumes higher salience values are more structurally important.
     """
 
     def quantize(self, boundaries: RatedBoundaries) -> ProperHierarchy:
@@ -169,22 +169,23 @@ class FrequencyStrategy(SalienceStrategy):
 
 class CoarsestNonzeroStrategy(SalienceStrategy):
     """
-    Calculates salience based on the coarsest layer a boundary appears in.
+    Calculates salience based on the number of layers a boundary is a member of.
 
-    The salience is the index of the *first* (coarsest) layer in which the
-    boundary is present. A boundary appearing in layer 0 will have a salience
-    of 0, a new boundary appearing first in layer 1 will have salience 1, etc.
-    This assumes layers are ordered from coarse to fine.
+    A boundary's salience is the total number of layers minus the index of the
+    coarsest layer it appears in. For a hierarchy with N layers, a boundary
+    first appearing in layer `i` (0-indexed, coarse to fine) gets a salience
+    of `N - i`. This means boundaries in coarser layers get higher scores.
     """
 
     def calculate(self, hierarchy: Hierarchy) -> RatedBoundaries:
         from .core import RatedBoundaries, RatedBoundary
 
+        num_layers = len(hierarchy.layers)
         boundary_salience: dict[float, int] = {}
         for i, layer in enumerate(hierarchy.layers):
             for b in layer.boundaries:
                 if b.time not in boundary_salience:
-                    boundary_salience[b.time] = i
+                    boundary_salience[b.time] = num_layers - i
 
         rated_boundaries = [RatedBoundary(time=time, salience=salience) for time, salience in boundary_salience.items()]
         return RatedBoundaries(
@@ -192,45 +193,3 @@ class CoarsestNonzeroStrategy(SalienceStrategy):
             start_time=hierarchy.start.time,
             end_time=hierarchy.end.time,
         )
-
-
-class BinaryLevelingStrategy(LevelGroupingStrategy):
-    """
-    Synthesizes a `ProperHierarchy` using a binary leveling approach.
-
-    This strategy assumes that the salience values in the `RatedBoundaries`
-    are already integer-like and represent discrete hierarchy levels (e.g.,
-    0, 1, 2...). It creates one layer for each integer level from 0 up to the
-    maximum salience value found.
-    """
-
-    def quantize(self, boundaries: RatedBoundaries) -> ProperHierarchy:
-        from .core import Boundary, ProperHierarchy, Segmentation
-
-        int_events = [e for e in boundaries.events if isinstance(e, RatedBoundary) and e.salience.is_integer()]
-        max_depth = max((e.salience for e in int_events), default=-1)
-        if max_depth < 0:
-            return ProperHierarchy(
-                start=Boundary(boundaries.start_time),
-                duration=boundaries.end_time - boundaries.start_time,
-                layers=[],
-            )
-
-        num_layers = int(max_depth) + 1
-        all_layers = []
-
-        for depth_level in range(num_layers):
-            # Boundaries for this level are all events with salience <= current depth
-            layer_boundary_times = {boundaries.start_time, boundaries.end_time}
-            for event in int_events:
-                if event.salience <= depth_level:
-                    layer_boundary_times.add(event.time)
-
-            sorted_times = sorted(list(layer_boundary_times))
-            b_objs = [Boundary(t) for t in sorted_times]
-            layer_label = f"level_{depth_level}"
-            start = b_objs[0]
-            duration = b_objs[-1].time - start.time
-            all_layers.append(Segmentation(start=start, duration=duration, boundaries=b_objs, label=layer_label))
-
-        return ProperHierarchy(start=all_layers[0].start, duration=all_layers[0].duration, layers=all_layers)

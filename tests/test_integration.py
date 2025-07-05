@@ -7,27 +7,12 @@ from pathlib import Path
 
 import pytest
 
-from bnl.core import Hierarchy, ProperHierarchy, RatedBoundaries, RatedBoundary
+from bnl.core import Hierarchy, ProperHierarchy
 from bnl.ops import Pipeline
 from bnl.strategies import (
     DirectSynthesisStrategy,
     FrequencyStrategy,
-    LevelGroupingStrategy,
 )
-
-
-# Define a simple leveling strategy for testing
-class BinaryLevelingStrategy(LevelGroupingStrategy):
-    def quantize(self, boundaries: RatedBoundaries) -> ProperHierarchy:
-        events = boundaries.events
-        new_events = [RatedBoundary(time=rb.time, salience=int(rb.salience > 1)) for rb in events]
-        # Use the default synthesis strategy on our newly quantized events
-        new_boundaries = RatedBoundaries(
-            events=new_events,
-            start_time=boundaries.start_time,
-            end_time=boundaries.end_time,
-        )
-        return DirectSynthesisStrategy().quantize(new_boundaries)
 
 
 @pytest.fixture
@@ -46,14 +31,17 @@ def test_full_pipeline_from_json_estimate(estimate_data):
     pipeline = Pipeline(
         salience_strategy=FrequencyStrategy(),
         grouping_strategy=None,
-        leveling_strategy=BinaryLevelingStrategy(),
+        leveling_strategy=DirectSynthesisStrategy(),
     )
 
     # 3. Process the hierarchy
-    result = pipeline.process(h)
+    result = pipeline(h)
 
-    # 4. Assert post-conditions
+    # 4. Final validation
     assert isinstance(result, ProperHierarchy)
     assert len(result) > 0
-    # With this trivial quantizer, we expect two layers (salience 0 and 1)
-    assert len(result) == 2
+    # The number of layers should correspond to the number of unique
+    # frequency counts in the hierarchy's boundaries.
+    all_boundaries = [b.time for layer in h for b in layer.boundaries]
+    unique_freqs = len(set(all_boundaries.count(b) for b in set(all_boundaries)))
+    assert len(result) == unique_freqs

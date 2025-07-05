@@ -2,6 +2,7 @@
 
 import io
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -790,3 +791,41 @@ def test_load_annotation_jams_no_default_found(
 # These are indirectly tested by the above, but more direct mocks can confirm
 # This is already covered by test_load_hierarchy_local, test_load_hierarchy_cloud
 # The new tests for load_annotation implicitly cover this for Hierarchy and Segmentation.
+
+# --- Edge Case Tests ---
+
+
+def test_dataset_missing_track_id_column(tmp_path):
+    """Tests `Dataset` with a missing `track_id` column."""
+    manifest_file = tmp_path / "bad.csv"
+    pd.DataFrame({"other": ["1"]}).to_csv(manifest_file, index=False)
+
+    with pytest.raises(ValueError, match="track_id"):
+        data.Dataset(manifest_file)
+
+
+def test_track_load_audio_no_assets(tmp_path):
+    """Tests audio loading when no audio assets are available."""
+    manifest_file = tmp_path / "metadata.csv"
+    pd.DataFrame({"track_id": ["1"]}).to_csv(manifest_file, index=False)
+
+    dataset = data.Dataset(manifest_file)
+    y, sr = dataset["1"].load_audio()
+    assert y is None and sr is None
+
+
+def test_track_hierarchy_missing_annotation(tmp_path):
+    """Tests loading a missing annotation."""
+    manifest_file = tmp_path / "metadata.csv"
+    pd.DataFrame({"track_id": ["1"]}).to_csv(manifest_file, index=False)
+
+    dataset = data.Dataset(manifest_file)
+    with pytest.raises(ValueError, match="not available"):
+        dataset["1"].load_annotation("missing")
+
+
+def test_dataset_cloud_request_error():
+    """Tests `Dataset` with a cloud request error."""
+    with patch("requests.get", side_effect=requests.RequestException("Network error")):
+        with pytest.raises(requests.RequestException):
+            data.Dataset("https://example.com/manifest.csv")

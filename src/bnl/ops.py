@@ -49,7 +49,7 @@ class Pipeline:
         self.grouping_strategy = grouping_strategy
         self.leveling_strategy = leveling_strategy
 
-    def process(self, hierarchy: Hierarchy, label: str | None = None) -> ProperHierarchy:
+    def __call__(self, hierarchy: Hierarchy, label: str | None = None) -> ProperHierarchy:
         """
         Executes the full transformation pipeline on a given hierarchy.
 

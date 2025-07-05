@@ -73,6 +73,11 @@ def test_segmentation_edge_cases():
     with pytest.raises(ValueError, match="at least one boundary"):
         Segmentation(start=Boundary(0), duration=1, boundaries=[])
 
+    with pytest.raises(ValueError, match="empty times"):
+        Segmentation.from_boundaries([])
+    with pytest.raises(ValueError, match="empty intervals"):
+        Segmentation.from_intervals([])
+
 
 def test_hierarchy_creation_and_validation():
     """Tests Hierarchy creation and time alignment validation."""
@@ -81,6 +86,11 @@ def test_hierarchy_creation_and_validation():
     h = Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2], label="MyHier")
     assert h.label == "MyHier"
     assert len(h.layers) == 2
+    assert h.start.time == 0
+    assert h.end.time == 4
+    assert h.duration == 4
+    assert len(h) == 2
+    assert h[0] == s1
 
     s3_misaligned = Segmentation.from_boundaries([0, 1, 5], ["a", "b"])
     with pytest.raises(ValueError, match="All layers must span the same time range"):

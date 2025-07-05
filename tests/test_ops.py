@@ -38,6 +38,21 @@ class PassThroughGrouping(BoundaryGroupingStrategy):
 # --- Tests ---
 
 
+def test_coarsest_nonzero_strategy(sample_hierarchy: Hierarchy):
+    """Tests the CoarsestNonzeroStrategy for correct salience calculation."""
+    strategy = CoarsestNonzeroStrategy()
+    rated = strategy.calculate(sample_hierarchy)
+
+    # Expected: num_layers - index
+    # Hierarchy has 2 layers.
+    # Boundaries at t=0, 4 are in layer 0. Salience = 2 - 0 = 2.
+    # Boundary at t=2 is new in layer 1. Salience = 2 - 1 = 1.
+    expected_saliences = {0.0: 2, 4.0: 2, 2.0: 1}
+    actual_saliences = {rb.time: rb.salience for rb in rated.events}
+
+    assert actual_saliences == expected_saliences
+
+
 def test_pipeline_runs_without_error(sample_hierarchy):
     """
     Tests that the full pipeline can be constructed and run
@@ -56,7 +71,7 @@ def test_pipeline_runs_without_error(sample_hierarchy):
     )
 
     # 3. Process the hierarchy
-    result_hierarchy = pipeline.process(sample_hierarchy)
+    result_hierarchy = pipeline(sample_hierarchy)
 
     # 4. Assert basic post-conditions
     assert result_hierarchy is not None
@@ -97,7 +112,7 @@ def test_pipeline_produces_correct_hierarchy():
         duration=dummy_segmentation.duration,
         layers=[dummy_segmentation],
     )
-    ph = pipeline.process(dummy_hierarchy, label="TestPH")
+    ph = pipeline(dummy_hierarchy, label="TestPH")
 
     assert isinstance(ph, ProperHierarchy)
     assert len(ph.layers) == 2  # Salience levels 0 and 1
@@ -130,7 +145,7 @@ def test_pipeline_with_empty_input():
         layers=[dummy_segmentation],
     )
     with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
-        pipeline.process(dummy_hierarchy)
+        pipeline(dummy_hierarchy)
 
 
 def test_rated_boundaries_fluent_api():
