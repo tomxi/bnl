@@ -8,17 +8,18 @@ from bnl import core
 def test_hierarchy_empty():
     """Test that creating a Hierarchy with no layers raises ValueError."""
     with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
-        core.Hierarchy([])
+        core.Hierarchy(start=core.Boundary(0), duration=0, layers=[])
 
 
 def test_hierarchy_properties():
     """Test basic properties."""
     layers = [core.Segmentation.from_intervals([[0, 5], [5, 10]])]
-    h = core.Hierarchy(layers=layers)
+    h = core.Hierarchy(start=layers[0].start, duration=layers[0].duration, layers=layers)
     assert h.start.time == 0
     assert h.end.time == 10
     assert h.duration == 10
     assert len(h) == 1
+    assert h[0] == layers[0]
 
 
 def test_hierarchy_from_jams_wrong_namespace():

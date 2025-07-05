@@ -20,7 +20,7 @@ from .core import Hierarchy, Segmentation
 
 
 def _parse_jams_metadata(jams_path: Path | str) -> dict[str, Any]:
-    """Load metadata from a JAMS file, returning empty dict on failure."""
+    """Loads metadata from a JAMS file."""
     try:
         if isinstance(jams_path, str) and jams_path.startswith("http"):
             response = requests.get(jams_path)
@@ -56,7 +56,7 @@ class Track:
 
     @property
     def info(self) -> dict[str, Any]:
-        """A cached dictionary of essential track information."""
+        """Essential track information (cached)."""
         if self._info_cache is not None:
             return self._info_cache
 
@@ -82,12 +82,12 @@ class Track:
 
     @property
     def has_annotations(self) -> bool:
-        """Checks if the track has any associated annotations."""
+        """Checks if the track has any annotations."""
         return self.manifest_row.filter(like="has_annotation_").any()
 
     @property
     def annotations(self) -> dict[str, str | Path]:
-        """Returns a dictionary of available annotation paths."""
+        """Returns available annotation paths."""
         ann_paths = {}
         for key, value in self.info.items():
             if key.startswith("annotation_") and key.endswith("_path"):
@@ -96,7 +96,7 @@ class Track:
         return ann_paths
 
     def load_audio(self) -> tuple[np.ndarray | None, float | None]:
-        """Loads the audio waveform and sample rate for this track."""
+        """Loads the track's audio waveform and sample rate."""
         # Find the first audio asset
         audio_path_key = next(
             (key for key in self.info.keys() if key.startswith("audio_") and key.endswith("_path")), None
@@ -124,7 +124,7 @@ class Track:
             return None, None
 
     def load_annotation(self, annotation_type: str, annotation_id: str | int | None = None) -> Hierarchy | Segmentation:
-        """Load an annotation as a Hierarchy or Segmentation object."""
+        """Loads a specific annotation."""
         if annotation_type not in self.annotations:
             raise ValueError(
                 f"Annotation type '{annotation_type}' not available. Available: {list(self.annotations.keys())}"
@@ -142,12 +142,12 @@ class Track:
         if str(annotation_path).lower().endswith(".jams"):
             return self._load_jams(content, annotation_path, annotation_id)
         elif str(annotation_path).lower().endswith(".json"):
-            return self._load_json(content)
+            return self._load_json(content, annotation_type)
         else:
             raise NotImplementedError(f"Unsupported file type: {annotation_path}")
 
     def _fetch_content(self, path: str | Path) -> io.StringIO:
-        """Fetch file content into StringIO buffer."""
+        """Fetches file content into a buffer."""
         if isinstance(path, str) and path.startswith("http"):
             response = requests.get(str(path))
             response.raise_for_status()
@@ -161,7 +161,7 @@ class Track:
     def _load_jams(
         self, content: io.StringIO, path: str | Path, annotation_id: str | int | None
     ) -> Hierarchy | Segmentation:
-        """Load JAMS annotation."""
+        """Loads a JAMS annotation from a file buffer."""
         jam = jams.load(content)
 
         # Find annotation to load
@@ -180,7 +180,7 @@ class Track:
                 raise ValueError(f"Failed to load '{selected_ann.namespace}' as Segmentation: {e}") from e
 
     def _select_jams_annotation(self, jam: jams.JAMS, annotation_id: str | int, path: str | Path) -> jams.Annotation:
-        """Select specific annotation by ID or index."""
+        """Selects a specific annotation by its ID or index."""
         if isinstance(annotation_id, int):
             if 0 <= annotation_id < len(jam.annotations):
                 return jam.annotations[annotation_id]
@@ -203,7 +203,7 @@ class Track:
             raise TypeError(f"Invalid annotation_id type: {type(annotation_id)}")
 
     def _find_default_jams_annotation(self, jam: jams.JAMS, path: str | Path) -> jams.Annotation:
-        """Find default annotation for auto-loading."""
+        """Finds the default annotation for auto-loading."""
         if not jam.annotations:
             raise ValueError(f"No annotations found in {path}")
 
@@ -228,11 +228,11 @@ class Track:
             f"Cannot auto-load from {path}. No default types found. Available: {available}. Specify 'annotation_id'."
         )
 
-    def _load_json(self, content: io.StringIO) -> Hierarchy:
-        """Load JSON annotation as Hierarchy."""
+    def _load_json(self, content: io.StringIO, label: str | None = None) -> Hierarchy:
+        """Loads a JSON annotation as a Hierarchy."""
         try:
             json_data = json.load(content)
-            return Hierarchy.from_json(json_data)
+            return Hierarchy.from_json(json_data, label=label)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON: {e}") from e
 

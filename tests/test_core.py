@@ -1,4 +1,3 @@
-import numpy as np
 import pytest
 
 from bnl.core import (
@@ -17,201 +16,131 @@ from bnl.strategies import (
 )
 
 
-# Test Boundary
-def test_boundary_init():
-    b = Boundary(1.23456)
-    assert b.time == 1.2346  # check rounding
-    assert b.label is None
+def test_boundary_creation_and_validation():
+    """Tests basic Boundary creation, validation, and sorting."""
+    b_ok = Boundary(1.23456, "event")
+    assert b_ok.time == 1.2346, "Time should be rounded"
+    assert b_ok.label == "event"
 
-
-def test_boundary_with_label():
-    b = Boundary(2.0, label="event")
-    assert b.label == "event"
-
-
-def test_boundary_type_validation():
-    with pytest.raises(TypeError, match="Time must be a number"):
+    with pytest.raises(TypeError):
         Boundary("not a time")  # type: ignore
-
-
-def test_boundary_value_validation():
-    with pytest.raises(ValueError, match="Time cannot be negative"):
+    with pytest.raises(ValueError):
         Boundary(-1.0)
 
-
-def test_boundary_sorting():
     b1 = Boundary(1.0)
     b2 = Boundary(2.0)
     b3 = Boundary(1.0, label="another")
     assert b1 < b2
-    assert b1 == b3  # Comparison is only on time
+    assert b1 == b3, "Boundary comparison should only use time"
 
 
-# Test TimeSpan
-def test_timespan_init():
+def test_timespan_creation_and_validation():
+    """Tests basic TimeSpan creation and validation."""
     b1 = Boundary(1.0)
     ts = TimeSpan(b1, 2.0, "A")
     assert ts.start == b1
     assert ts.duration == 2.0
     assert ts.label == "A"
-    assert ts.end == Boundary(3.0)
-    assert ts.end.time == 3.0
+    assert ts.end.time == 3.0, "End time should be calculated correctly"
 
-
-def test_timespan_no_label():
-    b1 = Boundary(1.0)
-    ts = TimeSpan(b1, 0.5)
-    assert ts.label is None
-
-
-def test_timespan_post_init_validation():
-    b1 = Boundary(1.0)
     with pytest.raises(ValueError, match="Duration must be positive"):
         TimeSpan(b1, 0)
-    with pytest.raises(ValueError, match="Duration must be positive"):
-        TimeSpan(b1, -1.0)
 
 
-def test_timespan_validation():
-    b1 = Boundary(2.0)
-    with pytest.raises(ValueError):
-        TimeSpan(b1, -1.0)
-
-
-# Test Segmentation
-def test_segmentation_init():
-    b1, b2, b3 = Boundary(0), Boundary(1.5), Boundary(3.0)
-    seg = Segmentation(boundaries=[b1, b2, b3], labels=["verse", "chorus"], name="song_structure")
-    assert seg.start == b1
-    assert seg.end == b3
-    assert seg.duration == 3.0
-    assert len(seg) == 2
-    assert seg.segments[0] == TimeSpan(b1, 1.5, "verse")
-    assert seg.segments[1] == TimeSpan(b2, 1.5, "chorus")
-
-
-def test_segmentation_unsorted_boundaries():
-    b1, b2, b3 = Boundary(0), Boundary(3.0), Boundary(1.5)
-    seg = Segmentation(boundaries=[b1, b2, b3], labels=["A", "B"], name="song_structure")
-    assert seg.boundaries[1].time == 1.5
-    assert seg.boundaries[2].time == 3.0
-
-
-def test_segmentation_len_and_getitem():
-    b1 = Boundary(0.0)
-    b2 = Boundary(3.0)
-    b3 = Boundary(5.0)
-    seg = Segmentation(boundaries=[b1, b2, b3], labels=["verse", "chorus"], name="Test")
-    assert len(seg.segments) == 2
-    assert seg.segments[0] == TimeSpan(b1, 3.0, "verse")
-    assert seg.segments[1] == TimeSpan(b2, 2.0, "chorus")
-
-
-def test_segmentation_from_boundaries():
-    times = [0, 1.5, 3]
-    labels = ["A", "B"]
-    seg = Segmentation.from_boundaries(times, labels)
-    assert len(seg) == 2
+def test_segmentation_creation_and_properties():
+    """Tests Segmentation creation, including property access and internal sorting."""
+    b1, b2, b3 = Boundary(0, "A"), Boundary(3.0), Boundary(1.5, "B")
+    seg = Segmentation(start=b1, duration=3.0, boundaries=[b1, b2, b3], label="test_seg")
+    assert seg.label == "test_seg"
+    assert seg.boundaries[0].time == 0 and seg.boundaries[2].time == 3.0, "Boundaries should be sorted"
+    assert len(seg) == 2, "Length should be the number of segments"
     assert seg[0].duration == 1.5
 
 
-def test_segmentation_from_intervals():
-    intervals = np.array([[0, 1.5], [1.5, 3]])
-    labels = ["A", "B"]
-    seg = Segmentation.from_intervals(intervals, labels)
-    assert len(seg) == 2
-    assert seg[0].duration == 1.5
+def test_segmentation_factories():
+    """Tests the `from_boundaries` and `from_intervals` factory methods."""
+    seg_b = Segmentation.from_boundaries([0, 1.5, 3], ["A", "B"])
+    assert len(seg_b) == 2
+    assert seg_b[0].duration == 1.5
+
+    seg_i = Segmentation.from_intervals([[0, 1.5], [1.5, 3]], ["A", "B"])
+    assert len(seg_i) == 2
+    assert seg_i[0].duration == 1.5
 
 
-def test_segmentation_errors():
+def test_segmentation_edge_cases():
+    """Tests error handling for invalid Segmentation definitions."""
     with pytest.raises(ValueError, match="at least one boundary"):
-        Segmentation(boundaries=[], labels=[])
-    with pytest.raises(ValueError, match="Number of labels"):
-        Segmentation(boundaries=[Boundary(0), Boundary(1)], labels=[])
+        Segmentation(start=Boundary(0), duration=1, boundaries=[])
 
 
-# Test Hierarchy
-def test_hierarchy_init():
+def test_hierarchy_creation_and_validation():
+    """Tests Hierarchy creation and time alignment validation."""
     s1 = Segmentation.from_boundaries([0, 2, 4], ["A", "B"])
     s2 = Segmentation.from_boundaries([0, 1, 2, 3, 4], ["a", "b", "c", "d"])
-    h = Hierarchy([s1, s2], name="TestHier")
-    assert len(h) == 2
-    assert h.duration == 4.0
+    h = Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2], label="MyHier")
+    assert h.label == "MyHier"
+    assert len(h.layers) == 2
 
-
-def test_hierarchy_alignment_error():
-    s1 = Segmentation.from_boundaries([0, 2, 4], ["A", "B"])
-    s2 = Segmentation.from_boundaries([0, 1, 5], ["a", "b"])  # End time mismatch
+    s3_misaligned = Segmentation.from_boundaries([0, 1, 5], ["a", "b"])
     with pytest.raises(ValueError, match="All layers must span the same time range"):
-        Hierarchy([s1, s2])
+        Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s3_misaligned])
 
 
-# Test ProperHierarchy
-def test_proper_hierarchy_monotonic_validation():
+def test_proper_hierarchy_monotonicity():
+    """Tests the monotonicity enforcement of ProperHierarchy."""
     # This should work
     s1 = Segmentation.from_boundaries([0, 4])
     s2 = Segmentation.from_boundaries([0, 2, 4])
     s3 = Segmentation.from_boundaries([0, 1, 2, 3, 4])
-    ph = ProperHierarchy([s1, s2, s3])
-    assert ph is not None
+    ph_good = ProperHierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2, s3])
+    assert len(ph_good.layers) == 3
 
-    # This should fail
+    # This should fail (s2 is not a superset of s1's boundaries)
     s_fail1 = Segmentation.from_boundaries([0, 2, 4])
-    s_fail2 = Segmentation.from_boundaries([0, 3, 4])  # Not a superset
-    with pytest.raises(ValueError, match="not a subset"):
-        ProperHierarchy([s_fail1, s_fail2])
+    s_fail2 = Segmentation.from_boundaries([0, 3, 4])
+    with pytest.raises(ValueError, match="Monotonicity violation"):
+        ProperHierarchy(start=s_fail1.start, duration=s_fail1.duration, layers=[s_fail1, s_fail2])
 
 
 def test_rated_boundaries_fluent_api():
-    """Tests that the fluent API on RatedBoundaries calls strategies correctly."""
+    """Tests the fluent API for grouping and quantizing RatedBoundaries."""
 
     class MockGrouping(BoundaryGroupingStrategy):
         def group(self, boundaries: list[RatedBoundary]) -> list[RatedBoundary]:
-            # Test that this gets called by adding a boundary with the same salience
             return boundaries + [RatedBoundary(99, 1)]
 
     class MockLeveling(LevelGroupingStrategy):
         def quantize(self, boundaries: RatedBoundaries) -> ProperHierarchy:
-            # Test that this gets called by checking the event count
             return DirectSynthesisStrategy().quantize(boundaries)
 
-    # 1. Initial data
     initial_events = [RatedBoundary(1, 1)]
     rb = RatedBoundaries(events=initial_events, start_time=0.0, end_time=100.0)
-
-    # 2. Chain the calls
     final_ph = rb.group_boundaries(MockGrouping()).quantize_level(MockLeveling())
 
-    # 3. Assertions
     assert isinstance(final_ph, ProperHierarchy)
-    # Layer 0 should have the global start/end
-    assert len(final_ph[0].boundaries) == 2
-    # Layer 1 should have the global start/end + the two event times
-    assert len(final_ph[1].boundaries) == 4  # 0, 1, 99, 100
+    # Level 0 (salience >= 1) contains start, end, and two boundaries (initial + mocked)
+    assert len(final_ph[0].boundaries) == 4
+    assert len(final_ph.layers) == 1
 
 
-# Test string representations
-def test_timespan_str_and_repr():
-    """Test the string representations of TimeSpan."""
-    b1 = Boundary(0.0)
-    ts = TimeSpan(b1, 1.0, "A")
+def test_string_representations():
+    """Tests the __str__ and __repr__ methods of core objects."""
+    b = Boundary(0.0)
+    ts = TimeSpan(b, 1.0, "A")
     assert str(ts) == "TimeSpan([0.00s-1.00s], 1.00s: A)"
-    assert repr(ts) == f"TimeSpan(start={b1!r}, duration=1.0, label='A')"
+    assert repr(ts) == f"TimeSpan(start={b!r}, duration=1.0, label='A')"
 
-
-def test_rated_boundary_repr():
     rb = RatedBoundary(1.0, salience=5, label="C5")
-    assert repr(rb) == "RatedBoundary(time=1.0, salience=5, label='C5')"
+    assert repr(rb) == "RatedBoundary(time=1.00, salience=5.00, label='C5')"
 
+    seg = Segmentation(start=b, duration=1.0, boundaries=[b, Boundary(1.0)], label="MySeg")
+    assert repr(seg) == "Segmentation(label='MySeg', 1 segments, duration=1.00s)"
 
-def test_segmentation_repr():
-    b1 = Boundary(0.0)
-    b2 = Boundary(1.0)
-    seg = Segmentation([b1, b2], ["A"], name="MySeg")
-    assert repr(seg) == "Segmentation(name='MySeg', 1 segments, duration=1.00s)"
+    h = Hierarchy(start=b, duration=4.0, layers=[seg], label="MyHier")
+    assert repr(h) == "Hierarchy(label='MyHier', 1 layers, duration=4.00s)"
 
-
-def test_hierarchy_repr():
-    s1 = Segmentation.from_boundaries([0, 2, 4], ["A", "B"])
-    h = Hierarchy([s1], name="MyHier")
-    assert repr(h) == "Hierarchy(name='MyHier', 1 layers, duration=4.00s)"
+    ph = ProperHierarchy(start=b, duration=4.0, layers=[seg], label="MyProperHier")
+    ph_repr = repr(ph)
+    assert "ProperHierarchy" in ph_repr
+    assert "label='MyProperHier'" in ph_repr

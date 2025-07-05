@@ -1,4 +1,4 @@
-"""Short tests for data.py edge cases to increase coverage."""
+"""Edge case tests for data.py."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -11,12 +11,12 @@ from bnl import data
 
 
 def test_parse_jams_metadata_error():
-    """Test JAMS parsing with errors."""
+    """Tests JAMS parsing with a nonexistent path."""
     assert data._parse_jams_metadata("/nonexistent/path.jams") == {}
 
 
 def test_dataset_missing_track_id_column(tmp_path):
-    """Test Dataset with missing track_id column."""
+    """Tests `Dataset` with a missing `track_id` column."""
     manifest_file = tmp_path / "bad.csv"
     pd.DataFrame({"other": ["1"]}).to_csv(manifest_file, index=False)
 
@@ -25,7 +25,7 @@ def test_dataset_missing_track_id_column(tmp_path):
 
 
 def test_track_load_audio_no_assets(tmp_path):
-    """Test audio loading with no audio assets."""
+    """Tests audio loading when no audio assets are available."""
     manifest_file = tmp_path / "metadata.csv"
     pd.DataFrame({"track_id": ["1"]}).to_csv(manifest_file, index=False)
 
@@ -35,7 +35,7 @@ def test_track_load_audio_no_assets(tmp_path):
 
 
 def test_track_hierarchy_missing_annotation(tmp_path):
-    """Test hierarchy with missing annotation."""
+    """Tests loading a missing annotation."""
     manifest_file = tmp_path / "metadata.csv"
     pd.DataFrame({"track_id": ["1"]}).to_csv(manifest_file, index=False)
 
@@ -45,7 +45,7 @@ def test_track_hierarchy_missing_annotation(tmp_path):
 
 
 def test_dataset_iteration(tmp_path):
-    """Test Dataset iteration."""
+    """Tests `Dataset` iteration."""
     manifest_file = tmp_path / "metadata.csv"
     pd.DataFrame({"track_id": ["1", "2"]}).to_csv(manifest_file, index=False)
 
@@ -55,7 +55,7 @@ def test_dataset_iteration(tmp_path):
 
 
 def test_track_repr_and_info(tmp_path):
-    """Test Track string representation and info."""
+    """Tests `Track` string representation and `info` property."""
     manifest_file = tmp_path / "metadata.csv"
     pd.DataFrame({"track_id": ["1"], "artist": ["Test"]}).to_csv(manifest_file, index=False)
 
@@ -66,7 +66,7 @@ def test_track_repr_and_info(tmp_path):
 
 
 def test_reconstruct_path_errors():
-    """Test _reconstruct_path error cases."""
+    """Tests `_reconstruct_path` error cases."""
     manifest_file = Path("fake.csv")
     with patch("bnl.data.pd.read_csv", return_value=pd.DataFrame({"track_id": ["1"]})):
         dataset = data.Dataset(manifest_file)
@@ -76,7 +76,7 @@ def test_reconstruct_path_errors():
 
 
 def test_dataset_cloud_request_error():
-    """Test Dataset with cloud request error."""
+    """Tests `Dataset` with a cloud request error."""
     with patch("requests.get", side_effect=requests.RequestException("Network error")):
         with pytest.raises(requests.RequestException):
             data.Dataset("https://example.com/manifest.csv")

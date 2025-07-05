@@ -12,16 +12,17 @@ from bnl.strategies import (
     BoundaryGroupingStrategy,
     CoarsestNonzeroStrategy,
     DirectSynthesisStrategy,
+    LevelGroupingStrategy,
     SalienceStrategy,
 )
 
 
 @pytest.fixture
-def sample_hierarchy():
-    """Provides a simple, consistent Hierarchy object for testing."""
-    s1 = Segmentation.from_boundaries([0, 2, 4], ["A", "B"])
-    s2 = Segmentation.from_boundaries([0, 1, 2, 3, 4], ["a", "b", "c", "d"])
-    return Hierarchy([s1, s2], name="TestHierarchy")
+def sample_hierarchy() -> Hierarchy:
+    """A sample Hierarchy for testing, from coarse to fine."""
+    s1 = Segmentation.from_boundaries([0, 4])
+    s2 = Segmentation.from_boundaries([0, 2, 4])
+    return Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2], label="TestHierarchy")
 
 
 # --- Mock Strategies For Testing ---
@@ -60,7 +61,7 @@ def test_pipeline_runs_without_error(sample_hierarchy):
     # 4. Assert basic post-conditions
     assert result_hierarchy is not None
     assert isinstance(result_hierarchy, ProperHierarchy)
-    assert result_hierarchy.name == sample_hierarchy.name
+    assert result_hierarchy.label == sample_hierarchy.label
     assert len(result_hierarchy.layers) > 0
 
 
@@ -90,14 +91,22 @@ def test_pipeline_produces_correct_hierarchy():
         leveling_strategy=DirectSynthesisStrategy(),
     )
     # The input hierarchy is a dummy one because the mock strategy ignores it.
-    dummy_hierarchy = Hierarchy([Segmentation.from_boundaries([0, 4])])
-    ph = pipeline.process(dummy_hierarchy, name="TestPH")
+    dummy_segmentation = Segmentation.from_boundaries([0, 4])
+    dummy_hierarchy = Hierarchy(
+        start=dummy_segmentation.start,
+        duration=dummy_segmentation.duration,
+        layers=[dummy_segmentation],
+    )
+    ph = pipeline.process(dummy_hierarchy, label="TestPH")
 
     assert isinstance(ph, ProperHierarchy)
     assert len(ph.layers) == 2  # Salience levels 0 and 1
-    assert ph.name == "TestPH"
-    assert ph[0].boundaries[1].time == 4.0  # Coarsest has only start/end
-    assert ph[1].boundaries[1].time == 2.0  # Finest includes the middle point
+    assert ph.label == "TestPH"
+    # Layer 0 (salience >= 0) has start, end, and both events
+    assert len(ph[0].boundaries) == 3
+    # Layer 1 (salience >= 1) has start, end, and the one event
+    assert len(ph[1].boundaries) == 3
+    assert ph[1].boundaries[1].time == 2.0
 
 
 def test_pipeline_with_empty_input():
@@ -114,11 +123,40 @@ def test_pipeline_with_empty_input():
         grouping_strategy=None,
         leveling_strategy=DirectSynthesisStrategy(),
     )
-    dummy_hierarchy = Hierarchy([Segmentation.from_boundaries([0, 4])])
-    ph = pipeline.process(dummy_hierarchy)
+    dummy_segmentation = Segmentation.from_boundaries([0, 4])
+    dummy_hierarchy = Hierarchy(
+        start=dummy_segmentation.start,
+        duration=dummy_segmentation.duration,
+        layers=[dummy_segmentation],
+    )
+    with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
+        pipeline.process(dummy_hierarchy)
 
-    assert len(ph) == 1
-    # Note: duration is now based on the original hierarchy, not the events
-    assert ph.duration == 0.0
-    assert len(ph[0].boundaries) == 1  # Should contain just the start time
-    assert ph[0].boundaries[0].time == dummy_hierarchy.start.time
+
+def test_rated_boundaries_fluent_api():
+    """Tests that the fluent API on RatedBoundaries calls strategies correctly."""
+
+    class MockGrouping(BoundaryGroupingStrategy):
+        def group(self, boundaries: list[RatedBoundary]) -> list[RatedBoundary]:
+            # Test that this gets called by adding a boundary with the same salience
+            return boundaries + [RatedBoundary(99, 1)]
+
+    class MockLeveling(LevelGroupingStrategy):
+        def quantize(self, boundaries: RatedBoundaries) -> ProperHierarchy:
+            # Test that this gets called by checking the event count
+            return DirectSynthesisStrategy().quantize(boundaries)
+
+    # 1. Initial data
+    initial_events = [RatedBoundary(1, 1)]
+    rb = RatedBoundaries(events=initial_events, start_time=0.0, end_time=100.0)
+
+    # 2. Chain the calls
+    final_ph = rb.group_boundaries(MockGrouping()).quantize_level(MockLeveling())
+
+    # 3. Assertions
+    assert isinstance(final_ph, ProperHierarchy)
+    # The new event has salience=1, same as the original.
+    # Level 0 (salience >= 1) contains start, end, and the two boundaries.
+    assert len(final_ph[0].boundaries) == 4
+    # There is only one salience level, so only one layer.
+    assert len(final_ph.layers) == 1

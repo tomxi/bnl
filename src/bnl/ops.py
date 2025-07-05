@@ -49,7 +49,7 @@ class Pipeline:
         self.grouping_strategy = grouping_strategy
         self.leveling_strategy = leveling_strategy
 
-    def process(self, hierarchy: Hierarchy, name: str | None = None) -> ProperHierarchy:
+    def process(self, hierarchy: Hierarchy, label: str | None = None) -> ProperHierarchy:
         """
         Executes the full transformation pipeline on a given hierarchy.
 
@@ -65,9 +65,9 @@ class Pipeline:
         ----------
         hierarchy : Hierarchy
             The input hierarchy to process.
-        name : str | None, optional
-            An optional name for the resulting `ProperHierarchy`. If None, the
-            name of the input hierarchy is used.
+        label : str | None, optional
+            An optional label for the resulting `ProperHierarchy`. If None, the
+            label of the input hierarchy is used.
 
         Returns
         -------
@@ -84,6 +84,6 @@ class Pipeline:
         # 3. Quantize saliences into levels and synthesize
         proper_hierarchy = rated_boundaries.quantize_level(self.leveling_strategy)
 
-        # 4. Return the final object with the correct name
-        final_name = name if name is not None else hierarchy.name
-        return dataclasses.replace(proper_hierarchy, name=final_name)
+        # 4. Return the final object with the correct label
+        final_label = label if label is not None else hierarchy.label
+        return dataclasses.replace(proper_hierarchy, label=final_label)

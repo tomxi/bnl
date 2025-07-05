@@ -1,10 +1,10 @@
-"""Core data structures for boundaries-and-labels, a boundary-centric paradigm."""
+"""Core data structures for boundaries-and-labels."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 import jams
 import numpy as np
@@ -24,7 +24,7 @@ __all__ = [
 
 
 def _validate_time(time: int | float | np.number) -> float:
-    """Validate and round a time value."""
+    """Validates and rounds a time value."""
     if not isinstance(time, int | float | np.number):
         raise TypeError(f"Time must be a number, not {type(time).__name__}.")
     if time < 0:
@@ -34,7 +34,7 @@ def _validate_time(time: int | float | np.number) -> float:
 
 @dataclass(frozen=True, order=True)
 class Boundary:
-    """A time point, optionally with a label. The fundamental unit."""
+    """A time point, optionally with a label."""
 
     time: float = field(default=0.0, compare=True)
     label: str | None = field(default=None, compare=False)
@@ -47,22 +47,30 @@ class Boundary:
 
 @dataclass(frozen=True)
 class TimeSpan:
-    """A labeled time span defined by a start boundary and a duration."""
+    """A labeled time interval."""
 
-    start: Boundary = field(default_factory=Boundary)
+    start: Boundary = field(default_factory=lambda: Boundary(0.0, None))
     duration: float = 1.0
     label: str | None = None
+
+    # Adding explicit init to bypass dataclass inheritance issues
+    def __init__(self, start: Boundary, duration: float, label: str | None = None):
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "duration", duration)
+        object.__setattr__(self, "label", label)
+        self.__post_init__()
+
+    @property
+    def end(self) -> Boundary:
+        """The end boundary of the time span."""
+        return Boundary(self.start.time + self.duration)
 
     def __post_init__(self) -> None:
         if self.duration <= 0:
             raise ValueError(f"Duration must be positive, but got {self.duration}.")
         if self.label is not None:
+            # Ensure label is a string for consistency
             object.__setattr__(self, "label", str(self.label))
-
-    @property
-    def end(self) -> Boundary:
-        """The end boundary of the time span (calculated)."""
-        return Boundary(time=self.start.time + self.duration)
 
     def __str__(self) -> str:
         lab = f": {self.label}" if self.label else ""
@@ -73,51 +81,54 @@ class TimeSpan:
 
 
 @dataclass(frozen=True)
-class Segmentation:
-    """A contiguous sequence of TimeSpans defined by an ordered collection of boundaries and labels."""
+class Segmentation(TimeSpan):
+    """A sequence of contiguous `TimeSpan`s."""
 
-    boundaries: Sequence[Boundary]
-    labels: Sequence[str | None]
-    name: str | None = None
+    boundaries: Sequence[Boundary] = field(default_factory=tuple)
+
+    def __init__(
+        self,
+        start: Boundary,
+        duration: float,
+        boundaries: Sequence[Boundary],
+        label: str | None = None,
+    ):
+        # Set child attributes FIRST to ensure they exist before post-init validation
+        object.__setattr__(self, "boundaries", tuple(boundaries))
+        # Now call parent init, which will trigger post-init
+        super().__init__(start, duration, label)
 
     def __post_init__(self) -> None:
+        # Note: super().__post_init__() is not needed because the parent init calls it
         if not self.boundaries:
             raise ValueError("Segmentation requires at least one boundary.")
-        if len(self.labels) != len(self.boundaries) - 1:
-            raise ValueError(
-                f"Number of labels ({len(self.labels)}) must be one less than "
-                f"the number of boundaries ({len(self.boundaries)})."
-            )
 
         # Ensure boundaries are sorted
         sorted_boundaries = tuple(sorted(self.boundaries))
         object.__setattr__(self, "boundaries", sorted_boundaries)
 
-        # Ensure labels are a tuple
-        object.__setattr__(self, "labels", tuple(self.labels))
+        # Check consistency
+        if not np.isclose(self.start.time, sorted_boundaries[0].time):
+            raise ValueError(
+                f"Segmentation start time {self.start.time} "
+                f"does not match first boundary time {sorted_boundaries[0].time}."
+            )
 
-    @property
-    def start(self) -> Boundary:
-        return self.boundaries[0]
-
-    @property
-    def end(self) -> Boundary:
-        return self.boundaries[-1]
-
-    @property
-    def duration(self) -> float:
-        return self.end.time - self.start.time
+        if not np.isclose(self.end.time, sorted_boundaries[-1].time):
+            raise ValueError(
+                f"Segmentation end time {self.end.time} does not match last boundary time {sorted_boundaries[-1].time}."
+            )
 
     @property
     def segments(self) -> tuple[TimeSpan, ...]:
-        """The segments composing the segmentation."""
+        """The segments in the segmentation."""
         return tuple(
             TimeSpan(
                 start=self.boundaries[i],
                 duration=self.boundaries[i + 1].time - self.boundaries[i].time,
-                label=self.labels[i],
+                label=self.boundaries[i].label,
             )
-            for i in range(len(self.labels))
+            for i in range(len(self.boundaries) - 1)
         )
 
     def __len__(self) -> int:
@@ -127,54 +138,138 @@ class Segmentation:
         return self.segments[idx]
 
     def __repr__(self) -> str:
-        name_str = f"name='{self.name}', " if self.name else ""
-        return f"Segmentation({name_str}{len(self)} segments, duration={self.duration:.2f}s)"
+        label_str = f"label='{self.label}', " if self.label else ""
+        return f"Segmentation({label_str}{len(self)} segments, duration={self.duration:.2f}s)"
 
     @classmethod
     def from_boundaries(
-        cls, boundaries: Sequence[float], labels: Sequence[str | None] | None = None, name: str | None = None
+        cls, times: Sequence[float], segment_labels: Sequence[str | None] | None = None, label: str | None = None
     ) -> Segmentation:
-        """Creates a Segmentation from a sequence of boundary times."""
-        if labels is None:
-            labels = [None] * (len(boundaries) - 1)
-        b_objs = [Boundary(t) for t in sorted(list(set(boundaries)))]
-        return cls(boundaries=b_objs, labels=labels, name=name)
+        """Creates a `Segmentation` from boundary times."""
+        if not times:
+            raise ValueError("Cannot create Segmentation from empty times.")
+
+        sorted_times = sorted(list(set(times)))
+        if segment_labels is None:
+            segment_labels = [None] * (len(sorted_times) - 1)
+
+        # Each boundary gets the label of the segment it starts
+        boundaries = []
+        for i, t in enumerate(sorted_times):
+            boundary_label = segment_labels[i] if i < len(segment_labels) else None
+            boundaries.append(Boundary(t, label=boundary_label))
+
+        start_boundary = boundaries[0]
+        duration = boundaries[-1].time - start_boundary.time
+        return cls(start=start_boundary, duration=duration, boundaries=boundaries, label=label)
 
     @classmethod
     def from_intervals(
-        cls, intervals: np.ndarray, labels: list[str | None] | None = None, name: str | None = None
+        cls,
+        intervals: Sequence[Sequence[float]],
+        segment_labels: Sequence[str | None] | None = None,
+        label: str | None = None,
     ) -> Segmentation:
-        """Creates a Segmentation from a numpy array of intervals."""
-        intervals_np = np.asanyarray(intervals)
-        boundary_times = np.unique(intervals_np.flatten())
-        return cls.from_boundaries(list(boundary_times.astype(float)), labels=labels, name=name)
+        """Creates a `Segmentation` from (start, end) intervals."""
+        if len(intervals) == 0:
+            raise ValueError("Cannot create Segmentation from empty intervals.")
+
+        boundary_times = sorted(list(set(t for i in intervals for t in i)))
+        return cls.from_boundaries(boundary_times, segment_labels=segment_labels, label=label)
 
     @classmethod
-    def from_jams(cls, anno: jams.Annotation) -> Segmentation:
-        # Event-like annotations (e.g., beats) have duration 0
-        is_event_like = all(obs.duration == 0 for obs in anno)
+    def from_jams(
+        cls,
+        anno: jams.Annotation,
+        label: str | None = None,
+        start_time: float | None = None,
+        duration: float | None = None,
+    ) -> Segmentation:
+        """
+        Creates a `Segmentation` from a JAMS annotation.
 
-        sorted_observations = sorted(anno, key=lambda o: o.time)
+        Args:
+            anno: JAMS annotation to convert.
+            label: Optional label for the segmentation.
+            start_time: Optional start time to enforce.
+            duration: Optional duration to enforce.
 
-        if is_event_like:
-            boundaries = [Boundary(time=obs.time, label=str(obs.value)) for obs in sorted_observations]
-            labels = [None] * (len(boundaries) - 1)
+        Returns:
+            A new `Segmentation` object.
+        """
+        boundary_dict = {}
+
+        for obs in anno:
+            time, obs_duration, value = obs.time, obs.duration, obs.value
+            obs_label = value.get("label") if isinstance(value, dict) else value
+
+            # Prioritize labeled boundaries. If a boundary at this time already exists,
+            # only overwrite it if the new one has a non-None label.
+            if time not in boundary_dict or obs_label is not None:
+                boundary_dict[time] = obs_label
+
+            if obs_duration > 0:
+                end_time = time + obs_duration
+                # Add the end boundary only if it doesn't already exist.
+                if end_time not in boundary_dict:
+                    boundary_dict[end_time] = None
+
+        # If a specific time range is given, enforce it by adding/overwriting boundaries.
+        if start_time is not None:
+            if start_time not in boundary_dict:
+                boundary_dict[start_time] = None
+            if duration is not None:
+                end_time = start_time + duration
+                if end_time not in boundary_dict:
+                    boundary_dict[end_time] = None
+        elif duration is not None:
+            jams_start = min((obs.time for obs in anno), default=0.0)
+            if jams_start not in boundary_dict:
+                boundary_dict[jams_start] = None
+            end_time = jams_start + duration
+            if end_time not in boundary_dict:
+                boundary_dict[end_time] = None
+
+        if not boundary_dict:
+            if start_time is not None and duration is not None:
+                # Create a simple segmentation if there's no data but a range is defined
+                boundaries = [Boundary(start_time), Boundary(start_time + duration)]
+            else:
+                raise ValueError("Cannot create Segmentation from a JAMS annotation with no data and no defined range.")
         else:
-            times = sorted(
-                {obs.time for obs in sorted_observations} | {obs.time + obs.duration for obs in sorted_observations}
-            )
-            boundaries = [Boundary(time=t) for t in times]
-            labels = [obs.value for obs in sorted_observations]
+            boundaries = [Boundary(t, label) for t, label in boundary_dict.items()]
 
-        return cls(boundaries=boundaries, labels=labels, name=anno.namespace)
+        unique_boundaries = sorted(boundaries)
+        final_start_boundary = unique_boundaries[0]
+        final_duration = unique_boundaries[-1].time - final_start_boundary.time
+
+        # The overall segmentation label is passed in, or defaults to the annotation's namespace.
+        # The labels on individual boundaries are for the segments they start.
+        return cls(
+            start=final_start_boundary,
+            duration=final_duration,
+            boundaries=unique_boundaries,
+            label=label or anno.namespace,
+        )
 
 
 @dataclass(frozen=True)
-class Hierarchy:
-    """A hierarchical structure of segmentations, aligned in time."""
+class Hierarchy(TimeSpan):
+    """A hierarchical structure of `Segmentation`s."""
 
-    layers: Sequence[Segmentation]
-    name: str | None = None
+    layers: Sequence[Segmentation] = field(default_factory=tuple)
+
+    def __init__(
+        self,
+        start: Boundary,
+        duration: float,
+        layers: Sequence[Segmentation],
+        label: str | None = None,
+    ):
+        # Set child attributes FIRST
+        object.__setattr__(self, "layers", tuple(layers))
+        # Now call parent init, which triggers post-init
+        super().__init__(start, duration, label)
 
     def __post_init__(self) -> None:
         if not self.layers:
@@ -184,27 +279,13 @@ class Hierarchy:
         object.__setattr__(self, "layers", tuple(self.layers))
 
         if len(self.layers) > 1:
-            start_time = self.layers[0].start.time
-            end_time = self.layers[0].end.time
-            for i, layer in enumerate(self.layers[1:], 1):
-                if not (np.isclose(layer.start.time, start_time) and np.isclose(layer.end.time, end_time)):
+            for i, layer in enumerate(self.layers):
+                if not (np.isclose(layer.start.time, self.start.time) and np.isclose(layer.end.time, self.end.time)):
                     raise ValueError(
                         f"All layers must span the same time range. Layer {i} "
                         f"({layer.start.time:.2f}-{layer.end.time:.2f}) does not match "
-                        f"Layer 0 ({start_time:.2f}-{end_time:.2f})."
+                        f"Hierarchy ({self.start.time:.2f}-{self.end.time:.2f})."
                     )
-
-    @property
-    def start(self) -> Boundary:
-        return self.layers[0].start
-
-    @property
-    def end(self) -> Boundary:
-        return self.layers[0].end
-
-    @property
-    def duration(self) -> float:
-        return self.end.time - self.start.time
 
     def __len__(self) -> int:
         return len(self.layers)
@@ -213,50 +294,108 @@ class Hierarchy:
         return self.layers[lvl_idx]
 
     def __repr__(self) -> str:
-        name_str = f"name='{self.name}'" if self.name else ""
-        return f"Hierarchy({name_str}, {len(self)} layers, duration={self.duration:.2f}s)"
+        label_str = f"label='{self.label}'" if self.label else ""
+        return f"Hierarchy({label_str}, {len(self)} layers, duration={self.duration:.2f}s)"
 
     @classmethod
-    def from_jams(cls, jams_annotation: jams.Annotation, name: str | None = None) -> Hierarchy:
-        if jams_annotation.namespace != "multi_segment":
-            raise ValueError(f"Expected 'multi_segment' namespace, got '{jams_annotation.namespace}'")
+    def from_jams(cls, anno: jams.Annotation, label: str | None = None) -> Hierarchy:
+        """Creates a `Hierarchy` from a JAMS multi-segment annotation."""
+        from collections import defaultdict
 
-        from jams.eval import hierarchy_flatten
+        if anno.namespace != "multi_segment":
+            raise ValueError(f"Expected 'multi_segment' namespace, but got '{anno.namespace}'.")
 
-        hier_intervals, hier_labels = hierarchy_flatten(jams_annotation)
+        # Group observations by level
+        layers_data = defaultdict(list)
+        for obs in anno.data:
+            # The "value" of a multi-segment observation contains the sub-segment's metadata
+            level = obs.value.get("level")
+            if level is not None:
+                layers_data[level].append(obs)
 
-        segmentations = []
-        for i, (intervals, labels) in enumerate(zip(hier_intervals, hier_labels)):
-            seg = Segmentation.from_intervals(intervals=np.array(intervals), labels=list(labels), name=f"level_{i}")
-            segmentations.append(seg)
+        if not layers_data:
+            raise ValueError("Cannot create a Hierarchy from a JAMS annotation with no levels.")
 
-        final_name = name
-        if not final_name:
-            annotator_meta = jams_annotation.annotation_metadata.annotator
-            if annotator_meta and "name" in annotator_meta:
-                final_name = annotator_meta["name"]
+        # Determine the overall time range for the hierarchy.
+        # It's defined by the earliest start time and the specified annotation duration.
+        start_time = min((obs.time for obs in anno), default=0.0)
+        duration = anno.duration
 
-        return cls(layers=segmentations, name=final_name)
+        if duration is None:
+            # Fallback if the parent annotation has no duration set
+            all_times = {
+                t
+                for l_obs in layers_data.values()
+                for obs in l_obs
+                for t in [obs.time, obs.time + obs.duration]
+                if obs.duration is not None
+            }
+            if not all_times:
+                # Fallback to just observation times if no durations are present
+                all_times = {obs.time for l_obs in layers_data.values() for obs in l_obs}
+
+            if not all_times:
+                raise ValueError("Cannot determine time range from JAMS data with no observations or durations.")
+
+            end_time = max(all_times)
+            duration = end_time - start_time
+
+        # Create a segmentation for each level, ensuring it spans the full hierarchy duration
+        layers = []
+        for level in sorted(layers_data.keys()):
+            level_obs = layers_data[level]
+
+            # Create a temporary annotation for this layer's data
+            sub_anno = jams.Annotation(
+                namespace="segment",  # A generic namespace for the temporary annotation
+                data=level_obs,
+                sandbox=anno.sandbox,
+                annotation_metadata=anno.annotation_metadata,
+            )
+
+            # Create the segmentation, forcing it to align with the parent hierarchy's time range
+            segmentation = Segmentation.from_jams(
+                sub_anno,
+                label=f"level_{level}",
+                start_time=start_time,
+                duration=duration,
+            )
+            layers.append(segmentation)
+
+        return cls(
+            start=Boundary(start_time),
+            duration=duration,
+            layers=layers,
+            label=label or anno.namespace,
+        )
 
     @classmethod
-    def from_json(cls, json_data: list[list[list[Any]]], name: str | None = None) -> Hierarchy:
-        segmentations = []
-        for i, layer_data in enumerate(json_data):
-            if not (isinstance(layer_data, list) and len(layer_data) == 2):
-                raise ValueError(f"Layer {i} malformed. Expected [intervals, labels].")
+    def from_json(cls, data: list, label: str | None = None) -> Hierarchy:
+        """
+        Creates a `Hierarchy` from a JSON-like structure.
+        e.g., a list of layers, where each layer is a list of [intervals, labels].
+        """
+        layers = []
+        all_boundaries: set[float] = set()
 
-            intervals_data, labels_data = layer_data
-            intervals_np = np.array([item[0] if len(item) == 1 else item for item in intervals_data])
+        for i, (intervals, labels) in enumerate(data):
+            seg = Segmentation.from_intervals(intervals, segment_labels=labels, label=f"level_{i}")
+            layers.append(seg)
+            all_boundaries.update(b.time for b in seg.boundaries)
 
-            seg = Segmentation.from_intervals(intervals=intervals_np, labels=labels_data, name=f"layer_{i}")
-            segmentations.append(seg)
+        if not layers:
+            raise ValueError("Cannot create a Hierarchy from empty JSON data.")
 
-        return cls(layers=segmentations, name=name)
+        start_time = min(all_boundaries) if all_boundaries else 0
+        end_time = max(all_boundaries) if all_boundaries else 0
+        duration = end_time - start_time
+
+        return cls(start=Boundary(start_time), duration=duration, layers=layers, label=label)
 
 
 @dataclass(order=True, frozen=True)
 class RatedBoundary:
-    """A boundary with an associated salience level."""
+    """A boundary with a salience level."""
 
     time: float
     salience: float | int
@@ -275,61 +414,45 @@ class RatedBoundary:
 
 @dataclass(frozen=True)
 class RatedBoundaries:
-    """
-    An intermediate collection of rated boundaries, ready for synthesis.
-
-    This container supports a fluent, chainable API for multi-stage
-    processing, such as grouping and quantization. It holds the boundaries
-    (events), along with the start and end times of the original analysis frame.
-    """
+    """An intermediate collection of rated boundaries for synthesis."""
 
     events: Sequence[RatedBoundary]
     start_time: float
     end_time: float
 
     def group_boundaries(self, strategy: strategies.BoundaryGroupingStrategy) -> RatedBoundaries:
-        """Groups boundaries that are close in time using a given strategy."""
+        """Groups close boundaries using a given strategy."""
         grouped_events = strategy.group(self.events)
         return RatedBoundaries(events=grouped_events, start_time=self.start_time, end_time=self.end_time)
 
     def quantize_level(self, strategy: strategies.LevelGroupingStrategy) -> ProperHierarchy:
-        """Converts saliences to levels and synthesizes a ProperHierarchy."""
+        """Converts saliences to levels and synthesizes a `ProperHierarchy`."""
         return strategy.quantize(self)
 
 
 @dataclass(frozen=True)
 class ProperHierarchy(Hierarchy):
-    """
-    A `Hierarchy` guaranteed to have monotonically nested layers.
-
-    This class enforces that each layer's boundaries are a strict subset of the
-    boundaries in the layer below it, which is a key requirement for many
-    music structure analysis algorithms.
-    """
+    """A `Hierarchy` with monotonically nested layers."""
 
     def __post_init__(self) -> None:
         # First, run the parent's post-init
         super().__post_init__()
 
         # Then, validate the monotonic property
+        # Layer 0 is coarsest, layer i+1 is finer than layer i
         for i in range(len(self.layers) - 1):
-            finer_layer_boundaries = {b.time for b in self.layers[i].boundaries}
-            coarser_layer_boundaries = {b.time for b in self.layers[i + 1].boundaries}
+            coarser_layer_boundaries = {b.time for b in self.layers[i].boundaries}
+            finer_layer_boundaries = {b.time for b in self.layers[i + 1].boundaries}
             if not coarser_layer_boundaries.issubset(finer_layer_boundaries):
                 raise ValueError(
-                    f"Monotonicity violation: Layer {i + 1} has boundaries not present in the finer layer {i}."
+                    f"Monotonicity violation: Layer {i} has boundaries not present in the finer layer {i + 1}."
                 )
 
     @staticmethod
     def from_rated_boundaries(
-        events: Sequence[RatedBoundary], start_time: float, end_time: float, name: str | None = None
+        events: Sequence[RatedBoundary], start_time: float, end_time: float, label: str | None = None
     ) -> ProperHierarchy:
-        """
-        Synthesizes a ProperHierarchy from a sequence of rated boundaries.
-
-        Saliences are converted to integer depths, and layers are built such
-        that higher-salienced events appear in deeper layers.
-        """
+        """Synthesizes a `ProperHierarchy` from rated boundaries."""
         from .strategies import DirectSynthesisStrategy
 
         # Wrap in RatedBoundaries to use the strategy

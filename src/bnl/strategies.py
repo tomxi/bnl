@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import dataclasses
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
@@ -109,41 +108,37 @@ class DirectSynthesisStrategy(LevelGroupingStrategy):
     def quantize(self, boundaries: RatedBoundaries) -> ProperHierarchy:
         from .core import Boundary, ProperHierarchy, Segmentation
 
-        rated_boundaries = boundaries.events
-        if not rated_boundaries:
-            return ProperHierarchy(layers=[Segmentation(boundaries=[Boundary(boundaries.start_time)], labels=[])])
+        events = boundaries.events
+        start_time, end_time = boundaries.start_time, boundaries.end_time
+        duration = end_time - start_time
 
-        # Sort by time, then by salience for stable ordering
-        events = tuple(sorted(rated_boundaries, key=lambda e: (e.time, e.salience)))
+        if not events:
+            return ProperHierarchy(start=Boundary(start_time), duration=duration, layers=[], label="direct_synthesis")
 
-        # Convert saliences to integer depths
-        int_events = []
-        for event in events:
-            if not (isinstance(event.salience, int) or event.salience.is_integer()):
-                raise ValueError(f"Salience {event.salience} for boundary at {event.time} must be an integer.")
-            int_events.append(dataclasses.replace(event, salience=int(event.salience)))
-
-        max_depth = max((e.salience for e in int_events), default=-1)
-        if max_depth < 0:
-            return ProperHierarchy(layers=[Segmentation(boundaries=[Boundary(boundaries.start_time)], labels=[])])
-
-        num_layers = int(max_depth) + 1
+        # Get unique salience levels, but reverse from coarse (high) to fine (low)
+        unique_salience_levels = sorted(list(set(e.salience for e in events)), reverse=True)
         all_layers = []
 
-        for depth_level in range(num_layers):
-            # Boundaries for this level are all events with salience <= current depth
-            layer_boundary_times = {boundaries.start_time, boundaries.end_time}
-            for event in int_events:
-                if event.salience <= depth_level:
-                    layer_boundary_times.add(event.time)
+        for i, salience_thresh in enumerate(unique_salience_levels):
+            # A layer contains all boundaries with salience >= the current threshold
+            level_boundaries = {b.time for b in events if b.salience >= salience_thresh}
+            level_boundaries.add(start_time)
+            level_boundaries.add(end_time)
 
-            sorted_times = sorted(list(layer_boundary_times))
-            b_objs = [Boundary(t) for t in sorted_times]
-            labels = [None] * (len(b_objs) - 1)
-            layer_name = f"level_{depth_level}"
-            all_layers.append(Segmentation(boundaries=b_objs, labels=labels, name=layer_name))
+            b_objs = [Boundary(t) for t in sorted(list(level_boundaries))]
+            layer_label = f"level_{i}"
 
-        return ProperHierarchy(layers=all_layers)
+            all_layers.append(
+                Segmentation(start=Boundary(start_time), duration=duration, boundaries=b_objs, label=layer_label)
+            )
+
+        # The hierarchy's overall start/duration should match the input boundaries
+        return ProperHierarchy(
+            start=Boundary(start_time),
+            duration=duration,
+            layers=all_layers,
+            label="direct_synthesis",
+        )
 
 
 class FrequencyStrategy(SalienceStrategy):
@@ -197,3 +192,45 @@ class CoarsestNonzeroStrategy(SalienceStrategy):
             start_time=hierarchy.start.time,
             end_time=hierarchy.end.time,
         )
+
+
+class BinaryLevelingStrategy(LevelGroupingStrategy):
+    """
+    Synthesizes a `ProperHierarchy` using a binary leveling approach.
+
+    This strategy assumes that the salience values in the `RatedBoundaries`
+    are already integer-like and represent discrete hierarchy levels (e.g.,
+    0, 1, 2...). It creates one layer for each integer level from 0 up to the
+    maximum salience value found.
+    """
+
+    def quantize(self, boundaries: RatedBoundaries) -> ProperHierarchy:
+        from .core import Boundary, ProperHierarchy, Segmentation
+
+        int_events = [e for e in boundaries.events if isinstance(e, RatedBoundary) and e.salience.is_integer()]
+        max_depth = max((e.salience for e in int_events), default=-1)
+        if max_depth < 0:
+            return ProperHierarchy(
+                start=Boundary(boundaries.start_time),
+                duration=boundaries.end_time - boundaries.start_time,
+                layers=[],
+            )
+
+        num_layers = int(max_depth) + 1
+        all_layers = []
+
+        for depth_level in range(num_layers):
+            # Boundaries for this level are all events with salience <= current depth
+            layer_boundary_times = {boundaries.start_time, boundaries.end_time}
+            for event in int_events:
+                if event.salience <= depth_level:
+                    layer_boundary_times.add(event.time)
+
+            sorted_times = sorted(list(layer_boundary_times))
+            b_objs = [Boundary(t) for t in sorted_times]
+            layer_label = f"level_{depth_level}"
+            start = b_objs[0]
+            duration = b_objs[-1].time - start.time
+            all_layers.append(Segmentation(start=start, duration=duration, boundaries=b_objs, label=layer_label))
+
+        return ProperHierarchy(start=all_layers[0].start, duration=all_layers[0].duration, layers=all_layers)
