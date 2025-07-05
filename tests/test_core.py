@@ -2,24 +2,20 @@ import pytest
 
 from bnl.core import (
     Boundary,
+    BoundaryContour,
     Hierarchy,
-    ProperHierarchy,
-    RatedBoundaries,
+    LeveledBoundary,
+    MultiSegment,
     RatedBoundary,
-    Segmentation,
+    Segment,
     TimeSpan,
 )
-from bnl.strategies import (
-    BoundaryGroupingStrategy,
-    DirectSynthesisStrategy,
-    LevelGroupingStrategy,
-)
 
 
-def test_boundary_creation_and_validation():
-    """Tests basic Boundary creation, validation, and sorting."""
+def test_boundary_creation_and_ordering():
+    """Tests basic Boundary creation and time-based ordering."""
     b_ok = Boundary(1.23456, "event")
-    assert b_ok.time == 1.2346, "Time should be rounded"
+    assert b_ok.time == 1.2346
     assert b_ok.label == "event"
 
     with pytest.raises(TypeError):
@@ -29,203 +25,160 @@ def test_boundary_creation_and_validation():
 
     b1 = Boundary(1.0)
     b2 = Boundary(2.0)
-    b3 = Boundary(1.0, label="another")
     assert b1 < b2
-    assert b1 == b3, "Boundary comparison should only use time"
+
+
+def test_rated_boundary_ordering():
+    """Tests that RatedBoundary orders by time, then salience."""
+    b1 = RatedBoundary(1.0, salience=5)
+    b2 = RatedBoundary(2.0, salience=5)
+    b3 = RatedBoundary(1.0, salience=10)
+    assert b1 < b2
+    assert b1 < b3
+    assert sorted([b3, b1]) == [b1, b3]
+
+
+def test_leveled_boundary_properties():
+    """Tests derived properties of LeveledBoundary."""
+    lb = LeveledBoundary(1.0, ancestry=["a", "b", "c"])
+    assert lb.level == 3
+    assert lb.salience == 3.0
 
 
 def test_timespan_creation_and_validation():
     """Tests basic TimeSpan creation and validation."""
     b1 = Boundary(1.0)
-    ts = TimeSpan(b1, 2.0, "A")
+    ts = TimeSpan(b1, 2.0)
     assert ts.start == b1
     assert ts.duration == 2.0
-    assert ts.label == "A"
-    assert ts.end.time == 3.0, "End time should be calculated correctly"
+    assert ts.end.time == 3.0
 
-    with pytest.raises(ValueError, match="Duration must be positive"):
-        TimeSpan(b1, 0)
+    with pytest.raises(ValueError):
+        TimeSpan(b1, -1.0)
 
 
-def test_segmentation_creation_and_properties():
-    """Tests Segmentation creation, including property access and internal sorting."""
+def test_segment_creation_and_properties():
+    """Tests Segment creation, sorting, and derived properties."""
     b1, b2, b3 = Boundary(0, "A"), Boundary(3.0), Boundary(1.5, "B")
-    seg = Segmentation(start=b1, duration=3.0, boundaries=[b1, b2, b3], label="test_seg")
-    assert seg.label == "test_seg"
-    assert seg.boundaries[0].time == 0 and seg.boundaries[2].time == 3.0, "Boundaries should be sorted"
-    assert len(seg) == 2, "Length should be the number of segments"
-    assert seg[0].duration == 1.5
+    seg = Segment(boundaries=[b1, b3, b2])  # Pass unsorted
+    assert seg.boundaries[0].time == 0
+    assert seg.boundaries[1].time == 1.5
+    assert seg.boundaries[2].time == 3.0
+    assert seg.start.time == 0
+    assert seg.duration == 3.0
+
+    with pytest.raises(ValueError, match="at least two boundaries"):
+        Segment(boundaries=[b1])
 
 
-def test_segmentation_factories():
-    """Tests the `from_boundaries` and `from_intervals` factory methods."""
-    seg_b = Segmentation.from_boundaries([0, 1.5, 3], ["A", "B"])
-    assert len(seg_b) == 2
-    assert seg_b[0].duration == 1.5
+def test_boundary_contour_creation():
+    """Tests BoundaryContour creation and sorting."""
+    rb1 = RatedBoundary(0.0, salience=1)
+    rb2 = RatedBoundary(2.0, salience=3)
+    rb3 = RatedBoundary(1.0, salience=2)
+    contour = BoundaryContour(boundaries=[rb1, rb3, rb2])
+    assert contour.boundaries[0].time == 0
+    assert contour.boundaries[1].time == 1
+    assert contour.boundaries[2].time == 2
+    assert contour.duration == 2.0
 
-    seg_i = Segmentation.from_intervals([[0, 1.5], [1.5, 3]], ["A", "B"])
-    assert len(seg_i) == 2
-    assert seg_i[0].duration == 1.5
-
-
-def test_segmentation_edge_cases():
-    """Tests error handling for invalid Segmentation definitions."""
-    with pytest.raises(ValueError, match="at least one boundary"):
-        Segmentation(start=Boundary(0), duration=1, boundaries=[])
-
-    with pytest.raises(ValueError, match="empty times"):
-        Segmentation.from_boundaries([])
-    with pytest.raises(ValueError, match="empty intervals"):
-        Segmentation.from_intervals([])
+    with pytest.raises(ValueError, match="at least two boundaries"):
+        BoundaryContour(boundaries=[rb1])
 
 
-def test_hierarchy_creation_and_validation():
-    """Tests Hierarchy creation and time alignment validation."""
-    s1 = Segmentation.from_boundaries([0, 2, 4], ["A", "B"])
-    s2 = Segmentation.from_boundaries([0, 1, 2, 3, 4], ["a", "b", "c", "d"])
-    h = Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2], label="MyHier")
-    assert h.label == "MyHier"
-    assert len(h.layers) == 2
-    assert h.start.time == 0
-    assert h.end.time == 4
-    assert h.duration == 4
-    assert len(h) == 2
-    assert h[0] == s1
+def test_multisegment_creation():
+    """Tests MultiSegment creation and derived properties."""
+    seg1 = Segment(boundaries=[Boundary(0), Boundary(2)])
+    seg2 = Segment(boundaries=[Boundary(1), Boundary(4)])
+    mseg = MultiSegment(layers=[seg1, seg2])
+    assert len(mseg.layers) == 2
+    assert mseg.start.time == 0
+    assert mseg.end.time == 4
+    assert mseg.duration == 4.0
 
-    s3_misaligned = Segmentation.from_boundaries([0, 1, 5], ["a", "b"])
-    with pytest.raises(ValueError, match="All layers must span the same time range"):
-        Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s3_misaligned])
+    with pytest.raises(ValueError, match="cannot be empty"):
+        MultiSegment(layers=[])
 
 
-def test_proper_hierarchy_monotonicity():
-    """Tests the monotonicity enforcement of ProperHierarchy."""
-    # This should work
-    s1 = Segmentation.from_boundaries([0, 4])
-    s2 = Segmentation.from_boundaries([0, 2, 4])
-    s3 = Segmentation.from_boundaries([0, 1, 2, 3, 4])
-    ph_good = ProperHierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2, s3])
-    assert len(ph_good.layers) == 3
+def test_hierarchy_creation():
+    """Tests Hierarchy creation and sorting."""
+    lb1 = LeveledBoundary(time=0, ancestry=["a"])
+    lb3 = LeveledBoundary(time=2, ancestry=["a", "b", "c"])
+    lb2 = LeveledBoundary(time=1, ancestry=["a", "b"])
+    hier = Hierarchy(boundaries=[lb1, lb3, lb2])
+    assert hier.boundaries[0].time == 0
+    assert hier.boundaries[1].time == 1
+    assert hier.boundaries[2].time == 2
+    assert hier.duration == 2.0
 
-    # This should fail (s2 is not a superset of s1's boundaries)
-    s_fail1 = Segmentation.from_boundaries([0, 2, 4])
-    s_fail2 = Segmentation.from_boundaries([0, 3, 4])
-    with pytest.raises(ValueError, match="Monotonicity violation"):
-        ProperHierarchy(start=s_fail1.start, duration=s_fail1.duration, layers=[s_fail1, s_fail2])
-
-
-def test_rated_boundaries_fluent_api():
-    """Tests the fluent API for grouping and quantizing RatedBoundaries."""
-
-    class MockGrouping(BoundaryGroupingStrategy):
-        def group(self, boundaries: list[RatedBoundary]) -> list[RatedBoundary]:
-            return boundaries + [RatedBoundary(99, 1)]
-
-    class MockLeveling(LevelGroupingStrategy):
-        def quantize(self, boundaries: RatedBoundaries) -> ProperHierarchy:
-            return DirectSynthesisStrategy().quantize(boundaries)
-
-    initial_events = [RatedBoundary(1, 1)]
-    rb = RatedBoundaries(events=initial_events, start_time=0.0, end_time=100.0)
-    final_ph = rb.group_boundaries(MockGrouping()).quantize_level(MockLeveling())
-
-    assert isinstance(final_ph, ProperHierarchy)
-    # Level 0 (salience >= 1) contains start, end, and two boundaries (initial + mocked)
-    assert len(final_ph[0].boundaries) == 4
-    assert len(final_ph.layers) == 1
+    with pytest.raises(ValueError, match="at least two boundaries"):
+        Hierarchy(boundaries=[lb1])
 
 
-def test_string_representations():
-    """Tests the __str__ and __repr__ methods of core objects."""
-    b = Boundary(0.0)
-    ts = TimeSpan(b, 1.0, "A")
-    assert str(ts) == "TimeSpan([0.00s-1.00s], 1.00s: A)"
-    assert repr(ts) == f"TimeSpan(start={b!r}, duration=1.0, label='A')"
+def test_hierarchy_to_multisegment():
+    """Tests the conversion from a Hierarchy to a MultiSegment."""
+    lb1 = LeveledBoundary(time=0, ancestry=["L1-a"], salience=1)
+    lb2 = LeveledBoundary(time=4, ancestry=["L1-a"], salience=1)
+    lb3 = LeveledBoundary(time=2, ancestry=["L1-a", "L2-b"], salience=2)
+    lb4 = LeveledBoundary(time=1, ancestry=["L1-a", "L2-b", "L3-c"], salience=3)
+    lb5 = LeveledBoundary(time=3, ancestry=["L1-a", "L2-b", "L3-c"], salience=3)
+    hier = Hierarchy(boundaries=[lb1, lb2, lb3, lb4, lb5])
 
-    rb = RatedBoundary(1.0, salience=5, label="C5")
-    assert repr(rb) == "RatedBoundary(time=1.00, salience=5.00, label='C5')"
+    mseg = hier.to_multisegment()
+    assert len(mseg.layers) == 3
 
-    seg = Segmentation(start=b, duration=1.0, boundaries=[b, Boundary(1.0)], label="MySeg")
-    assert repr(seg) == "Segmentation(label='MySeg', 1 segments, duration=1.00s)"
+    # Level 1 Segment: Boundaries from levels 1, 2, 3
+    level1_seg = mseg.layers[0]
+    assert len(level1_seg.boundaries) == 5
+    assert {b.time for b in level1_seg.boundaries} == {0, 1, 2, 3, 4}
+    assert {b.label for b in level1_seg.boundaries} == {"L1-a"}
 
-    # Create a segmentation with a matching time range for the hierarchy tests
-    seg_for_h = Segmentation.from_boundaries([0, 4])
+    # Level 2 Segment: Boundaries from levels 2, 3
+    level2_seg = mseg.layers[1]
+    assert len(level2_seg.boundaries) == 3
+    assert {b.time for b in level2_seg.boundaries} == {1, 2, 3}
+    assert {b.label for b in level2_seg.boundaries} == {"L2-b"}
 
-    h = Hierarchy(start=b, duration=4.0, layers=[seg_for_h], label="MyHier")
-    assert repr(h) == "Hierarchy(label='MyHier', 1 layers, duration=4.00s)"
-
-    ph = ProperHierarchy(start=b, duration=4.0, layers=[seg_for_h], label="MyProperHier")
-    ph_repr = repr(ph)
-    assert "ProperHierarchy" in ph_repr
-    assert "label='MyProperHier'" in ph_repr
+    # Level 3 Segment: Boundaries from level 3
+    level3_seg = mseg.layers[2]
+    assert len(level3_seg.boundaries) == 2
+    assert {b.time for b in level3_seg.boundaries} == {1, 3}
+    assert {b.label for b in level3_seg.boundaries} == {"L3-c"}
 
 
-def test_plotting_functions():
-    """Tests the plot methods of core objects."""
-    import matplotlib.pyplot as plt
+def test_empty_hierarchy_conversion():
+    """Test converting a hierarchy with insufficient boundaries for layers."""
+    # Hierarchy with boundaries at the same level, but not enough for a L2 segment
+    hier = Hierarchy(
+        boundaries=[
+            LeveledBoundary(time=0, ancestry=["L1-a"]),
+            LeveledBoundary(time=4, ancestry=["L1-a"]),
+        ]
+    )
+    mseg = hier.to_multisegment()
+    assert len(mseg.layers) == 1
+    assert len(mseg.layers[0].boundaries) == 2
 
-    # 1. Test TimeSpan.plot
-    b = Boundary(0.0)
-    ts = TimeSpan(b, 1.0, "A")
 
-    # Test without providing ax
-    ax_ts_new = ts.plot()
-    assert ax_ts_new is not None
-    plt.close(ax_ts_new.figure)
+def test_multisegment_to_boundary_contour():
+    """Tests converting a MultiSegment to a BoundaryContour."""
+    # Layer 1 has boundaries at 0, 2, 4
+    # Layer 2 has boundaries at 0, 4, 8
+    # Frequencies: 0 (2), 2 (1), 4 (2), 8 (1)
+    s1 = Segment.from_intervals([[0, 2], [2, 4]])
+    s2 = Segment.from_intervals([[0, 4], [4, 8]])
+    mseg = MultiSegment(layers=[s1, s2])
 
-    # Test with providing ax
-    fig, ax = plt.subplots()
-    ax_ts_existing = ts.plot(ax=ax)
-    assert ax_ts_existing is ax
-    plt.close(fig)
+    contour = mseg.to_boundary_contour(method="frequency")
+    assert isinstance(contour, BoundaryContour)
+    assert len(contour.boundaries) == 4
 
-    # 2. Test Segmentation.plot
-    seg = Segmentation.from_boundaries([0, 1.5, 3], ["A", "B"])
+    # Check that saliences are correct
+    salience_map = {b.time: b.salience for b in contour.boundaries}
+    assert salience_map[0] == 2
+    assert salience_map[2] == 1
+    assert salience_map[4] == 2
+    assert salience_map[8] == 1
 
-    # Test without providing ax
-    ax_seg_new = seg.plot()
-    assert ax_seg_new is not None
-    plt.close(ax_seg_new.figure)
-
-    # Test with providing ax
-    fig, ax = plt.subplots()
-    ax_seg_existing = seg.plot(ax=ax)
-    assert ax_seg_existing is ax
-    plt.close(fig)
-
-    # Test with color_map
-    fig, ax = plt.subplots()
-    ax_seg_color = seg.plot(ax=ax, color_map={"A": "red", "B": "blue"})
-    assert ax_seg_color is ax
-    plt.close(fig)
-
-    # 3. Test Hierarchy.plot
-    s1 = Segmentation.from_boundaries([0, 2, 4], ["A", "B"])
-    s2 = Segmentation.from_boundaries([0, 1, 2, 3, 4], ["a", "b", "c", "d"])
-    h = Hierarchy(start=s1.start, duration=s1.duration, layers=[s1, s2], label="MyHier")
-
-    # Test without providing ax
-    ax_h_new = h.plot()
-    assert ax_h_new is not None
-    plt.close(ax_h_new.figure)
-
-    # Test with providing ax
-    fig, ax = plt.subplots()
-    ax_h_existing = h.plot(ax=ax)
-    assert ax_h_existing is ax
-    plt.close(fig)
-
-    # 4. Test ProperHierarchy.plot
-    s1_ph = Segmentation.from_boundaries([0, 4])
-    s2_ph = Segmentation.from_boundaries([0, 2, 4])
-    ph = ProperHierarchy(start=s1_ph.start, duration=s1_ph.duration, layers=[s1_ph, s2_ph])
-
-    # Test without providing ax
-    ax_ph_new = ph.plot()
-    assert ax_ph_new is not None
-    plt.close(ax_ph_new.figure)
-
-    # Test with providing ax
-    fig, ax = plt.subplots()
-    ax_ph_existing = ph.plot(ax=ax)
-    assert ax_ph_existing is ax
-    plt.close(fig)
+    with pytest.raises(ValueError, match="Unsupported"):
+        mseg.to_boundary_contour(method="invalid_method")

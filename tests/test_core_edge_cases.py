@@ -1,94 +1,124 @@
 """Short tests for core.py edge cases."""
 
-import jams
 import pytest
 
 from bnl import core
 
 
-def test_segmentation_time_mismatch():
-    """Tests that a Segmentation's start/end times must match its boundaries."""
-    b1, b2 = core.Boundary(1.0), core.Boundary(2.0)
-    # Start time mismatch
-    with pytest.raises(ValueError, match="start time"):
-        core.Segmentation(start=core.Boundary(0.0), duration=1.0, boundaries=[b1, b2])
-    # End time mismatch
-    with pytest.raises(ValueError, match="end time"):
-        core.Segmentation(start=b1, duration=2.0, boundaries=[b1, b2])
+def test_segment_creation_edge_cases():
+    """Test creating a Segment with fewer than two boundaries."""
+    with pytest.raises(ValueError, match="requires at least two boundaries"):
+        core.Segment(boundaries=[core.Boundary(0)])
 
 
-def test_segmentation_from_jams_no_data():
-    """Tests `from_jams` behavior with no observation data."""
-    anno = jams.Annotation("segment")
-    with pytest.raises(ValueError, match="no data and no defined range"):
-        core.Segmentation.from_jams(anno)
-
-    # Should succeed if a range is provided
-    seg = core.Segmentation.from_jams(anno, start_time=0.0, duration=10.0)
-    assert seg.start.time == 0.0
-    assert seg.duration == 10.0
-    assert len(seg.boundaries) == 2
+def test_boundary_contour_creation_edge_cases():
+    """Test creating a BoundaryContour with fewer than two boundaries."""
+    with pytest.raises(ValueError, match="requires at least two boundaries"):
+        core.BoundaryContour(boundaries=[core.RatedBoundary(0, salience=1)])
 
 
-def test_hierarchy_empty():
-    """Test that creating a Hierarchy with no layers raises ValueError."""
-    with pytest.raises(ValueError, match="Hierarchy must contain at least one layer."):
-        core.Hierarchy(start=core.Boundary(0), duration=0, layers=[])
+def test_multisegment_creation_edge_cases():
+    """Test creating a MultiSegment with no layers."""
+    with pytest.raises(ValueError, match="cannot be empty"):
+        core.MultiSegment(layers=[])
+
+    # Test with layers that contain no boundaries
+    with pytest.raises(ValueError, match="at least two boundaries"):
+        core.MultiSegment(layers=[core.Segment(boundaries=[])])
 
 
-def test_hierarchy_from_jams_wrong_namespace():
-    """Test from_jams with wrong namespace."""
-    from unittest.mock import Mock
+def test_hierarchy_creation_edge_cases():
+    """Test creating a Hierarchy with fewer than two boundaries."""
+    with pytest.raises(ValueError, match="requires at least two boundaries"):
+        core.Hierarchy(boundaries=[core.LeveledBoundary(0, ancestry=["a"])])
 
-    mock_ann = Mock()
-    mock_ann.namespace = "wrong"
 
+def test_leveled_boundary_salience_override():
+    """Ensure a LeveledBoundary's salience is always its level."""
+    # Pass in a different salience; it should be ignored.
+    lb = core.LeveledBoundary(time=1.0, ancestry=["a", "b"], salience=99)
+    assert lb.level == 2
+    assert lb.salience == 2.0
+
+
+def test_hierarchy_to_multisegment_no_new_layers():
+    """
+    Tests converting a hierarchy where no sub-layers can be formed.
+    e.g., all boundaries are at level 1.
+    """
+    hier = core.Hierarchy(
+        boundaries=[
+            core.LeveledBoundary(time=0, ancestry=["L1-a"]),
+            core.LeveledBoundary(time=4, ancestry=["L1-a"]),
+        ]
+    )
+    mseg = hier.to_multisegment()
+    assert len(mseg.layers) == 1
+    assert len(mseg.layers[0].boundaries) == 2
+
+
+def test_hierarchy_to_multisegment_single_boundary_at_level():
+    """
+    Tests a hierarchy where a higher level has only one boundary,
+    which is not enough to form a valid segment.
+    """
+    hier = core.Hierarchy(
+        boundaries=[
+            core.LeveledBoundary(time=0, ancestry=["L1-a"]),
+            core.LeveledBoundary(time=4, ancestry=["L1-a"]),
+            core.LeveledBoundary(time=2, ancestry=["L1-a", "L2-b"]),  # Just one L2
+        ]
+    )
+    mseg = hier.to_multisegment()
+    # Should only produce the L1 segment, as L2 doesn't have >= 2 boundaries.
+    assert len(mseg.layers) == 1
+    assert len(mseg.layers[0].boundaries) == 3
+
+
+def test_multisegment_from_json():
+    """Tests creating a MultiSegment from a JSON-like structure."""
+
+    json_data = [
+        [[[0, 2], [2, 4]], ["A", "B"]],  # Layer 1
+        [[[0, 1], [1, 2], [2, 3], [3, 4]], ["a", "b", "c", "d"]],  # Layer 2
+    ]
+    mseg = core.MultiSegment.from_json(json_data)
+    assert len(mseg.layers) == 2
+    assert len(mseg.layers[0].boundaries) == 3  # 0, 2, 4
+    assert len(mseg.layers[1].boundaries) == 5  # 0, 1, 2, 3, 4
+
+    # Test with empty data
+    with pytest.raises(ValueError, match="No valid segments could be created"):
+        core.MultiSegment.from_json([])
+
+    # Test with malformed layer
+    json_malformed = [[[[0, 2]]], [[[0, 1], [1, 2]], ["a", "b"]]]
+    mseg_malformed = core.MultiSegment.from_json(json_malformed)
+    assert len(mseg_malformed.layers) == 1  # Should skip the bad layer
+
+
+def test_multisegment_from_jams():
+    """Tests creating a MultiSegment from a JAMS annotation."""
+    import jams
+
+    anno = jams.Annotation("multi_segment")
+    anno.append(time=0, duration=2.0, value={"level": 0, "label": "A"})
+    anno.append(time=2, duration=2.0, value={"level": 0, "label": "B"})
+    anno.append(time=0, duration=4.0, value={"level": 1, "label": "X"})
+
+    mseg = core.MultiSegment.from_jams(anno)
+    assert len(mseg.layers) == 2
+    assert len(mseg.layers[0].boundaries) == 3  # 0, 2, 4
+    assert len(mseg.layers[1].boundaries) == 2  # 0, 4
+
+    # Test wrong namespace
+    anno.namespace = "segment"
     with pytest.raises(ValueError, match="Expected 'multi_segment'"):
-        core.Hierarchy.from_jams(mock_ann)
+        core.MultiSegment.from_jams(anno)
 
-
-def test_hierarchy_from_jams_no_levels():
-    """Test from_jams with a multi_segment annotation that has no levels."""
-    anno = jams.Annotation("multi_segment")
-    # Add an observation without a "level" in its value
-    anno.append(time=0, duration=1, value={"label": "A"})
-    with pytest.raises(ValueError, match="no levels"):
-        core.Hierarchy.from_jams(anno)
-
-
-def test_hierarchy_from_jams_no_duration_fallback():
-    """Tests Hierarchy time range fallback when annotation has no duration."""
-    anno = jams.Annotation("multi_segment")
-    anno.append(time=0, duration=1.0, value={"level": 0, "label": "a"})
-    anno.append(time=1, duration=1.0, value={"level": 0, "label": "b"})
-    anno.append(time=0, duration=2.0, value={"level": 1, "label": "c"})
-    anno.duration = None  # Explicitly remove duration
-    h = core.Hierarchy.from_jams(anno)
-    assert h.start.time == 0.0
-    assert h.duration == 2.0
-
-
-def test_hierarchy_from_json_empty():
-    """Tests from_json with empty data."""
-    with pytest.raises(ValueError, match="empty JSON data"):
-        core.Hierarchy.from_json([])
-
-
-def test_rated_boundary_invalid_salience():
-    """Tests that non-numeric salience raises a TypeError."""
-    with pytest.raises(TypeError):
-        core.RatedBoundary(time=0, salience="invalid")  # type: ignore
-
-
-def test_proper_hierarchy_from_rated_boundaries():
-    """Tests the ProperHierarchy.from_rated_boundaries factory."""
-    events = [core.RatedBoundary(1.0, 2), core.RatedBoundary(2.0, 1)]
-    ph = core.ProperHierarchy.from_rated_boundaries(events, start_time=0.0, end_time=3.0)
-    assert isinstance(ph, core.ProperHierarchy)
-    assert len(ph.layers) == 2
-    assert ph.start.time == 0.0
-    assert ph.duration == 3.0
-    # Coarsest layer (salience >= 2) has one event
-    assert len(ph[0].boundaries) == 3  # start, event, end
-    # Finest layer (salience >= 1) has both events
-    assert len(ph[1].boundaries) == 4
+    # Test no levels by removing the level key from all observations
+    anno.namespace = "multi_segment"
+    for obs in anno.data:
+        del obs.value["level"]
+    with pytest.raises(ValueError, match="No valid segments"):
+        core.MultiSegment.from_jams(anno)

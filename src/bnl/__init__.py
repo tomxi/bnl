@@ -17,33 +17,33 @@ from __future__ import annotations
 __version__ = "0.2.1"
 
 # --- Import submodules for explicit, namespaced access ---
-from . import core, data, ops, strategies
+from . import core, data, ops
 
 # --- Promote the core data structures to the top level ---
 from .core import (
     Boundary,
+    BoundaryContour,
     Hierarchy,
-    ProperHierarchy,
+    LeveledBoundary,
+    MultiSegment,
     RatedBoundary,
-    Segmentation,
+    Segment,
     TimeSpan,
 )
-from .ops import Pipeline
 
 # --- Define the public-facing API of the `bnl` package ---
 __all__ = [
     # Promoted from .core
     "Boundary",
-    "TimeSpan",
-    "Segmentation",
-    "Hierarchy",
-    "ProperHierarchy",
     "RatedBoundary",
-    # Promoted from .ops
-    "Pipeline",
+    "LeveledBoundary",
+    "TimeSpan",
+    "Segment",
+    "BoundaryContour",
+    "MultiSegment",
+    "Hierarchy",
     # Submodules (toolboxes)
     "core",
     "data",
     "ops",
-    "strategies",
 ]

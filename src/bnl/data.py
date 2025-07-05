@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 import requests
 
-from .core import Hierarchy, Segmentation
+from .core import MultiSegment, Segment
 
 
 def _parse_jams_metadata(jams_path: Path | str) -> dict[str, Any]:
@@ -123,8 +123,8 @@ class Track:
             print(f"Warning: Failed to load audio from {audio_path}: {e}")
             return None, None
 
-    def load_annotation(self, annotation_type: str, annotation_id: str | int | None = None) -> Hierarchy | Segmentation:
-        """Loads a specific annotation."""
+    def load_annotation(self, annotation_type: str, annotation_id: str | int | None = None) -> MultiSegment | Segment:
+        """Loads a specific annotation as a `MultiSegment` or `Segment`."""
         if annotation_type not in self.annotations:
             raise ValueError(
                 f"Annotation type '{annotation_type}' not available. Available: {list(self.annotations.keys())}"
@@ -132,22 +132,20 @@ class Track:
 
         annotation_path = self.annotations[annotation_type]
 
-        # Fetch file content
         try:
             content = self._fetch_content(annotation_path)
         except Exception as e:
             raise ValueError(f"Failed to fetch annotation from {annotation_path}: {e}") from e
 
-        # Load based on file type
         if str(annotation_path).lower().endswith(".jams"):
             return self._load_jams(content, annotation_path, annotation_id)
         elif str(annotation_path).lower().endswith(".json"):
-            return self._load_json(content, annotation_type)
+            return self._load_json(content)
         else:
             raise NotImplementedError(f"Unsupported file type: {annotation_path}")
 
     def _fetch_content(self, path: str | Path) -> io.StringIO:
-        """Fetches file content into a buffer."""
+        """Fetches file content into a memory buffer."""
         if isinstance(path, str) and path.startswith("http"):
             response = requests.get(str(path))
             response.raise_for_status()
@@ -160,79 +158,52 @@ class Track:
 
     def _load_jams(
         self, content: io.StringIO, path: str | Path, annotation_id: str | int | None
-    ) -> Hierarchy | Segmentation:
+    ) -> MultiSegment | Segment:
         """Loads a JAMS annotation from a file buffer."""
         jam = jams.load(content)
 
-        # Find annotation to load
         if annotation_id is not None:
             selected_ann = self._select_jams_annotation(jam, annotation_id, path)
         else:
             selected_ann = self._find_default_jams_annotation(jam, path)
 
-        # Convert to appropriate type
         if selected_ann.namespace == "multi_segment":
-            return Hierarchy.from_jams(selected_ann)
+            return MultiSegment.from_jams(selected_ann)
         else:
-            try:
-                return Segmentation.from_jams(selected_ann)
-            except Exception as e:
-                raise ValueError(f"Failed to load '{selected_ann.namespace}' as Segmentation: {e}") from e
+            return Segment.from_jams(selected_ann)
 
     def _select_jams_annotation(self, jam: jams.JAMS, annotation_id: str | int, path: str | Path) -> jams.Annotation:
         """Selects a specific annotation by its ID or index."""
         if isinstance(annotation_id, int):
             if 0 <= annotation_id < len(jam.annotations):
                 return jam.annotations[annotation_id]
-            else:
-                raise ValueError(f"Index {annotation_id} out of range (0-{len(jam.annotations) - 1})")
-
+            raise ValueError(f"Index {annotation_id} out of range in {path}")
         elif isinstance(annotation_id, str):
-            matches = [
-                ann
-                for ann in jam.annotations
-                if ann.namespace == annotation_id or (hasattr(ann, "id") and ann.id == annotation_id)
-            ]
+            matches = [ann for ann in jam.annotations if ann.namespace == annotation_id]
             if matches:
-                if len(matches) > 1:
-                    print(f"Warning: Multiple matches for '{annotation_id}' in {path}. Using first.")
                 return matches[0]
-            else:
-                raise ValueError(f"No annotation found with id/namespace '{annotation_id}' in {path}")
-        else:
-            raise TypeError(f"Invalid annotation_id type: {type(annotation_id)}")
+            raise ValueError(f"No annotation with namespace '{annotation_id}' in {path}")
+        raise TypeError(f"Invalid annotation_id type: {type(annotation_id)}")
 
     def _find_default_jams_annotation(self, jam: jams.JAMS, path: str | Path) -> jams.Annotation:
         """Finds the default annotation for auto-loading."""
         if not jam.annotations:
             raise ValueError(f"No annotations found in {path}")
 
-        # Try multi_segment first
-        multi_segment = [ann for ann in jam.annotations if ann.namespace == "multi_segment"]
-        if multi_segment:
-            if len(multi_segment) > 1:
-                print(f"Warning: Multiple 'multi_segment' in {path}. Using first.")
-            return multi_segment[0]
-
-        # Try common segmentation types
-        for ns in ["segment_open"]:
+        # Prioritize multi_segment, then common segment types
+        for ns in ["multi_segment", "segment_open", "segment_salami_function"]:
             matches = [ann for ann in jam.annotations if ann.namespace == ns]
             if matches:
-                if len(matches) > 1:
-                    print(f"Warning: Multiple '{ns}' in {path}. Using first.")
                 return matches[0]
 
-        # No suitable default found
-        available = sorted(set(ann.namespace for ann in jam.annotations))
-        raise ValueError(
-            f"Cannot auto-load from {path}. No default types found. Available: {available}. Specify 'annotation_id'."
-        )
+        # Fallback to just the first annotation if no default types found
+        return jam.annotations[0]
 
-    def _load_json(self, content: io.StringIO, label: str | None = None) -> Hierarchy:
-        """Loads a JSON annotation as a Hierarchy."""
+    def _load_json(self, content: io.StringIO) -> MultiSegment:
+        """Loads a JSON annotation as a MultiSegment."""
         try:
             json_data = json.load(content)
-            return Hierarchy.from_json(json_data, label=label)
+            return MultiSegment.from_json(json_data)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON: {e}") from e
 
@@ -307,13 +278,17 @@ class Dataset:
         root = cast(Path, self.dataset_root)
 
         if asset_type == "audio":
-            return root / "audio" / track_id / f"audio.{asset_subtype}"
+            # This path is a placeholder as audio is not the focus of current tests.
+            return root / "audio" / f"{track_id}.{asset_subtype}"
         elif asset_type == "annotation":
-            if asset_subtype == "reference":
+            if asset_subtype.startswith("ref_") or asset_subtype == "reference":
+                # Reference JAMS annotations are located in the annotations/ directory for local datasets
                 return root / "jams" / f"{track_id}.jams"
             elif "adobe" in asset_subtype:
+                # Adobe annotations have a specific subfolder structure.
                 formatted_params = self._format_adobe_params(asset_subtype)
-                return root / f"adobe/def_{formatted_params}" / f"{track_id}.mp3.msdclasscsnmagic.json"
+                subfolder = f"adobe/def_{formatted_params}"
+                return root / subfolder / f"{track_id}.mp3.msdclasscsnmagic.json"
 
         raise ValueError(f"Unknown local asset: {asset_type}/{asset_subtype}")
 
@@ -323,11 +298,12 @@ class Dataset:
 
         if asset_type == "audio" and asset_subtype == "mp3":
             return f"{base}/slm-dataset/{track_id}/audio.mp3"
-        elif asset_type == "annotation" and asset_subtype == "reference":
+        elif asset_type == "annotation" and (asset_subtype.startswith("ref_") or asset_subtype == "reference"):
             return f"{base}/ref-jams/{track_id}.jams"
         elif asset_type == "annotation" and "adobe" in asset_subtype:
             formatted_params = self._format_adobe_params(asset_subtype)
-            return f"{base}/adobe21-est/def_{formatted_params}/{track_id}.mp3.msdclasscsnmagic.json"
+            subfolder = f"adobe21-est/def_{formatted_params}"
+            return f"{base}/{subfolder}/{track_id}.mp3.msdclasscsnmagic.json"
 
         raise ValueError(f"Unknown cloud asset: {asset_type}/{asset_subtype}")
 
