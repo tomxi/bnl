@@ -12,5 +12,6 @@
     "python.experiments.optInto": ["pythonTestAdapter"],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
-    "python.testing.autoTestDiscoverOnSaveEnabled": true
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "python.REPL.enableREPLSmartSend": false
 }

@@ -1,133 +1,203 @@
-"""Core data structures and constructors."""
+"""Core data structures for boundaries-and-labels."""
 
+from __future__ import annotations
+
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jams
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure, SubFigure
-from mir_eval.util import boundaries_to_intervals
 
-__all__ = ["TimeSpan", "Segmentation", "Hierarchy"]
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.typing import ColorType
 
+    from . import strategies
 
-def _validate_time_value(value: Any, name: str) -> float:
-    """Convert and validate a time value."""
-    if isinstance(value, list) and not value:
-        value = 0.0
-    try:
-        result = float(value)
-    except (TypeError, ValueError) as e:
-        raise TypeError(f"{name} must be convertible to float, got {value} (type {type(value)})") from e
-
-    result = np.round(result, 4)
-    if result < 0:
-        raise ValueError(f"{name} ({result}) cannot be negative.")
-    return result
+__all__ = [
+    "Boundary",
+    "TimeSpan",
+    "Segmentation",
+    "Hierarchy",
+    "RatedBoundary",
+    "RatedBoundaries",
+    "ProperHierarchy",
+]
 
 
-def _check_segments_contiguous(segments: list["TimeSpan"], name: str | None) -> None:
-    """Check if segments are contiguous and non-overlapping for structural segmentations."""
-    if not segments:
-        return
-
-    # Skip contiguity check for event-like namespaces
-    event_namespaces = ["beat", "chord", "onset", "note", "key", "tempo", "lyrics", "chroma"]
-    if name and any(event_ns in name.lower() for event_ns in event_namespaces):
-        return
-
-    for i in range(len(segments) - 1):
-        curr_end, next_start = segments[i].end, segments[i + 1].start
-
-        if not np.isclose(curr_end, next_start, atol=1e-9):
-            if curr_end > next_start:
-                raise ValueError(f"Segments must be non-overlapping. Overlap between {i} and {i + 1}.")
-            else:
-                raise ValueError(f"Segments must be contiguous. Gap between {i} and {i + 1}.")
+def _validate_time(time: int | float | np.number) -> float:
+    """Validates and rounds a time value."""
+    if not isinstance(time, int | float | np.number):
+        raise TypeError(f"Time must be a number, not {type(time).__name__}.")
+    if time < 0:
+        raise ValueError("Time cannot be negative.")
+    return float(np.round(time, 4))
 
 
-@dataclass
-class TimeSpan:
-    """A labeled time span with start and end times."""
+@dataclass(frozen=True, order=True)
+class Boundary:
+    """A time point, optionally with a label."""
 
-    start: float = 0.0
-    end: float = 0.0
-    name: str | None = None
+    time: float = field(default=0.0, compare=True)
+    label: str | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
-        self.start = _validate_time_value(self.start, "Start time")
-        self.end = _validate_time_value(self.end, "End time")
+        object.__setattr__(self, "time", _validate_time(self.time))
+        if self.label is not None:
+            object.__setattr__(self, "label", str(self.label))
 
-        if self.start > self.end:
-            raise ValueError(f"Start time ({self.start}) must be ≤ end time ({self.end}).")
 
-        if self.name is not None:
-            self.name = str(self.name)
+@dataclass(frozen=True)
+class TimeSpan:
+    """A labeled time interval."""
+
+    start: Boundary = field(default_factory=lambda: Boundary(0.0, None))
+    duration: float = 1.0
+    label: str | None = None
+
+    # Adding explicit init to bypass dataclass inheritance issues
+    def __init__(self, start: Boundary, duration: float, label: str | None = None):
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "duration", duration)
+        object.__setattr__(self, "label", label)
+        self.__post_init__()
 
     @property
-    def duration(self) -> float:
-        """The duration of the time span (end - start)."""
-        return np.round(self.end - self.start, 4)
-
-    def __str__(self) -> str:
-        lab = f": {self.name}" if self.name is not None else ""
-        return f"TimeSpan([{self.start:.2f}s-{self.end:.2f}s], {self.duration:.2f}s{lab})"
-
-    def __repr__(self) -> str:
-        return f"TimeSpan(start={self.start}, end={self.end}, name='{self.name}')"
-
-    def plot(
-        self,
-        ax: Axes | None = None,
-        text: bool = True,
-        **style_map: Any,
-    ) -> tuple[Figure | SubFigure, Axes]:
-        """Plot the time span as a vertical bar."""
-        if ax is None:
-            _, ax = plt.subplots()
-
-        # Convert color to facecolor, set default edgecolor
-        if "color" in style_map:
-            style_map["facecolor"] = style_map.pop("color")
-        style_map.setdefault("edgecolor", "white")
-
-        rect = ax.axvspan(self.start, self.end, **style_map)
-
-        if text and self.name:
-            span_ymax = style_map.get("ymax", 1.0)
-            ann = ax.annotate(
-                self.name,
-                xy=(self.start, span_ymax),
-                xycoords=ax.get_xaxis_transform(),
-                xytext=(8, -10),
-                textcoords="offset points",
-                va="top",
-                clip_on=True,
-                bbox=dict(boxstyle="round", facecolor="white"),
-            )
-            ann.set_clip_path(rect)
-
-        return ax.figure, ax
-
-
-@dataclass
-class Segmentation(TimeSpan):
-    """A segmentation containing multiple time spans."""
-
-    segments: list[TimeSpan] = field(default_factory=list)
+    def end(self) -> Boundary:
+        """The end boundary of the time span."""
+        return Boundary(self.start.time + self.duration)
 
     def __post_init__(self) -> None:
-        if not self.segments:
-            raise ValueError("Segmentation must contain at least one segment.")
+        if self.duration <= 0:
+            raise ValueError(f"Duration must be positive, but got {self.duration}.")
+        if self.label is not None:
+            # Ensure label is a string for consistency
+            object.__setattr__(self, "label", str(self.label))
 
-        self.segments = sorted(self.segments, key=lambda x: x.start)
-        _check_segments_contiguous(self.segments, self.name)
+    def __str__(self) -> str:
+        lab = f": {self.label}" if self.label else ""
+        return f"TimeSpan([{self.start.time:.2f}s-{self.end.time:.2f}s], {self.duration:.2f}s{lab})"
 
-        self.start = self.segments[0].start
-        self.end = self.segments[-1].end
-        super().__post_init__()  # Validate start/end values
+    def __repr__(self) -> str:
+        return f"TimeSpan(start={self.start!r}, duration={self.duration!r}, label={self.label!r})"
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """
+        Plots the time span as a horizontal bar on a given axes.
+
+        Args:
+            ax: The Matplotlib axes to plot on. If None, a new figure is created.
+            **kwargs: Additional keyword arguments including:
+                ymin (float): The minimum y-extent of the bar.
+                ymax (float): The maximum y-extent of the bar.
+                color (ColorType): The face color of the bar.
+                text_offset (float): The horizontal offset for the label.
+                figsize (tuple): The size of the figure if creating a new one.
+        """
+        if ax is None:
+            import matplotlib.pyplot as plt
+
+            _, ax = plt.subplots(figsize=kwargs.get("figsize", (10, 2)))
+        fig = ax.figure
+
+        ymin = kwargs.pop("ymin", 0.0)
+        ymax = kwargs.pop("ymax", 1.0)
+        color = kwargs.pop("color", "gray")
+        text_offset = kwargs.pop("text_offset", 0.0)
+
+        plot_kwargs = kwargs.copy()
+        plot_kwargs.setdefault("edgecolor", "white")
+        plot_kwargs.setdefault("alpha", 0.7)
+        plot_kwargs.setdefault("facecolor", color)
+
+        ax.axvspan(
+            self.start.time,
+            self.end.time,
+            ymin=ymin,
+            ymax=ymax,
+            **plot_kwargs,
+        )
+        if self.label:
+            ax.text(
+                self.start.time + text_offset,
+                ymin + (ymax - ymin) / 2,
+                self.label,
+                va="center",
+                ha="left",
+                fontsize="small",
+                clip_on=True,
+                transform=ax.get_xaxis_transform(),
+                bbox=dict(
+                    boxstyle="round,pad=0.1",
+                    facecolor="white",
+                    alpha=0.7,
+                    edgecolor="none",
+                ),
+            )
+
+        if fig.get_axes() == [ax]:  # Standalone plot configuration
+            if self.duration > 0:
+                ax.set_xlim(self.start.time, self.end.time)
+            else:
+                ax.set_xlim(-0.1, 0.1)
+            ax.set_yticks([])
+            ax.set_title(self.label or "TimeSpan")
+            fig.tight_layout()
+
+        return ax
+
+
+@dataclass(frozen=True)
+class Segmentation(TimeSpan):
+    """A sequence of contiguous `TimeSpan`s."""
+
+    boundaries: Sequence[Boundary] = field(default_factory=tuple)
+
+    def __init__(
+        self,
+        start: Boundary,
+        duration: float,
+        boundaries: Sequence[Boundary],
+        label: str | None = None,
+    ):
+        # Set child attributes FIRST to ensure they exist before post-init validation
+        object.__setattr__(self, "boundaries", tuple(boundaries))
+        # Now call parent init, which will trigger post-init
+        super().__init__(start, duration, label)
+
+    def __post_init__(self) -> None:
+        # Note: super().__post_init__() is not needed because the parent init calls it
+        if not self.boundaries:
+            raise ValueError("Segmentation requires at least one boundary.")
+
+        # Ensure boundaries are sorted
+        sorted_boundaries = tuple(sorted(self.boundaries))
+        object.__setattr__(self, "boundaries", sorted_boundaries)
+
+        # Check consistency
+        if not np.isclose(self.start.time, sorted_boundaries[0].time):
+            raise ValueError(
+                f"Segmentation start time {self.start.time} "
+                f"does not match first boundary time {sorted_boundaries[0].time}."
+            )
+
+        if not np.isclose(self.end.time, sorted_boundaries[-1].time):
+            raise ValueError(
+                f"Segmentation end time {self.end.time} does not match last boundary time {sorted_boundaries[-1].time}."
+            )
+
+    @property
+    def segments(self) -> tuple[TimeSpan, ...]:
+        """The segments in the segmentation."""
+        return tuple(
+            TimeSpan(
+                start=self.boundaries[i],
+                duration=self.boundaries[i + 1].time - self.boundaries[i].time,
+                label=self.boundaries[i].label,
+            )
+            for i in range(len(self.boundaries) - 1)
+        )
 
     def __len__(self) -> int:
         return len(self.segments)
@@ -135,95 +205,212 @@ class Segmentation(TimeSpan):
     def __getitem__(self, idx: int) -> TimeSpan:
         return self.segments[idx]
 
-    @property
-    def labels(self) -> list[str | None]:
-        """A list of labels from all segments."""
-        return [seg.name for seg in self.segments]
-
-    @property
-    def intervals(self) -> np.ndarray:
-        """Intervals as a NumPy array of (start, end) pairs."""
-        return np.array([[seg.start, seg.end] for seg in self.segments])
-
-    @property
-    def boundaries(self) -> list[float]:
-        """A sorted list of unique boundary times."""
-        boundaries = {seg.start for seg in self.segments} | {seg.end for seg in self.segments}
-        return sorted(boundaries)
-
     def __repr__(self) -> str:
-        name_str = f"name='{self.name}', " if self.name else ""
-        return f"Segmentation({name_str}{len(self)} segments, duration={self.duration:.2f}s)"
+        label_str = f"label='{self.label}', " if self.label else ""
+        return f"Segmentation({label_str}{len(self)} segments, duration={self.duration:.2f}s)"
 
-    def __str__(self) -> str:
-        name_str = f"name='{self.name}', " if self.name else ""
-        return f"Segmentation({name_str}{len(self)} segments, duration={self.duration:.2f}s)"
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """
+        Plots the segmentation as a single-level hierarchy.
 
-    def plot(self, ax: Axes | None = None, text: bool = True, **kwargs: Any) -> tuple[Figure | SubFigure, Axes]:
-        """Plot the segmentation using bnl.viz.plot_segment."""
-        from .viz import plot_segment
+        Args:
+            ax: Matplotlib axes to plot on. If None, a new figure is created.
+            **kwargs: Additional keyword arguments including:
+                ymin (float): The minimum y-extent of the layer.
+                ymax (float): The maximum y-extent of the layer.
+                color_map (dict): A mapping from labels to colors.
+                text_offset (float): The horizontal offset for the label text.
+                figsize (tuple): The size of the figure if creating a new one.
 
-        # Extract viz-specific parameters
-        title = kwargs.pop("title", True)
-        ytick = kwargs.pop("ytick", "")
-        time_ticks = kwargs.pop("time_ticks", True)
-        style_map = kwargs.pop("style_map", kwargs)  # Remaining kwargs become style_map
+        Returns:
+            The Matplotlib axes containing the plot.
+        """
+        figsize = kwargs.pop("figsize", (10, 2))
 
-        return plot_segment(
-            self, ax=ax, label_text=text, title=title, ytick=ytick, time_ticks=time_ticks, style_map=style_map
-        )
+        if ax is None:
+            import matplotlib.pyplot as plt
 
-    @classmethod
-    def from_intervals(
-        cls, intervals: np.ndarray, labels: list[str | None] | None = None, name: str | None = None
-    ) -> "Segmentation":
-        """Create segmentation from an interval array."""
-        if labels is None:
-            labels = [None] * len(intervals)
-        time_spans = [TimeSpan(start=itvl[0], end=itvl[1], name=label) for itvl, label in zip(intervals, labels)]
-        return cls(segments=time_spans, name=name)
+            _, ax = plt.subplots(figsize=figsize)
+        fig = ax.figure
+
+        ymin = kwargs.pop("ymin", 0.0)
+        ymax = kwargs.pop("ymax", 1.0)
+        color_map = kwargs.pop("color_map", None)
+        text_offset = kwargs.pop("text_offset", 0.0)
+
+        # Create a color map if one isn't provided
+        if color_map is None:
+            import matplotlib.colors as mcolors
+
+            all_labels = {s.label for s in self.segments if s.label}
+            palette = list(mcolors.TABLEAU_COLORS.values())
+            color_map = {label: palette[i % len(palette)] for i, label in enumerate(sorted(all_labels))}
+
+        # Plot each time span
+        for span in self.segments:
+            span.plot(
+                ax,
+                ymin=ymin,
+                ymax=ymax,
+                color=color_map.get(span.label, "gray"),
+                text_offset=text_offset,
+            )
+
+        if fig.get_axes() == [ax]:
+            if self.duration > 0:
+                ax.set_xlim(self.start.time, self.end.time)
+            else:
+                ax.set_xlim(-0.1, 0.1)
+            ax.set_yticks([])
+            ax.set_title(self.label or "Segmentation")
+            fig.tight_layout()
+
+        return ax
 
     @classmethod
     def from_boundaries(
-        cls, boundaries: list[float], labels: list[str | None] | None = None, name: str | None = None
-    ) -> "Segmentation":
-        """Create segmentation from a list of boundaries."""
-        intervals = boundaries_to_intervals(np.array(sorted(boundaries)))
-        return cls.from_intervals(intervals, labels, name)
+        cls, times: Sequence[float], segment_labels: Sequence[str | None] | None = None, label: str | None = None
+    ) -> Segmentation:
+        """Creates a `Segmentation` from boundary times."""
+        if not times:
+            raise ValueError("Cannot create Segmentation from empty times.")
+
+        sorted_times = sorted(list(set(times)))
+        if segment_labels is None:
+            segment_labels = [None] * (len(sorted_times) - 1)
+
+        # Each boundary gets the label of the segment it starts
+        boundaries = []
+        for i, t in enumerate(sorted_times):
+            boundary_label = segment_labels[i] if i < len(segment_labels) else None
+            boundaries.append(Boundary(t, label=boundary_label))
+
+        start_boundary = boundaries[0]
+        duration = boundaries[-1].time - start_boundary.time
+        return cls(start=start_boundary, duration=duration, boundaries=boundaries, label=label)
 
     @classmethod
-    def from_jams(cls, anno: "jams.Annotation") -> "Segmentation":
-        """Create a Segmentation object from a JAMS annotation."""
-        segments = [TimeSpan(start=obs.time, end=obs.time + obs.duration, name=obs.value) for obs in anno]
-        return cls(segments=segments, name=anno.namespace)
+    def from_intervals(
+        cls,
+        intervals: Sequence[Sequence[float]],
+        segment_labels: Sequence[str | None] | None = None,
+        label: str | None = None,
+    ) -> Segmentation:
+        """Creates a `Segmentation` from (start, end) intervals."""
+        if len(intervals) == 0:
+            raise ValueError("Cannot create Segmentation from empty intervals.")
+
+        boundary_times = sorted(list(set(t for i in intervals for t in i)))
+        return cls.from_boundaries(boundary_times, segment_labels=segment_labels, label=label)
+
+    @classmethod
+    def from_jams(
+        cls,
+        anno: jams.Annotation,
+        label: str | None = None,
+        start_time: float | None = None,
+        duration: float | None = None,
+    ) -> Segmentation:
+        """
+        Creates a `Segmentation` from a JAMS annotation.
+
+        Args:
+            anno: JAMS annotation to convert.
+            label: Optional label for the segmentation.
+            start_time: Optional start time to enforce.
+            duration: Optional duration to enforce.
+
+        Returns:
+            A new `Segmentation` object.
+        """
+        boundary_dict = {}
+
+        for obs in anno:
+            time, obs_duration, value = obs.time, obs.duration, obs.value
+            obs_label = value.get("label") if isinstance(value, dict) else value
+
+            # Prioritize labeled boundaries. If a boundary at this time already exists,
+            # only overwrite it if the new one has a non-None label.
+            if time not in boundary_dict or obs_label is not None:
+                boundary_dict[time] = obs_label
+
+            if obs_duration > 0:
+                end_time = time + obs_duration
+                # Add the end boundary only if it doesn't already exist.
+                if end_time not in boundary_dict:
+                    boundary_dict[end_time] = None
+
+        # If a specific time range is given, enforce it by adding/overwriting boundaries.
+        if start_time is not None:
+            if start_time not in boundary_dict:
+                boundary_dict[start_time] = None
+            if duration is not None:
+                end_time = start_time + duration
+                if end_time not in boundary_dict:
+                    boundary_dict[end_time] = None
+        elif duration is not None:
+            jams_start = min((obs.time for obs in anno), default=0.0)
+            if jams_start not in boundary_dict:
+                boundary_dict[jams_start] = None
+            end_time = jams_start + duration
+            if end_time not in boundary_dict:
+                boundary_dict[end_time] = None
+
+        if not boundary_dict:
+            if start_time is not None and duration is not None:
+                # Create a simple segmentation if there's no data but a range is defined
+                boundaries = [Boundary(start_time), Boundary(start_time + duration)]
+            else:
+                raise ValueError("Cannot create Segmentation from a JAMS annotation with no data and no defined range.")
+        else:
+            boundaries = [Boundary(t, label) for t, label in boundary_dict.items()]
+
+        unique_boundaries = sorted(boundaries)
+        final_start_boundary = unique_boundaries[0]
+        final_duration = unique_boundaries[-1].time - final_start_boundary.time
+
+        # The overall segmentation label is passed in, or defaults to the annotation's namespace.
+        # The labels on individual boundaries are for the segments they start.
+        return cls(
+            start=final_start_boundary,
+            duration=final_duration,
+            boundaries=unique_boundaries,
+            label=label or anno.namespace,
+        )
 
 
-@dataclass
+@dataclass(frozen=True)
 class Hierarchy(TimeSpan):
-    """A hierarchical structure of segmentations."""
+    """A hierarchical structure of `Segmentation`s."""
 
-    layers: list[Segmentation] = field(default_factory=list)
+    layers: Sequence[Segmentation] = field(default_factory=tuple)
+
+    def __init__(
+        self,
+        start: Boundary,
+        duration: float,
+        layers: Sequence[Segmentation],
+        label: str | None = None,
+    ):
+        # Set child attributes FIRST
+        object.__setattr__(self, "layers", tuple(layers))
+        # Now call parent init, which triggers post-init
+        super().__init__(start, duration, label)
 
     def __post_init__(self) -> None:
+        # Ensure layers are a tuple
+        object.__setattr__(self, "layers", tuple(self.layers))
+
         if not self.layers:
             raise ValueError("Hierarchy must contain at least one layer.")
 
-        # Set start/end from non-empty layers
-        non_empty_layers = [layer for layer in self.layers if layer.segments]
-        if non_empty_layers:
-            self.start = min(layer.start for layer in non_empty_layers)
-            self.end = max(layer.end for layer in non_empty_layers)
-
-            # Validate all layers span the same time range
-            for layer in non_empty_layers:
-                if not (np.isclose(layer.start, self.start) and np.isclose(layer.end, self.end)):
-                    raise ValueError(
-                        f"All layers must span the same time range. "
-                        f"Expected {self.start:.2f}-{self.end:.2f}s, "
-                        f"got {layer.start:.2f}-{layer.end:.2f}s for '{layer.name}'."
-                    )
-
-        super().__post_init__()
+        for i, layer in enumerate(self.layers):
+            if not (np.isclose(layer.start.time, self.start.time) and np.isclose(layer.end.time, self.end.time)):
+                raise ValueError(
+                    f"All layers must span the same time range. Layer {i} "
+                    f"({layer.start.time:.2f}-{layer.end.time:.2f}) does not match "
+                    f"Hierarchy ({self.start.time:.2f}-{self.end.time:.2f})."
+                )
 
     def __len__(self) -> int:
         return len(self.layers)
@@ -231,86 +418,70 @@ class Hierarchy(TimeSpan):
     def __getitem__(self, lvl_idx: int) -> Segmentation:
         return self.layers[lvl_idx]
 
-    @property
-    def intervals(self) -> list[np.ndarray]:
-        """Interval arrays for all layers."""
-        return [layer.intervals for layer in self.layers]
-
-    @property
-    def labels(self) -> list[list[str | None]]:
-        """Label lists for all layers."""
-        return [layer.labels for layer in self.layers]
-
-    @property
-    def boundaries(self) -> list[list[float]]:
-        """Boundary lists for all layers."""
-        return [layer.boundaries for layer in self.layers]
-
     def __repr__(self) -> str:
-        name_str = f"name='{self.name}'" if self.name is not None else "name='None'"
-        return f"Hierarchy({name_str}, {len(self)} layers, duration={self.duration:.2f}s)"
+        label_str = f"label='{self.label}'" if self.label else ""
+        return f"Hierarchy({label_str}, {len(self)} layers, duration={self.duration:.2f}s)"
 
-    def __str__(self) -> str:
-        return f"Hierarchy(name='{self.name}', {len(self)} layers, duration={self.duration:.2f}s)"
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """
+        Plots all layers of the hierarchy on a single axis, stacked vertically.
 
-    def plot(self, ax: Axes | None = None, text: bool = True, **kwargs: Any) -> tuple[Figure | SubFigure, Axes]:
-        """Plot the hierarchy with each layer in a separate subplot."""
-        from .viz import label_style_dict
+        Args:
+            ax: Matplotlib axes to plot on. If None, a new figure is created.
+            **kwargs: Additional keyword arguments including:
+                figsize (tuple): Size of the figure to create if `ax` is not provided.
+                title (bool or str): If True, uses the Hierarchy's label as the title.
+                time_ticks (bool): If True, display time ticks on the x-axis.
+                layer_height (float): The height of the rectangle for each layer.
+                layer_gap (float): The gap between layers.
 
+        Returns:
+            The Matplotlib axes containing the plot.
+        """
+        import matplotlib.colors as mcolors
+        import matplotlib.pyplot as plt
+
+        # Pop kwargs for this function before passing to children
         figsize = kwargs.pop("figsize", None)
-        n_layers = len(self.layers)
+        title = kwargs.pop("title", True)
+        time_ticks = kwargs.pop("time_ticks", True)
+        layer_height = kwargs.pop("layer_height", 0.8)
+        layer_gap = kwargs.pop("layer_gap", 0.1)
 
-        fig, axes = plt.subplots(
-            n_layers, 1, figsize=figsize or (6, 0.5 + 0.5 * n_layers), sharex=True, constrained_layout=True
-        )
-        if n_layers == 1:
-            axes = [axes]
+        # 1. Setup figure and axes
+        if ax is None:
+            _, ax = plt.subplots(figsize=figsize or (10, 1 + 0.5 * len(self.layers)))
+        fig = ax.figure
 
-        for i, (layer, ax) in enumerate(zip(self.layers, axes)):
+        # 2. Create a single color map for all unique labels
+        all_labels = {s.label for layer in self.layers for s in layer.segments if s.label}
+        palette = list(mcolors.TABLEAU_COLORS.values())
+        color_map: dict[str, ColorType] = {
+            label: palette[i % len(palette)] for i, label in enumerate(sorted(all_labels))
+        }
+
+        # 3. Plot layers (coarsest at top)
+        total_height = len(self.layers) * (layer_height + layer_gap) - layer_gap
+        text_offset = 0.005 * max(self.duration, 0.1)
+
+        for i, layer in enumerate(self.layers):
+            layer_ymin = total_height - (i + 1) * layer_height - i * layer_gap
             layer.plot(
-                ax=ax,
-                style_map=label_style_dict(layer.labels),
-                title=False,
-                ytick=f"Level {i}",
-                time_ticks=(i == n_layers - 1),
+                ax,
+                ymin=layer_ymin / total_height,
+                ymax=(layer_ymin + layer_height) / total_height,
+                color_map=color_map,
+                text_offset=text_offset,
             )
 
-        # We always have at least one axis since Hierarchy is guaranteed to have at least one layer
-        axes[-1].set_xlabel("Time (s)")
-        return fig, axes[-1]
+        # 4. Configure axes
+        if title and self.label:
+            ax.set_title(self.label if title is True else str(title))
 
-    def plot_single_axis(
-        self,
-        ax: Axes | None = None,
-        figsize: tuple[float, float] | None = None,
-        title: bool = True,
-        time_ticks: bool = True,
-        layer_height: float = 0.8,
-        layer_gap: float = 0.1,
-    ) -> tuple[Figure | SubFigure, Axes]:
-        """Plot all layers on a single axis."""
-        from .viz import label_style_dict
-
-        n_layers = len(self.layers)
-
-        fig: Figure | SubFigure
-        if ax is None:
-            fig, ax = plt.subplots(figsize=figsize or (10, 2 + 0.5 * n_layers))
+        if self.duration > 0:
+            ax.set_xlim(self.start.time, self.end.time)
         else:
-            fig = ax.figure
-
-        total_height = n_layers * (layer_height + layer_gap) - layer_gap
-        current_y = total_height
-
-        for layer in self.layers:
-            layer_ymin = current_y - layer_height
-            self._plot_layer_on_axis(ax, layer, label_style_dict, layer_ymin, layer_height, total_height)
-            current_y -= layer_height + layer_gap
-
-        if title and self.name:
-            ax.set_title(self.name)
-
-        ax.set_xlim(self.start, self.end) if self.start != self.end else ax.set_xlim(-0.1, 0.1)
+            ax.set_xlim(-0.1, 0.1)
         ax.set_ylim(0, total_height)
 
         if time_ticks:
@@ -319,116 +490,193 @@ class Hierarchy(TimeSpan):
         else:
             ax.set_xticks([])
 
-        # Set y-ticks with layer names
-        ytick_positions = [total_height - (i * (layer_height + layer_gap) + layer_height / 2) for i in range(n_layers)]
-        ytick_labels = [
-            layer.name if layer.name and layer.name.strip() else f"Level {n_layers - 1 - i}"
-            for i, layer in enumerate(self.layers)
+        ytick_positions = [
+            total_height - (i * (layer_height + layer_gap) + layer_height / 2) for i in range(len(self.layers))
         ]
-
+        ytick_labels = [(layer.label or f"Level {i}").strip() for i, layer in enumerate(self.layers)]
         ax.set_yticks(ytick_positions)
-        ax.set_yticklabels(reversed(ytick_labels))
+        ax.set_yticklabels(ytick_labels)
 
-        return fig, ax
+        fig.tight_layout()
+        return ax
 
-    def _plot_layer_on_axis(
-        self,
-        ax: Axes,
-        layer: Segmentation,
-        style_provider: Any,
-        layer_ymin: float,
-        layer_height: float,
-        total_height: float,
-    ) -> None:
-        """Helper to plot a single layer on the axis."""
-        style_map = style_provider(layer.labels)
-        layer_ymax = layer_ymin + layer_height
+    @classmethod
+    def from_jams(cls, anno: jams.Annotation, label: str | None = None) -> Hierarchy:
+        """Creates a `Hierarchy` from a JAMS multi-segment annotation."""
+        from collections import defaultdict
 
-        for span in layer.segments:
-            span_style = style_map.get(span.name or "", {})
+        if anno.namespace != "multi_segment":
+            raise ValueError(f"Expected 'multi_segment' namespace, but got '{anno.namespace}'.")
 
-            ax.axvspan(
-                span.start,
-                span.end,
-                ymin=layer_ymin / total_height,
-                ymax=layer_ymax / total_height,
-                alpha=span_style.get("alpha", 0.7),
-                **span_style,
+        # Group observations by level
+        layers_data = defaultdict(list)
+        for obs in anno.data:
+            # The "value" of a multi-segment observation contains the sub-segment's metadata
+            level = obs.value.get("level")
+            if level is not None:
+                layers_data[level].append(obs)
+
+        if not layers_data:
+            raise ValueError("Cannot create a Hierarchy from a JAMS annotation with no levels.")
+
+        # Determine the overall time range for the hierarchy.
+        # It's defined by the earliest start time and the specified annotation duration.
+        start_time = min((obs.time for obs in anno), default=0.0)
+        duration = anno.duration
+
+        if duration is None:
+            # Fallback if the parent annotation has no duration set
+            all_times = {
+                t
+                for l_obs in layers_data.values()
+                for obs in l_obs
+                for t in [obs.time, obs.time + obs.duration]
+                if obs.duration is not None
+            }
+            if not all_times:
+                # Fallback to just observation times if no durations are present
+                all_times = {obs.time for l_obs in layers_data.values() for obs in l_obs}
+
+            if not all_times:
+                raise ValueError("Cannot determine time range from JAMS data with no observations or durations.")
+
+            end_time = max(all_times)
+            duration = end_time - start_time
+
+        # Create a segmentation for each level, ensuring it spans the full hierarchy duration
+        layers = []
+        for level in sorted(layers_data.keys()):
+            level_obs = layers_data[level]
+
+            # Create a temporary annotation for this layer's data
+            sub_anno = jams.Annotation(
+                namespace="segment",  # A generic namespace for the temporary annotation
+                data=level_obs,
+                sandbox=anno.sandbox,
+                annotation_metadata=anno.annotation_metadata,
             )
 
-            if span.name:
-                text_offset = 0.005 * max(self.end - self.start, 0.1)
-                ax.text(
-                    span.start + text_offset,
-                    layer_ymin + layer_height / 2,
-                    span.name,
-                    va="center",
-                    ha="left",
-                    fontsize=7,
-                    clip_on=True,
-                    bbox=dict(boxstyle="round,pad=0.1", facecolor="white", alpha=0.7, edgecolor="none"),
-                )
+            # Create the segmentation, forcing it to align with the parent hierarchy's time range
+            segmentation = Segmentation.from_jams(
+                sub_anno,
+                label=f"level_{level}",
+                start_time=start_time,
+                duration=duration,
+            )
+            layers.append(segmentation)
+
+        return cls(
+            start=Boundary(start_time),
+            duration=duration,
+            layers=layers,
+            label=label or anno.namespace,
+        )
 
     @classmethod
-    def from_jams(cls, jams_annotation: "jams.Annotation", name: str | None = None) -> "Hierarchy":
-        """Create a Hierarchy from a JAMS multi_segment annotation."""
-        if jams_annotation.namespace != "multi_segment":
-            raise ValueError(f"Expected 'multi_segment' namespace, got '{jams_annotation.namespace}'")
+    def from_json(cls, data: list, label: str | None = None) -> Hierarchy:
+        """
+        Creates a `Hierarchy` from a JSON-like structure.
+        e.g., a list of layers, where each layer is a list of [intervals, labels].
+        """
+        layers = []
+        all_boundaries: set[float] = set()
 
-        from jams.eval import hierarchy_flatten
+        for i, (intervals, labels) in enumerate(data):
+            seg = Segmentation.from_intervals(intervals, segment_labels=labels, label=f"level_{i}")
+            layers.append(seg)
+            all_boundaries.update(b.time for b in seg.boundaries)
 
-        hier_intervals, hier_labels = hierarchy_flatten(jams_annotation)
+        if not layers:
+            raise ValueError("Cannot create a Hierarchy from empty JSON data.")
 
-        segmentations = []
-        for i, (intervals, labels) in enumerate(zip(hier_intervals, hier_labels)):
-            seg = Segmentation.from_intervals(np.array(intervals), labels, name=f"level_{i}")
-            segmentations.append(seg)
+        start_time = min(all_boundaries) if all_boundaries else 0
+        end_time = max(all_boundaries) if all_boundaries else 0
+        duration = end_time - start_time
 
-        # Get hierarchy name from JAMS metadata if not provided
-        if not name:
-            annotator_meta = jams_annotation.annotation_metadata.annotator
-            if annotator_meta and "name" in annotator_meta:
-                name = annotator_meta["name"]
+        return cls(start=Boundary(start_time), duration=duration, layers=layers, label=label)
 
-        return cls(layers=segmentations, name=name)
 
-    @classmethod
-    def from_json(cls, json_data: list[list[list[Any]]], name: str | None = None) -> "Hierarchy":
-        """Create hierarchy from JSON structure (Adobe EST format)."""
-        if not isinstance(json_data, list):
-            raise ValueError("JSON data must be a list of layers.")
+@dataclass(order=True, frozen=True)
+class RatedBoundary:
+    """A boundary with a salience level."""
 
-        segmentations = []
-        for i, layer_data in enumerate(json_data):
-            if not (isinstance(layer_data, list) and len(layer_data) == 2):
-                raise ValueError(f"Layer {i} malformed. Expected [intervals, labels].")
+    time: float
+    salience: float | int
+    label: str | None = None
 
-            intervals_data, labels_data = layer_data
-            if not (isinstance(intervals_data, list) and isinstance(labels_data, list)):
-                raise ValueError(f"Layer {i}: intervals and labels must be lists.")
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "time", _validate_time(self.time))
+        if not isinstance(self.salience, int | float):
+            raise TypeError(f"Salience must be a number, not {type(self.salience).__name__}.")
+        if self.label is not None:
+            object.__setattr__(self, "label", str(self.label))
 
-            if len(intervals_data) != len(labels_data):
-                raise ValueError(f"Layer {i}: mismatched intervals/labels count.")
+    def __repr__(self) -> str:
+        return f"RatedBoundary(time={self.time:.2f}, salience={self.salience:.2f}, label={self.label!r})"
 
-            segments = []
-            for interval, label in zip(intervals_data, labels_data):
-                # Handle nested intervals: [[[0,1]]] -> [[0,1]] -> [0,1]
-                actual_interval = (
-                    interval[0]
-                    if (isinstance(interval, list) and len(interval) == 1 and isinstance(interval[0], list))
-                    else interval
+
+@dataclass(frozen=True)
+class RatedBoundaries:
+    """An intermediate collection of rated boundaries for synthesis."""
+
+    events: Sequence[RatedBoundary]
+    start_time: float
+    end_time: float
+
+    def group_boundaries(self, strategy: strategies.BoundaryGroupingStrategy) -> RatedBoundaries:
+        """Groups close boundaries using a given strategy."""
+        grouped_events = strategy.group(self.events)
+        return RatedBoundaries(events=grouped_events, start_time=self.start_time, end_time=self.end_time)
+
+    def quantize_level(self, strategy: strategies.LevelGroupingStrategy) -> ProperHierarchy:
+        """Converts saliences to levels and synthesizes a `ProperHierarchy`."""
+        return strategy.quantize(self)
+
+
+@dataclass(frozen=True)
+class ProperHierarchy(Hierarchy):
+    """A `Hierarchy` with monotonically nested layers."""
+
+    def __post_init__(self) -> None:
+        # First, run the parent's post-init
+        super().__post_init__()
+
+        # Then, validate the monotonic property
+        # Layer 0 is coarsest, layer i+1 is finer than layer i
+        for i in range(len(self.layers) - 1):
+            coarser_layer_boundaries = {b.time for b in self.layers[i].boundaries}
+            finer_layer_boundaries = {b.time for b in self.layers[i + 1].boundaries}
+            if not coarser_layer_boundaries.issubset(finer_layer_boundaries):
+                raise ValueError(
+                    f"Monotonicity violation: Layer {i} has boundaries not present in the finer layer {i + 1}."
                 )
 
-                if not (isinstance(actual_interval, list) and len(actual_interval) == 2):
-                    raise ValueError(f"Layer {i}: malformed interval {actual_interval}.")
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """
+        Plots the proper hierarchy.
 
-                try:
-                    start, end = float(actual_interval[0]), float(actual_interval[1])
-                    segments.append(TimeSpan(start=start, end=end, name=str(label)))
-                except (ValueError, TypeError) as e:
-                    raise ValueError(f"Layer {i}: invalid interval {actual_interval}: {e}") from e
+        This method calls the parent `Hierarchy.plot()` method. The layers are
+        plotted with the coarsest layer at the top and the finest at the bottom.
 
-            segments.sort(key=lambda s: s.start)
-            segmentations.append(Segmentation(segments=segments, name=f"layer_{i}"))
+        Args:
+            ax: Matplotlib axes to plot on. If None, a new figure/axes is created.
+            **kwargs: Additional keyword arguments passed to the parent plot method.
 
-        return cls(layers=segmentations, name=name)
+        Returns:
+            The Matplotlib axes containing the plot.
+        """
+        return super().plot(ax=ax, **kwargs)
+
+    @staticmethod
+    def from_rated_boundaries(
+        events: Sequence[RatedBoundary], start_time: float, end_time: float, label: str | None = None
+    ) -> ProperHierarchy:
+        """Synthesizes a `ProperHierarchy` from rated boundaries."""
+        from .strategies import DirectSynthesisStrategy
+
+        # Wrap in RatedBoundaries to use the strategy
+        rated_boundaries = RatedBoundaries(events=events, start_time=start_time, end_time=end_time)
+
+        # Use the strategy to perform the synthesis
+        strategy = DirectSynthesisStrategy()
+        return strategy.quantize(rated_boundaries)
