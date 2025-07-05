@@ -15,8 +15,9 @@ def test_hierarchy_properties():
     """Test basic properties."""
     layers = [core.Segmentation.from_intervals([[0, 5], [5, 10]])]
     h = core.Hierarchy(layers=layers)
-    assert h.start == 0
-    assert h.end == 10
+    assert h.start.time == 0
+    assert h.end.time == 10
+    assert h.duration == 10
     assert len(h) == 1
 
 

@@ -1,57 +1,89 @@
-"""Operations and transformations for BNL data structures."""
+"""
+This module provides the main pipeline for synthesizing monotonic hierarchies.
+It uses a strategy-based approach to allow for flexible and extensible
+transformations from a generic Hierarchy to a ProperHierarchy.
+"""
 
-from typing import TYPE_CHECKING, Any, List, Tuple, Dict
+from __future__ import annotations
 
-# Import necessary classes from .core
-from .core import Hierarchy, ProperHierarchy, RatedBoundaries
-# Segmentation and TimeSpan might not be directly needed here, but good for context if ops grow.
+import dataclasses
 
-# if TYPE_CHECKING: # This was the old way, direct import is better for runtime.
-#     from .core import Hierarchy
+from .core import Hierarchy, ProperHierarchy
+from .strategies import (
+    BoundaryGroupingStrategy,
+    LevelGroupingStrategy,
+    SalienceStrategy,
+)
 
 
-def to_monotonic(hierarchy: Hierarchy) -> ProperHierarchy: # Return ProperHierarchy
+class Pipeline:
     """
-    Casts a Hierarchy to be monotonic by creating a ProperHierarchy.
+    Orchestrates the end-to-end process of transforming a raw `Hierarchy`
+    into a `ProperHierarchy` using a sequence of pluggable strategies.
 
-    This baseline strategy derives depths for boundaries based on the
-    coarsest layer index in the input hierarchy where each boundary appears.
+    This class provides a high-level API to convert potentially non-monotonic
+    or unstructured boundary data into a formal, monotonically nested hierarchy.
     """
-    if not isinstance(hierarchy, Hierarchy):
-        raise TypeError("Input must be a bnl.core.Hierarchy object.")
 
-    if not hierarchy.layers: # Should not happen due to Hierarchy validation if __post_init__ ran
-        # This case should ideally be prevented by Hierarchy's own validation.
-        # If it can occur (e.g. Hierarchy object created skipping validation), handle it.
-        return ProperHierarchy.from_rated_boundaries(RatedBoundaries(), name=hierarchy.name)
+    def __init__(
+        self,
+        salience_strategy: SalienceStrategy,
+        grouping_strategy: BoundaryGroupingStrategy | None,
+        leveling_strategy: LevelGroupingStrategy,
+    ):
+        """
+        Initializes the pipeline with a set of strategies.
 
-    boundary_depths: Dict[float, int] = {}
+        Parameters
+        ----------
+        salience_strategy : SalienceStrategy
+            The strategy to calculate a salience value for each boundary.
+        grouping_strategy : BoundaryGroupingStrategy | None
+            The strategy to consolidate boundaries that are close in time. If
+            None, this step is skipped.
+        leveling_strategy : LevelGroupingStrategy
+            The strategy to quantize salience values into discrete levels and
+            synthesize the final `ProperHierarchy`.
+        """
+        self.salience_strategy = salience_strategy
+        self.grouping_strategy = grouping_strategy
+        self.leveling_strategy = leveling_strategy
 
-    for layer_idx, layer in enumerate(hierarchy.layers):
-        for ts in layer.boundaries: # .boundaries is Tuple[float, ...]
-            if ts not in boundary_depths:
-                boundary_depths[ts] = layer_idx
-            else:
-                boundary_depths[ts] = min(boundary_depths[ts], layer_idx)
+    def process(self, hierarchy: Hierarchy, name: str | None = None) -> ProperHierarchy:
+        """
+        Executes the full transformation pipeline on a given hierarchy.
 
-    if not boundary_depths:
-        # All layers in the hierarchy were empty of unique boundaries or hierarchy itself was empty.
-        # (e.g., if all layers are Segmentations made from a single boundary point, like [0.0],
-        # they would each have boundary (0.0,). If all layers are identical in this way).
-        # Or if hierarchy.layers was empty initially (though Hierarchy validation should prevent).
-        return ProperHierarchy.from_rated_boundaries(RatedBoundaries(), name=hierarchy.name)
+        The process follows these steps:
+        1.  **Salience Calculation:** A `SalienceStrategy` is used to compute
+            a `RatedBoundaries` object from the input `Hierarchy`.
+        2.  **Boundary Grouping (Optional):** If a `BoundaryGroupingStrategy`
+            is provided, it consolidates nearby boundaries.
+        3.  **Level Quantization & Synthesis:** A `LevelGroupingStrategy`
+            converts the rated boundaries into a `ProperHierarchy`.
 
-    rated_events_list: List[Tuple[float, int]] = []
-    for ts in sorted(boundary_depths.keys()): # Sort timestamps
-        rated_events_list.append((ts, boundary_depths[ts]))
+        Parameters
+        ----------
+        hierarchy : Hierarchy
+            The input hierarchy to process.
+        name : str | None, optional
+            An optional name for the resulting `ProperHierarchy`. If None, the
+            name of the input hierarchy is used.
 
-    rated_b = RatedBoundaries(events=tuple(rated_events_list))
+        Returns
+        -------
+        ProperHierarchy
+            A new, monotonically nested hierarchy.
+        """
+        # 1. Analyze salience
+        rated_boundaries = self.salience_strategy.calculate(hierarchy)
 
-    proper_h = ProperHierarchy.from_rated_boundaries(rated_b, name=hierarchy.name)
+        # 2. Group boundaries in time (optional)
+        if self.grouping_strategy:
+            rated_boundaries = rated_boundaries.group_boundaries(self.grouping_strategy)
 
-    return proper_h
+        # 3. Quantize saliences into levels and synthesize
+        proper_hierarchy = rated_boundaries.quantize_level(self.leveling_strategy)
 
-
-def boundary_salience(hierarchy: Hierarchy, r: float = 2.0) -> Any: # Input type hint updated
-    """Calculates the boundary salience curve for a hierarchy."""
-    return None
+        # 4. Return the final object with the correct name
+        final_name = name if name is not None else hierarchy.name
+        return dataclasses.replace(proper_hierarchy, name=final_name)

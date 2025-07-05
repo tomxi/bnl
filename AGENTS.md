@@ -25,9 +25,18 @@ Concise guidance for AI agents working with this music information retrieval cod
 *(Add development insights, common patterns, useful commands, etc.)*
 
 ### User is working on...
-- Streamlining and stabilizing the core data classes and API.
-- building the app in streamlit to interactive ask research questions about the data.
+- building the baseline for monotonic casting
+- cleaning up the api to keep the mental model simple and codebase under control.
 
 ### User Feedbacks
-- now there are new, real data in the test fixtures: REPOROOT/tests/fixtures/annotations/8.jams and 8.mp3.msdclasscsnmagic.json for testing. Let's see if we can use these to do future tests when possible.
+- plotting is not using the old styledict management... we used to make surethat the same label all gets the same stylemap, even if they are across different layers. We had a a stylemap generator that was specicallyv dealing with generating the style maps given a list of labels of the hierarchy.
+- Relatedly, the plot2 method is suppose to make that management much easier... since we will be plotting all using the same axis so it can just use its own style dict etc...? Regardless, we need to make a issue or find an exisiting one and append to it?
 
+### API Decisions
+- `TimeSpan` now uses `(start: Boundary, duration: float)` for initialization instead of `(start: Boundary, end: Boundary)`. The `end` attribute is now a calculated property. This simplifies instantiation and validation.
+- **Monotonic Casting Pipeline Refactored:** The synthesis process now uses a fluent, strategy-based pipeline.
+    - **Core Idea:** `Hierarchy` -> `RatedBoundaries` -> `ProperHierarchy`.
+    - **`RatedBoundaries`:** An intermediate, chainable class (`.group_boundaries()`, `.quantize_level()`).
+    - **`bnl.ops.Pipeline`:** The main entry point that orchestrates the process.
+    - **`bnl.strategies`:** Defines contracts for `SalienceStrategy`, `BoundaryGroupingStrategy`, and `LevelGroupingStrategy`. This allows for pluggable algorithms at each stage of the synthesis.
+    - **Logic Placement:** Synthesis logic (creating layers from rated events) now lives in strategies (e.g., `DirectSynthesisStrategy`), not in the core data classes.

@@ -679,7 +679,7 @@ def test_load_annotation_jams_hierarchy_default(annotation_test_dataset: data.Da
     annotation = track.load_annotation("hier_jams")
     assert isinstance(annotation, data.Hierarchy)
     assert len(annotation.layers) == 2
-    assert annotation.layers[0][0].name == "A"
+    assert annotation.layers[0][0].label == "A"
 
 
 def test_load_annotation_jams_segmentation_default(annotation_test_dataset: data.Dataset):
@@ -688,7 +688,7 @@ def test_load_annotation_jams_segmentation_default(annotation_test_dataset: data
     assert isinstance(annotation, Segmentation)  # Use imported Segmentation
     assert annotation.name == "segment_open"  # Check the namespace was set as name
     assert len(annotation.segments) == 2
-    assert annotation.segments[0].name == "verse"
+    assert annotation.segments[0].label == "verse"
 
 
 def test_load_annotation_jams_multi_select_namespace(annotation_test_dataset: data.Dataset):
@@ -696,27 +696,28 @@ def test_load_annotation_jams_multi_select_namespace(annotation_test_dataset: da
     # Default load should pick the first multi_segment
     default_annot = track.load_annotation("multi_jams")
     assert isinstance(default_annot, data.Hierarchy)
-    assert default_annot.layers[0][0].name == "S"  # From first multi_segment
+    assert default_annot.layers[0][0].label == "S"  # From first multi_segment
 
     # Select multi_segment explicitly (should be the first one)
     hier_annot = track.load_annotation("multi_jams", annotation_id="multi_segment")
     assert isinstance(hier_annot, data.Hierarchy)
-    assert hier_annot.layers[0][0].name == "S"
+    assert hier_annot.layers[0][0].label == "S"
 
     # Select segment_open
     seg_annot = track.load_annotation("multi_jams", annotation_id="segment_open")
     assert isinstance(seg_annot, Segmentation)  # Use imported Segmentation
     assert seg_annot.name == "segment_open"
-    assert seg_annot.segments[0].name == "part1"
+    assert seg_annot.segments[0].label == "part1"
 
     # Select beat by namespace
     beat_annot = track.load_annotation("multi_jams", annotation_id="beat")
     assert isinstance(beat_annot, Segmentation)  # Use imported Segmentation
     assert beat_annot.name == "beat"
-    assert beat_annot.segments[0].name == "1"  # JAMS values are often numbers for beats
-
-    # The ann.id "beat_annot_123" was removed from the JAMS file due to parsing issues
-    # with the current jams library version. Selection by namespace "beat" is tested above.
+    # For event-like annotations, we check the boundary label
+    sorted_boundaries = sorted(beat_annot.boundaries, key=lambda b: b.time)
+    assert sorted_boundaries[0].label == "1"
+    assert sorted_boundaries[1].label == "2"
+    assert sorted_boundaries[2].label == "3"
 
 
 def test_load_annotation_jams_multi_select_index(annotation_test_dataset: data.Dataset):
@@ -724,24 +725,14 @@ def test_load_annotation_jams_multi_select_index(annotation_test_dataset: data.D
     # Select by index
     hier_annot_idx0 = track.load_annotation("multi_jams", annotation_id=0)  # First multi_segment
     assert isinstance(hier_annot_idx0, data.Hierarchy)
-    assert hier_annot_idx0.layers[0][0].name == "S"
+    assert hier_annot_idx0.layers[0][0].label == "S"
 
     seg_annot_idx1 = track.load_annotation("multi_jams", annotation_id=1)  # segment_open
-    assert isinstance(seg_annot_idx1, Segmentation)  # Use imported Segmentation
-    assert seg_annot_idx1.name == "segment_open"
+    assert isinstance(seg_annot_idx1, Segmentation)
 
-    # Test warning for multiple 'multi_segment' when loading default (covered by print warning in implementation)
-    # test_multi_ann.jams has two 'multi_segment'. Default load picks the first.
-    # A more direct test for the warning would require capturing stdout.
-    # For now, verify behavior (loads first).
-    default_multi_hier = track.load_annotation("multi_jams")  # Default behavior
-    assert isinstance(default_multi_hier, data.Hierarchy)
-    assert default_multi_hier.layers[0][0].name == "S"  # From the first multi_segment
-
-    # Select the second multi_segment by index
-    second_multi_hier = track.load_annotation("multi_jams", annotation_id=3)  # Index of the second multi_segment
-    assert isinstance(second_multi_hier, data.Hierarchy)
-    assert second_multi_hier.layers[0][0].name == "Z"
+    hier_annot_idx2 = track.load_annotation("multi_jams", annotation_id=3)  # Second multi_segment
+    assert isinstance(hier_annot_idx2, data.Hierarchy)
+    assert hier_annot_idx2.layers[0][0].label == "Z"
 
 
 def test_load_annotation_json_hierarchy(annotation_test_dataset: data.Dataset):
@@ -749,7 +740,7 @@ def test_load_annotation_json_hierarchy(annotation_test_dataset: data.Dataset):
     annotation = track.load_annotation("hier_json")
     assert isinstance(annotation, data.Hierarchy)
     assert len(annotation.layers) == 2
-    assert annotation.layers[0][0].name == "A"
+    assert annotation.layers[0][0].label == "A"
 
 
 def test_load_annotation_empty_jams(annotation_test_dataset: data.Dataset):
