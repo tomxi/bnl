@@ -31,14 +31,16 @@ Concise guidance for AI agents working with this music information retrieval cod
 - the from_jams and from_json methods are still not working... we need to fix them.
 - hmm I need a way to quary the label at a timepoint, or the closest boundary in past time basically.
 - I want to decouple BOundary and label again... see the API Handoff Summary for the latest design.
+Of course. Here is the API design in markdown format.
 
-### **Core API Handoff Summary (Decoupled Labels)**
+### **Core API Design for Monotonic Boundary Casting**
 
-**Guiding Principle**: The design separates pure structural markers (`Boundary`) from their descriptive metadata (`label`). Labels are managed by the container objects in which the boundaries frame.
+**Guiding Principle**: The design separates pure structural markers (`Boundary`) from their descriptive metadata (`labels`). Labels are managed by the container objects in which the boundaries frame. This allows the core transformation pipeline to operate purely on structure.
 
+---
 #### **I. Point-like Objects 📍**
 
-These objects are now pure, label-less structural markers.
+These are the fundamental, label-less structural markers on the timeline.
 
 * **`Boundary`**
     * **Inherits From**: None (Base Class)
@@ -47,83 +49,85 @@ These objects are now pure, label-less structural markers.
 
 * **`RatedBoundary`**
     * **Inherits From**: `Boundary`
-    * **Purpose**: A boundary with a continuous measure of importance.
+    * **Purpose**: A boundary with a continuous measure of importance or salience.
     * **Attributes**: `salience: float`
 
 * **`LeveledBoundary`**
     * **Inherits From**: `RatedBoundary`
-    * **Purpose**: A definitive structural node within a `Hierarchy`, identified only by its time and level.
-    * **Attributes**: `level: positive integer`
-    * **Note**: Its inherited `salience` should be set to its integer `level`.
+    * **Purpose**: A definitive structural node within a monotonic hierarchy, identified by its time and discrete level.
+    * **Attributes**: `level: int` (must be a positive integer)
+    * **Implementation Note**: The constructor should enforce that `level` is a positive integer and automatically set the inherited `salience` attribute to be equal to the `level`.
 
 ---
-
 #### **II. Span-like Objects (Containers) 🌊**
 
-These objects now manage the labels for the boundaries they contain.
+These objects represent time intervals and contain the point-like objects and their associated labels.
 
 * **`TimeSpan`**
     * **Inherits From**: None (Base Class)
     * **Purpose**: Represents a generic time interval.
-    * **Attributes**: `start: Boundary`, `end: Boundary`, `label: str`
-    * **Derived Property**: `duration: float` (The difference between `start.time` and `end.time`).
-    * **Note**: Strictly enforced to have a non-zero positive duration. Zero duration is a Boundary. Label has to not be None, if not provided, it should be something like a string representation of the Span [start.time - end.time].
+    * **Attributes**:
+        * `start: Boundary`
+        * `end: Boundary`
+        * `name: str`
+    * **Derived Property**: `duration: float` (calculated as `end.time - start.time`).
+    * **Implementation Notes**:
+        * Must have a non-zero, positive duration. A zero-duration event is a `Boundary`.
+        * If `name` is not provided, it should default to a string representation of the span (e.g., `"[0.00-15.32]"`).
 
 * **`Segment`**
     * **Inherits From**: `TimeSpan`
-    * **Purpose**: An ordered sequence of boundaries with associated labels.
+    * **Purpose**: An ordered sequence of boundaries that partition the span into labeled sections. Represents one layer of annotation.
     * **Attributes**:
-        * `boundaries: list[Boundary]`
-        * `labels: list[str]`
-    * **Derived Property**: `sections: list[TimeSpan]` (A list of all the time spans in the segment).
-    * **Note**: super's start and end are the first and last boundaries in the list, label is 
+        * `boundaries: list[Boundary]` (An ordered list of boundaries defining the segment.)
+        * `labels: list[str]` (A list of labels, one for each section created by the boundaries.)
+    * **Inherited Attributes**: The `name` attribute from `TimeSpan` serves as the name for the entire annotation layer (e.g., `"functional_harmony"`, `"pop_form"`). `start` and `end` are derived from the first and last boundaries in the list.
+    * **Derived Property**: `sections: list[TimeSpan]` (A list of all the labeled time spans that compose the segment.)
+
+* **`MultiSegment`**
+    * **Inherits From**: `TimeSpan`
+    * **Purpose**: The primary input object for analysis, containing multiple `Segment` layers.
+    * **Attributes**: `layers: list[Segment]`
 
 * **`BoundaryContour`**
     * **Inherits From**: `TimeSpan`
-    * **Purpose**: An intermediate representation of salience over time. It is pure and contains no label information.
+    * **Purpose**: An intermediate, purely structural representation of boundary salience over time.
     * **Attributes**: `boundaries: list[RatedBoundary]`
 
 * **`BoundaryHierarchy`**
     * **Inherits From**: `TimeSpan`
-    * **Purpose**: A boundary hierarchy with wellformed layers of boundaries, still needs labeling for each layer.
+    * **Purpose**: The structural output of the monotonic casting process. It contains a well-formed, nested hierarchy of boundaries without semantic labels.
     * **Attributes**: `boundaries: list[LeveledBoundary]`
 
-* **`MultiSegment`**
-    * **Inherits From**: `TimeSpan`
-    * **Purpose**: The primary input for analysis, containing multiple `Segment` layers.
-    * **Attributes**: `layers: list[Segment]`
-
-* **`Hierarchy`**
-    * **Inherits From**: `TimeSpan`
-    * **Purpose**: Montonoic Hierarchical Boundaries, still needs labeling for each layer.
-    * **Attributes**:
-        * `boundaries: BoundaryHierarchy`
-        * `labels: list[list[str]]`
-    * **Derived Property**: `layers: list[Segment]` (A list of all the layers of the hierarchy). This makes the Hierarchy a MultiSegment, so run super init in the constructor for inheritance.
-
 ---
-### **Object key methods**
-* Strictly require labels to be not None. If it's None, use a string representation of the Span [start.time - end.time].
-* We need `from_json` and `from_jams` methods for `MultiSegment`.
-* We need plotting methods for `MultiSegment.plot()`: this will be our main plotting method.
-    * Build the plotting method for `TimeSpan` thoughtfully if appropriate and capable to make the API cleaner and more contained.
-* main pipeline for doing monotonic boundary casting which is the key research work right now:
-    * The main flow for boundary monotonic casting is `MultiSegment` (no labels) -> `BoundaryContour` -> `BoundaryHierarchy` + (inject labels) -> `Hierarchy`. We are not dealing with labels and just focusing on the Boundary.
-    * `MultiSegment.to_contour()` -> `BoundaryContour`.
-    * `BoundaryContour.to_levels()` -> `BoundaryHierarchy`.
-    * `Hierarchy.to_multisegment()` -> `MultiSegment`.
+### **Key Methods & Research Pipeline**
+
+The API is designed to support the following workflow for investigating boundary monotonicity.
+
+* **Data Ingestion**:
+    * `MultiSegment.from_jams()`
+    * `MultiSegment.from_json()`
+
+* **Core Transformation Pipeline**:
+    1.  `MultiSegment.to_contour() -> BoundaryContour`
+        * This method aggregates boundaries from all layers of a `MultiSegment` into a single salience contour.
+    2.  `BoundaryContour.to_levels() -> BoundaryHierarchy`
+        * This is the core algorithmic step. It takes the salience contour and generates a set of leveled boundaries that adhere to the principle of monotonicity.
+
+* **Plotting**:
+    * `MultiSegment.plot()`: The main, user-facing plotting method to visualize the input annotations.
 
 ---
 ### **Plotting Architecture 🎨**
 
-Plotting is handled hierarchically. Container objects orchestrate the plotting of their components by passing down a shared styling context. The public API remains a simple `.plot()` method on container objects.
+Plotting is handled hierarchically to ensure visual consistency.
 
-* **`TimeSpan.plot()`**: The fundamental drawing method. It plots a single labeled, colored span (`axvspan`) based on the styles it receives.
+* **`TimeSpan.plot()`**: The fundamental drawing method. It plots a single named, colored span (`axvspan`) based on a provided styling context.
 * **`Segment.plot()`**: Composes a plot by calling `.plot()` on each of its internal `TimeSpan` sections.
-* **`MultiSegment.plot()` & `Hierarchy.plot()`**: These are the top-level entry points. They are responsible for creating the styling context and orchestrating the entire plot.
+* **`MultiSegment.plot()`**: The top-level entry point. It is responsible for creating the styling context and orchestrating the plotting of all its `Segment` layers.
 
 #### **The `PlottingStyleMaps` Mechanism**
 
-1.  **Context Creation**: Before drawing, the top-level `.plot()` call scans all components to pre-build a `PlottingStyleMaps` object. This object maps every unique label to a consistent style (e.g., `'Verse'` → `'C0'`).
-2.  **Context Passing**: This `PlottingStyleMaps` object is passed down as an internal argument through the entire call stack (`MultiSegment` → `Segment` → `TimeSpan`).
-3.  **Coordinated Drawing**: Each `TimeSpan.plot()` method uses the received style map to look up the correct style for its label, ensuring a globally consistent plot.
+1.  **Context Creation**: Before drawing, `MultiSegment.plot()` scans all components to pre-build a `PlottingStyleMaps` object. This object maps every unique label to a consistent style (e.g., `'Verse'` → `'C0'`).
+2.  **Context Passing**: This `PlottingStyleMaps` object is passed down as an internal argument through the call stack (`MultiSegment` → `Segment` → `TimeSpan`).
+3.  **Coordinated Drawing**: Each `TimeSpan.plot()` method uses the received style map to look up the correct style for its label, ensuring a globally consistent and readable plot.
