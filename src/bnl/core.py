@@ -3,6 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
+
+from matplotlib.axes import Axes
+
+from bnl import viz
 
 # region: Point-like Objects
 
@@ -91,8 +96,16 @@ class TimeSpan:
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}(start={self.start.time:.2f}, end={self.end.time:.2f}, name="{self.name}")'
 
-    def plot(self):
-        pass
+    def __str__(self) -> str:
+        return self.name if self.name != "" else f"[{self.start.time:.2f}-{self.end.time:.2f}]"
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """
+        Plots the time span on a set of axes.
+
+        A wrapper around `bnl.viz.plot_timespan`.
+        """
+        return viz.plot_timespan(self, ax=ax, **kwargs)
 
 
 class Segment(TimeSpan):
@@ -141,9 +154,13 @@ class Segment(TimeSpan):
     def __getitem__(self, key: int) -> TimeSpan:
         return self.sections[key]
 
-    def plot(self):
-        """Composes a plot by calling .plot() on each of its internal TimeSpan sections."""
-        pass
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """
+        Plots the segment on a set of axes.
+
+        A wrapper around `bnl.viz.plot_segment`.
+        """
+        return viz.plot_segment(self, ax=ax, **kwargs)
 
 
 class MultiSegment(TimeSpan):
@@ -209,8 +226,13 @@ class MultiSegment(TimeSpan):
     def to_contour(self) -> BoundaryContour:
         pass
 
-    def plot(self):
-        pass
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """
+        Plots the MultiSegment on an axes.
+
+        A wrapper around `bnl.viz.plot_multisegment`.
+        """
+        return viz.plot_multisegment(self, ax=ax, **kwargs)
 
 
 class BoundaryContour(TimeSpan):

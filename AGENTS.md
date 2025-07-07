@@ -23,21 +23,11 @@ Concise guidance for AI agents working with this music information retrieval cod
 ## Agent Notes
 
 *(Add development insights, common patterns, useful commands, etc.)*
-
+- Don't attempt to edit notebooks; feel free to read them, but don't create or edit them.
 ### User is working on...
-- Refactoring the core classes to decouple Boundary and Label.
+- Building up the plotting API very cleanly.
 
 ### User Feedbacks
-- the from_jams and from_json methods are still not working... we need to fix them.
-- hmm I need a way to quary the label at a timepoint, or the closest boundary in past time basically.
-- I want to decouple BOundary and label again... see the API Handoff Summary for the latest design.
-Of course. Here is the API design in markdown format.
-
-### **Core API Design for Monotonic Boundary Casting**
-
-**Guiding Principle**: The design separates pure structural markers (`Boundary`) from their descriptive metadata (`labels`). Labels are managed by the container objects in which the boundaries frame. This allows the core transformation pipeline to operate purely on structure.
-
----
 ### **Key Methods & Research Pipeline**
 
 The API is designed to support the following workflow for investigating boundary monotonicity.
@@ -60,8 +50,129 @@ Plotting is handled hierarchically to ensure visual consistency.
 * **`Segment.plot()`**: Composes a plot by calling `.plot()` on each of its internal `TimeSpan` sections.
 * **`MultiSegment.plot()`**: The top-level entry point. It is responsible for creating the styling context and orchestrating the plotting of all its `Segment` layers.
 
-#### **The `PlottingStyleMaps` Mechanism**
+#### **The `StyleMaps` Mechanism**
 
-1.  **Context Creation**: Before drawing, `MultiSegment.plot()` scans all components to pre-build a `PlottingStyleMaps` object. This object maps every unique label to a consistent style (e.g., `'Verse'` → `'C0'`).
-2.  **Context Passing**: This `PlottingStyleMaps` object is passed down as an internal argument through the call stack (`MultiSegment` → `Segment` → `TimeSpan`).
+1.  **Context Creation**: Before drawing, `MultiSegment.plot()` scans all components to pre-build a `StyleMaps` object. This object maps every unique label to a consistent style.
+2.  **Context Passing**: This `StyleMaps` object is passed down as an internal argument through the call stack (`MultiSegment` → `Segment` → `TimeSpan`).
 3.  **Coordinated Drawing**: Each `TimeSpan.plot()` method uses the received style map to look up the correct style for its label, ensuring a globally consistent and readable plot.
+
+
+old style map generation:
+```python
+def label_style_dict(labels, boundary_color="white", **kwargs):
+    """
+    Creates a mapping of labels to visual style properties for consistent visualization.
+
+    This function processes a list of labels (which may contain nested lists),
+    extracts unique labels, sorts them, and assigns consistent visual styles
+    (like colors and hatch patterns) to each label.
+
+    Parameters
+    ----------
+    labels : nparray or list
+        List of labels (can contain nested lists). Duplicate labels will be handled only once.
+    **kwargs : dict
+        Additional style properties to apply to all labels. These will override
+        the default styles if there are conflicts.
+
+    Returns
+    -------
+    dict
+        A dictionary mapping each unique label to its style properties.
+        Each entry contains properties like 'facecolor', 'edgecolor', 'linewidth',
+        'hatch', and 'label'.
+
+    Notes
+    -----
+    - If there are 80 or fewer unique labels, uses 'tab10' colormap with 8 hatch patterns.
+    - If there are more than 80 unique labels, uses 'tab20' colormap with 15 hatch patterns.
+    - Default styles include white edgecolor and linewidth of 1.
+    """
+    # Find unique elements in labels. Labels can be list of arrays, list of labels, or a single array
+    unique_labels = np.unique(
+        np.concatenate([np.atleast_1d(np.asarray(l)) for l in labels])
+    )
+    # This modification ensures that even a single label is treated as a 1-dimensional array.
+
+    # More hatch patterns for more labels
+    hatchs = ["", "..", "O.", "*", "xx", "xxO", "\\O", "oo", "\\"]
+    more_hatchs = [h + "--" for h in hatchs]
+
+    if len(unique_labels) <= 80:
+        hatch_cycler = cycler(hatch=hatchs)
+        fc_cycler = cycler(color=plt.get_cmap("tab10").colors)
+        p_cycler = hatch_cycler * fc_cycler
+    else:
+        hatch_cycler = cycler(hatch=hatchs + more_hatchs)
+        fc_cycler = cycler(color=plt.get_cmap("tab20").colors)
+        # make it repeat...
+        p_cycler = itertools.cycle(hatch_cycler * fc_cycler)
+
+    # Create a mapping of labels to styles by cycling through the properties
+    # and assigning them to the labels as they appear in the unique labels' ordering
+    seg_map = dict()
+    for lab, properties in zip(unique_labels, p_cycler):
+        # set style according to p_cycler
+        style = {
+            k: v
+            for k, v in properties.items()
+            if k in ["color", "facecolor", "edgecolor", "linewidth", "hatch"]
+        }
+        # Swap color -> facecolor here so we preserve edgecolor on rects
+        if "color" in style:
+            style.setdefault("facecolor", style["color"])
+            style.pop("color", None)
+        seg_map[lab] = dict(linewidth=1, edgecolor=boundary_color)
+        seg_map[lab].update(style)
+        seg_map[lab].update(kwargs)
+        seg_map[lab]["label"] = lab
+    return seg_map
+
+
+def segment(
+    intervals,
+    labels,
+    ax,
+    text=False,
+    ytick="",
+    time_ticks=False,
+    style_map=None,
+):
+    """Plot a single layer of flat segmentation."""
+    ax.set_xlim(intervals[0][0], intervals[-1][-1])
+
+    if style_map is None:
+        style_map = label_style_dict(labels, edgecolor="white")
+    transform = ax.get_xaxis_transform()
+
+    for ival, lab in zip(intervals, labels):
+        rect = ax.axvspan(ival[0], ival[1], ymin=0, ymax=1, **style_map[lab])
+        if text:
+            ann = ax.annotate(
+                lab,
+                xy=(ival[0], 1),
+                xycoords=transform,
+                xytext=(8, -10),
+                textcoords="offset points",
+                va="top",
+                clip_on=True,
+                bbox=dict(boxstyle="round", facecolor="white"),
+            )
+            ann.set_clip_path(rect)
+
+    if time_ticks:
+
+        # Use the default automatic tick locator
+        ax.xaxis.set_major_locator(ticker.AutoLocator())
+        ax.xaxis.set_major_formatter(TimeFormatter())
+        ax.set_xlabel("Time (s)")
+    else:
+        ax.set_xticks([])
+
+    if ytick == "":
+        ax.set_yticks([])
+    else:
+        ax.set_yticks([0.5])
+        ax.set_yticklabels([ytick])
+    return ax.get_figure(), ax
+```

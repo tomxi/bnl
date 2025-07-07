@@ -6,3 +6,4 @@ API Reference
 
    core
    data
+   viz
