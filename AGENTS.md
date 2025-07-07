@@ -25,7 +25,7 @@ Concise guidance for AI agents working with this music information retrieval cod
 *(Add development insights, common patterns, useful commands, etc.)*
 - Don't attempt to edit notebooks; feel free to read them, but don't create or edit them.
 ### User is working on...
-- geting basic testing back up and running.
+- Get the guassian convoled Boundary Saliecne Curve working
 
 ### User Feedbacks
 ### **Key Methods & Research Pipeline**

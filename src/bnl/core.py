@@ -243,7 +243,7 @@ class MultiSegment(TimeSpan):
         each layer is [itvls, labels], itvls is list[[start_time, end_time]], labels is list[str]
         """
         layers = []
-        for i, layer in enumerate(json_data):
+        for i, layer in enumerate(json_data, start=1):
             itvls, labels = layer
             layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
         return cls(layers=layers, name=name)
@@ -356,7 +356,7 @@ class BoundaryHierarchy(BoundaryContour):
         for level in range(max_level, 0, -1):
             level_boundaries = [Boundary(b.time) for b in self.boundaries if b.level >= level]
             labels = [""] * (len(level_boundaries) - 1)
-            layers.append(Segment(boundaries=level_boundaries, labels=labels, name=f"L{level:02d}"))
+            layers.append(Segment(boundaries=level_boundaries, labels=labels, name=f"L{max_level - level + 1:02d}"))
 
         return MultiSegment(layers=layers, name=self.name)
 
