@@ -239,3 +239,26 @@ def test_boundary_hierarchy_init():
 def test_boundary_hierarchy_init_error():
     with pytest.raises(ValueError, match="At least 2 boundaries for a TimeSpan!"):
         core.BoundaryHierarchy("test", [core.LeveledBoundary(0, 1)])
+
+
+def test_boundary_hierarchy_type_validation():
+    """Test that BoundaryHierarchy only accepts LeveledBoundary instances."""
+    # Should raise TypeError when passed RatedBoundary instead of LeveledBoundary
+    with pytest.raises(TypeError, match="All boundaries must be LeveledBoundary instances"):
+        core.BoundaryHierarchy(
+            "test",
+            [
+                core.LeveledBoundary(0, 1),
+                core.RatedBoundary(1, 2.0),  # This should cause TypeError
+            ],
+        )
+
+    # Should raise TypeError when passed regular Boundary
+    with pytest.raises(TypeError, match="All boundaries must be LeveledBoundary instances"):
+        core.BoundaryHierarchy(
+            "test",
+            [
+                core.LeveledBoundary(0, 1),
+                core.Boundary(1),  # This should cause TypeError
+            ],
+        )

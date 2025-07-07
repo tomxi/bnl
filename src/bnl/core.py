@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -124,7 +125,7 @@ class Segment(TimeSpan):
     Represents one layer of annotation.
     """
 
-    def __init__(self, boundaries: list[Boundary], labels: list[str], name: str = "Segment"):
+    def __init__(self, boundaries: Sequence[Boundary], labels: Sequence[str], name: str = "Segment"):
         """
         Initializes the Segment.
 
@@ -132,9 +133,9 @@ class Segment(TimeSpan):
 
         Parameters
         ----------
-        boundaries : list[Boundary]
+        boundaries : Sequence[Boundary]
             A list of at least two boundaries, sorted by time.
-        labels : list[str]
+        labels : Sequence[str]
             A list of labels for the sections. Must be `len(boundaries) - 1`.
         name : str, optional
             Name of the segment. Defaults to "Segment".
@@ -143,15 +144,16 @@ class Segment(TimeSpan):
             raise ValueError("A Segment requires at least two boundaries.")
         if len(labels) != len(boundaries) - 1:
             raise ValueError("Number of labels must be one less than the number of boundaries.")
-        if boundaries != sorted(boundaries):
+
+        self.boundaries = list(boundaries)
+        if self.boundaries != sorted(self.boundaries):
             raise ValueError("Boundaries must be sorted by time.")
 
-        self.boundaries = boundaries
         self.labels = labels
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
 
     @property
-    def sections(self) -> list[TimeSpan]:
+    def sections(self) -> Sequence[TimeSpan]:
         """A list of all the labeled time spans that compose the segment."""
         return [
             TimeSpan(start=self.boundaries[i], end=self.boundaries[i + 1], name=self.labels[i])
@@ -173,7 +175,7 @@ class Segment(TimeSpan):
         return cls.from_itvls(itvls, labels, name=name)
 
     @classmethod
-    def from_itvls(cls, itvls: list[list[float]], labels: list[str], name: str = "Segment") -> Segment:
+    def from_itvls(cls, itvls: Sequence[Sequence[float]], labels: Sequence[str], name: str = "Segment") -> Segment:
         """
         Data Ingestion from `mir_eval` format of boundaries and labels.
         """
@@ -195,7 +197,7 @@ class MultiSegment(TimeSpan):
     The primary input object for analysis, containing multiple Segment layers.
     """
 
-    def __init__(self, layers: list[Segment], name: str = "Hierarchical Segmentation"):
+    def __init__(self, layers: Sequence[Segment], name: str = "Hierarchical Segmentation"):
         """
         Initializes the MultiSegment.
 
@@ -255,7 +257,7 @@ class MultiSegment(TimeSpan):
         return viz.plot_multisegment(self, ax=ax, **kwargs)
 
     @staticmethod
-    def align_layers(layers: list[Segment]) -> list[Segment]:
+    def align_layers(layers: Sequence[Segment]) -> Sequence[Segment]:
         """
         Adjusts a list of Segment layers to have a common start and end time.
 
@@ -286,7 +288,7 @@ class BoundaryContour(TimeSpan):
     An intermediate, purely structural representation of boundary salience over time.
     """
 
-    def __init__(self, name: str, boundaries: list[RatedBoundary]):
+    def __init__(self, name: str, boundaries: Sequence[RatedBoundary]):
         """
         Initializes the BoundaryContour.
 
@@ -296,12 +298,12 @@ class BoundaryContour(TimeSpan):
         ----------
         name : str
             Name of the contour.
-        boundaries : list[RatedBoundary]
+        boundaries : Sequence[RatedBoundary]
             A list of rated boundaries. They will be sorted by time upon initialization.
         """
         if len(boundaries) < 2:
             raise ValueError("At least 2 boundaries for a TimeSpan!")
-        self.boundaries = sorted(boundaries)
+        self.boundaries: Sequence[RatedBoundary] = sorted(boundaries)
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
 
     def __len__(self) -> int:
@@ -311,12 +313,14 @@ class BoundaryContour(TimeSpan):
         return self.boundaries[key]
 
 
-class BoundaryHierarchy(TimeSpan):
+class BoundaryHierarchy(BoundaryContour):
     """
     The structural output of the monotonic casting process.
     """
 
-    def __init__(self, name: str, boundaries: list[LeveledBoundary]):
+    boundaries: Sequence[LeveledBoundary]
+
+    def __init__(self, name: str, boundaries: Sequence[LeveledBoundary]):
         """
         Initializes the BoundaryHierarchy.
 
@@ -326,19 +330,35 @@ class BoundaryHierarchy(TimeSpan):
         ----------
         name : str
             Name of the hierarchy.
-        boundaries : list[LeveledBoundary]
+        boundaries : Sequence[LeveledBoundary]
             A list of leveled boundaries. They will be sorted by time upon initialization.
         """
-        if len(boundaries) < 2:
-            raise ValueError("At least 2 boundaries for a TimeSpan!")
-        self.boundaries = sorted(boundaries)
-        super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
+        # Validate that all boundaries are LeveledBoundary instances
+        for boundary in boundaries:
+            if not isinstance(boundary, LeveledBoundary):
+                raise TypeError("All boundaries must be LeveledBoundary instances")
 
-    def __len__(self) -> int:
-        return len(self.boundaries)
+        # Call parent constructor which handles sorting and TimeSpan initialization
+        super().__init__(name=name, boundaries=boundaries)
 
     def __getitem__(self, key: int) -> LeveledBoundary:
         return self.boundaries[key]
+
+    def to_multisegment(self) -> MultiSegment:
+        """
+        Convert the BoundaryHierarchy to a MultiSegment.
+
+        The MultiSegment will have layers from coarsest (highest level) to finest (lowest level).
+        Empty strings for all labels.
+        """
+        layers = []
+        max_level = max(b.level for b in self.boundaries)
+        for level in range(max_level, 0, -1):
+            level_boundaries = [Boundary(b.time) for b in self.boundaries if b.level >= level]
+            labels = [""] * (len(level_boundaries) - 1)
+            layers.append(Segment(boundaries=level_boundaries, labels=labels, name=f"L{level:02d}"))
+
+        return MultiSegment(layers=layers, name=self.name)
 
 
 # endregion
