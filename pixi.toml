@@ -87,16 +87,16 @@ cloud = ["cloud"]
 # ===================================================================
 
 # Format source code (run frequently during development)
-format = "ruff format"
+format = "ruff format src/ tests/ apps/"
 
 # Fix code style issues automatically
-lint = "ruff check --fix"
+lint = "ruff check src/ tests/ apps/ --fix"
 
 # Run all tests
 test = "pip install -e . && pytest"
 
 # Run full validation pipeline (format + lint + types + test)
-check = "pip install -e . && ruff format --check && ruff check && mypy src/ apps/ --ignore-missing-imports && pytest"
+check = "pip install -e . && ruff format src/ tests/ apps/ --check && ruff check src/ tests/ apps/ && mypy src/ apps/ --ignore-missing-imports && pytest"
 
 # ===================================================================
 # Extended Development Tasks

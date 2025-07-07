@@ -1,3 +1,5 @@
+from dataclasses import FrozenInstanceError
+
 import pytest
 
 from bnl import core
@@ -53,7 +55,7 @@ def test_leveled_boundary_init_invalid_level():
 
 def test_leveled_boundary_frozen():
     lb = core.LeveledBoundary(time=1.0, level=1)
-    with pytest.raises(Exception):  # dataclasses.FrozenInstanceError
+    with pytest.raises(FrozenInstanceError):
         lb.level = 2
 
 
