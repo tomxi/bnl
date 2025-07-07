@@ -25,8 +25,7 @@ Concise guidance for AI agents working with this music information retrieval cod
 *(Add development insights, common patterns, useful commands, etc.)*
 - Don't attempt to edit notebooks; feel free to read them, but don't create or edit them.
 ### User is working on...
-- Moving on to getting the montonic boundary casting baselines working and finding the right API for that.
-- The `ops` module is due for a overhaul.
+- geting basic testing back up and running.
 
 ### User Feedbacks
 ### **Key Methods & Research Pipeline**
@@ -35,12 +34,8 @@ The API is designed to support the following workflow for investigating boundary
 
 * **Core Transformation Pipeline**:
 `MultiSegment -> BoundaryContour -> BoundaryHierarchy`
-- However... we'll just use `ops` to operate on the `MultiSegment` directly.
+- We'll just use `ops` to operate on the `MultiSegment` directly.
 
-* **Core Operations**:
-- `naive_salience(ms: MultiSegment) -> BoundaryContour`
-- `naive_levels(bc: BoundaryContour) -> BoundaryHierarchy`
-- `naive_labeling(bh: BoundaryHierarchy) -> MultiSegment`
 
 ### Lessons from Refactoring `ops.py`
 

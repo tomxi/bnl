@@ -21,7 +21,7 @@ class Boundary:
 
     time: float
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         rounded_time = round(self.time, 5)
         object.__setattr__(self, "time", rounded_time)
 
@@ -95,7 +95,7 @@ class TimeSpan:
     end: Boundary
     name: str = ""
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.end.time <= self.start.time:
             raise ValueError("TimeSpan must have a non-zero, positive duration.")
 
@@ -109,7 +109,7 @@ class TimeSpan:
     def __str__(self) -> str:
         return self.name if self.name != "" else f"[{self.start.time:.2f}-{self.end.time:.2f}]"
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(self, ax: Axes, **kwargs: Any) -> Axes:
         """
         Plots the time span on a set of axes.
 
