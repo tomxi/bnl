@@ -41,3 +41,9 @@ The API is designed to support the following workflow for investigating boundary
 - `naive_salience(ms: MultiSegment) -> BoundaryContour`
 - `naive_levels(bc: BoundaryContour) -> BoundaryHierarchy`
 - `naive_labeling(bh: BoundaryHierarchy) -> MultiSegment`
+
+### Lessons from Refactoring `ops.py`
+
+- **Trust the Data Models:** The core data classes in `bnl.core` (e.g., `BoundaryHierarchy`, `Segment`) have validation built-in. For example, a `BoundaryHierarchy` must have at least two boundaries. Functions operating on these objects can and should *assume* they are well-formed. Avoid writing defensive checks for conditions the data model already prevents.
+- **Clarity Over Cleverness:** A straightforward, readable implementation (e.g., a simple loop or a generator function) is superior to a complex one-liner that is difficult to debug and understand.
+- **Efficient Hierarchy Construction:** When transforming a `BoundaryHierarchy` into a `MultiSegment`, the most efficient strategy is to first group boundaries by level (e.g., into a dictionary) and then iterate through the levels, accumulating boundaries. This is much better than re-filtering the entire list of boundaries for each level.

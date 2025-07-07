@@ -6,10 +6,10 @@ The functions in this module are designed to be composed into pipelines,
 either directly or through the fluent API provided by the `bnl.core` classes.
 """
 
-from collections import Counter
-from typing import TYPE_CHECKING
+from __future__ import annotations
 
-from .core import LeveledBoundary
+from collections import Counter, defaultdict
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .core import BoundaryContour, BoundaryHierarchy, MultiSegment
@@ -32,7 +32,7 @@ def salience_by_counting(
     `MultiSegment` that it appears in.
     """
     # Import here to avoid circular imports
-    from .core import BoundaryContour
+    from .core import BoundaryContour, LeveledBoundary
 
     # Collect all boundary times and count their frequencies
     time_counts: Counter[float] = Counter()
@@ -88,7 +88,26 @@ def default_levels(bc: BoundaryContour) -> BoundaryHierarchy:
 
 def default_labeling(bh: BoundaryHierarchy) -> MultiSegment:
     """
-    Simply label each timespan with it's default string representation.
+    Simply label each timespan with its default string representation.
     """
-    from .core import MultiSegment, Segment
-    # Build the list of Segment objects with no labels, by filtering boundaries by their level / salience.
+
+    from .core import Boundary, MultiSegment, Segment
+
+    # For each level, collect all boundaries that exist at or above that level.
+    # A boundary at level N exists in all layers from N down to 1.
+    boundaries_by_level = defaultdict(set)
+    for b in bh.boundaries:
+        for level in range(1, b.level + 1):
+            boundaries_by_level[level].add(Boundary(time=b.time))
+
+    # Build layers from coarsest (highest level) to finest (lowest level).
+    unique_levels = sorted(boundaries_by_level.keys(), reverse=True)
+
+    layers = []
+    for level in unique_levels:
+        # Sort the boundaries for the current level to form a valid segment.
+        level_boundaries = sorted(list(boundaries_by_level[level]), key=lambda b: b.time)
+        labels = [""] * len(level_boundaries[:-1])
+        layers.append(Segment(boundaries=level_boundaries, labels=labels, name=f"Level {level}"))
+
+    return MultiSegment(layers=layers, name=bh.name)
