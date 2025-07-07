@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# I. Point-like Objects
-# ---------------------
-# These are the fundamental, label-less structural markers on the timeline.
+# region: Point-like Objects
 
 
 @dataclass(frozen=True, order=True)
@@ -58,12 +56,12 @@ class LeveledBoundary(RatedBoundary):
         super().__post_init__()
 
 
-# II. Span-like Objects (Containers)
-# ----------------------------------
-# These objects represent time intervals and contain the point-like objects
-# and their associated labels.
+# endregion
+
+# region: Span-like Objects (Containers)
 
 
+@dataclass
 class TimeSpan:
     """
     Represents a generic time interval.
@@ -72,15 +70,13 @@ class TimeSpan:
     it defaults to a string representation of the span (e.g., "[0.00-15.32]").
     """
 
-    def __init__(self, start: Boundary, end: Boundary, name: str | None = None):
-        if not isinstance(start, Boundary) or not isinstance(end, Boundary):
-            raise TypeError("`start` and `end` must be Boundary objects.")
-        if end.time <= start.time:
-            raise ValueError("TimeSpan must have a non-zero, positive duration.")
+    start: Boundary
+    end: Boundary
+    name: str = ""
 
-        self.start = start
-        self.end = end
-        self.name = name if name is not None else f"[{start.time:.2f}-{end.time:.2f}]"
+    def __post_init__(self):
+        if self.end.time <= self.start.time:
+            raise ValueError("TimeSpan must have a non-zero, positive duration.")
 
     @property
     def duration(self) -> float:
@@ -88,7 +84,7 @@ class TimeSpan:
         return self.end.time - self.start.time
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}(start={self.start}, end={self.end}, name="{self.name}")'
+        return f'{self.__class__.__name__}(start={self.start.time:.2f}, end={self.end.time:.2f}, name="{self.name}")'
 
     def plot(self):
         """The fundamental drawing method."""
@@ -101,13 +97,15 @@ class Segment(TimeSpan):
     Represents one layer of annotation.
     """
 
-    def __init__(self, name: str, boundaries: list[Boundary], labels: list[str]):
+    def __init__(self, boundaries: list[Boundary], labels: list[str], name: str = "Segment"):
         if not boundaries or len(boundaries) < 2:
             raise ValueError("A Segment requires at least two boundaries.")
         if len(labels) != len(boundaries) - 1:
             raise ValueError("Number of labels must be one less than the number of boundaries.")
+        if boundaries != sorted(boundaries):
+            raise ValueError("Boundaries must be sorted by time.")
 
-        self.boundaries = sorted(boundaries)
+        self.boundaries = boundaries
         self.labels = labels
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
 
@@ -127,14 +125,24 @@ class Segment(TimeSpan):
 class MultiSegment(TimeSpan):
     """The primary input object for analysis, containing multiple Segment layers."""
 
-    def __init__(self, layers: list[Segment]):
+    def __init__(self, layers: list[Segment], name: str = "MultiSegment"):
         if not layers:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
         self.layers = layers
-        start_time = min(layer.start.time for layer in layers)
-        end_time = max(layer.end.time for layer in layers)
-        super().__init__(start=Boundary(start_time), end=Boundary(end_time), name="MultiSegment")
+
+        # All layers must span the same time interval.
+        # Use the first layer as the reference for comparison.
+        first_layer = layers[0]
+        expected_start, expected_end = first_layer.start, first_layer.end
+
+        for layer in layers[1:]:
+            if layer.start != expected_start:
+                raise ValueError("All layers must have the same start time.")
+            if layer.end != expected_end:
+                raise ValueError("All layers must have the same end time.")
+
+        super().__init__(start=expected_start, end=expected_end, name=name)
 
     @classmethod
     def from_jams(cls) -> MultiSegment:
@@ -173,3 +181,6 @@ class BoundaryHierarchy(TimeSpan):
     def __init__(self, name: str, boundaries: list[LeveledBoundary]):
         self.boundaries = sorted(boundaries)
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
+
+
+# endregion
