@@ -1,6 +1,6 @@
 import pytest
-from bnl import core
 
+from bnl import core
 
 # region: Point-like Objects
 
