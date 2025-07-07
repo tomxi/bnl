@@ -24,7 +24,7 @@ __all__ = [
 
 def salience_by_counting(
     ms: MultiSegment,
-) -> BoundaryContour:
+) -> BoundaryHierarchy:
     """
     Calculates the salience of boundaries based on their frequency of occurrence.
 
@@ -32,7 +32,7 @@ def salience_by_counting(
     `MultiSegment` that it appears in.
     """
     # Import here to avoid circular imports
-    from .core import BoundaryContour, LeveledBoundary
+    from .core import BoundaryHierarchy, LeveledBoundary
 
     # Collect all boundary times and count their frequencies
     time_counts: Counter[float] = Counter()
@@ -42,17 +42,17 @@ def salience_by_counting(
             time_counts[time] += 1
 
     # Create rated boundaries with frequency-based salience
-    return BoundaryContour(
+    return BoundaryHierarchy(
         boundaries=[LeveledBoundary(time=time, level=count) for time, count in time_counts.items()],
         name=ms.name,
     )
 
 
-def default_salience(ms: MultiSegment) -> BoundaryContour:
+def default_salience(ms: MultiSegment) -> BoundaryHierarchy:
     """
     Calculate the salience of boundaries based on the coarsest layer that they appear in.
     """
-    from .core import BoundaryContour, LeveledBoundary
+    from .core import BoundaryHierarchy, LeveledBoundary
 
     boundary_map: dict[float, LeveledBoundary] = {}
 
@@ -65,9 +65,9 @@ def default_salience(ms: MultiSegment) -> BoundaryContour:
             boundary_map[boundary.time] = LeveledBoundary(time=boundary.time, level=salience)
 
     if not boundary_map:
-        return BoundaryContour(boundaries=[], name=ms.name)
+        return BoundaryHierarchy(boundaries=[], name=ms.name)
 
-    return BoundaryContour(boundaries=list(boundary_map.values()), name=ms.name)
+    return BoundaryHierarchy(boundaries=list(boundary_map.values()), name=ms.name)
 
 
 def default_levels(bc: BoundaryContour) -> BoundaryHierarchy:
