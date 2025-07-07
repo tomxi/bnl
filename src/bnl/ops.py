@@ -8,7 +8,7 @@ either directly or through the fluent API provided by the `bnl.core` classes.
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import Counter
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -18,7 +18,6 @@ __all__ = [
     "salience_by_counting",
     "default_salience",
     "default_levels",
-    "default_labeling",
 ]
 
 
@@ -87,30 +86,3 @@ def default_levels(bc: BoundaryContour) -> BoundaryHierarchy:
     leveled_boundaries = [LeveledBoundary(time=b.time, level=salience_to_level[b.salience]) for b in bc.boundaries]
 
     return BoundaryHierarchy(boundaries=leveled_boundaries, name=bc.name)
-
-
-def default_labeling(bh: BoundaryHierarchy) -> MultiSegment:
-    """
-    Simply label each timespan with its default string representation.
-    """
-
-    from .core import Boundary, MultiSegment, Segment
-
-    # For each level, collect all boundaries that exist at or above that level.
-    # A boundary at level N exists in all layers from N down to 1.
-    boundaries_by_level = defaultdict(set)
-    for b in bh.boundaries:
-        for level in range(1, b.level + 1):
-            boundaries_by_level[level].add(Boundary(time=b.time))
-
-    # Build layers from coarsest (highest level) to finest (lowest level).
-    unique_levels = sorted(boundaries_by_level.keys(), reverse=True)
-
-    layers = []
-    for level in unique_levels:
-        # Sort the boundaries for the current level to form a valid segment.
-        level_boundaries = sorted(list(boundaries_by_level[level]), key=lambda b: b.time)
-        labels = [""] * len(level_boundaries[:-1])
-        layers.append(Segment(boundaries=level_boundaries, labels=labels, name=f"Level {level}"))
-
-    return MultiSegment(layers=layers, name=bh.name)
