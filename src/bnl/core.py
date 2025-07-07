@@ -210,7 +210,7 @@ class MultiSegment(TimeSpan):
         name : str, optional
             Name of the object. Defaults to "Hierarchical Segmentation".
         """
-        if not layers:
+        if len(layers) <= 0:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
         self.layers = layers
@@ -311,6 +311,14 @@ class BoundaryContour(TimeSpan):
 
     def __getitem__(self, key: int) -> RatedBoundary:
         return self.boundaries[key]
+
+    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+        """
+        Plots the BoundaryContour on an axes.
+
+        A wrapper around `bnl.viz.plot_boundary_contour`.
+        """
+        return viz.plot_boundary_contour(self, ax=ax, **kwargs)
 
 
 class BoundaryHierarchy(BoundaryContour):

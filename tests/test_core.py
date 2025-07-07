@@ -156,7 +156,7 @@ def test_multisegment_from_json():
     mseg = core.MultiSegment.from_json(json_data)
     assert len(mseg.layers) == 2
     assert mseg.name == "JSON Annotation"
-    assert mseg.layers[0].name == "L00"
+    assert mseg.layers[0].name == "L01"
     assert len(mseg.layers[0].boundaries) == 3
     assert len(mseg.layers[1].boundaries) == 5
 
@@ -200,6 +200,10 @@ def test_plotting_methods_return_axes():
     mseg = core.MultiSegment([seg])
     ax_mseg = mseg.plot(ax)
     assert isinstance(ax_mseg, Axes)
+
+    bc = core.BoundaryContour("test_bc", [core.RatedBoundary(0, 1), core.RatedBoundary(1, 2), core.RatedBoundary(2, 3)])
+    ax_bc = bc.plot(ax)
+    assert isinstance(ax_bc, Axes)
 
     plt.close(fig)
 

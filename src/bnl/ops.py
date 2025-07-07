@@ -75,14 +75,18 @@ def default_levels(bc: BoundaryContour) -> BoundaryHierarchy:
     """
     from .core import BoundaryHierarchy, LeveledBoundary
 
-    if not bc.boundaries:
-        return BoundaryHierarchy(boundaries=[], name=bc.name)
-
     # Create a mapping from each unique salience value to its rank (level)
-    unique_saliences = sorted({b.salience for b in bc.boundaries})
-    salience_to_level = {sal: lvl + 1 for lvl, sal in enumerate(unique_saliences)}
+    unique_saliences = sorted({b.salience for b in bc.boundaries[1:-1]})
+    max_level = len(unique_saliences)
+    sal_level = {sal: lvl for lvl, sal in enumerate(unique_saliences, start=1)}
 
     # Create LeveledBoundary objects for each boundary in the contour
-    leveled_boundaries = [LeveledBoundary(time=b.time, level=salience_to_level[b.salience]) for b in bc.boundaries]
+    inner_boundaries = [LeveledBoundary(time=b.time, level=sal_level[b.salience]) for b in bc.boundaries[1:-1]]
+
+    leveled_boundaries = [
+        LeveledBoundary(time=bc.boundaries[0].time, level=max_level),
+        *inner_boundaries,
+        LeveledBoundary(time=bc.boundaries[-1].time, level=max_level),
+    ]
 
     return BoundaryHierarchy(boundaries=leveled_boundaries, name=bc.name)

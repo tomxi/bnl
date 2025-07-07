@@ -9,7 +9,7 @@ import numpy as np
 from matplotlib.axes import Axes
 
 if TYPE_CHECKING:
-    from bnl.core import MultiSegment, Segment, TimeSpan
+    from bnl.core import BoundaryContour, MultiSegment, Segment, TimeSpan
 
 
 def create_style_map(
@@ -113,12 +113,13 @@ def plot_multisegment(
     ax: Axes | None = None,
     style_map: dict[str, dict[str, Any]] | None = None,
     colormap: str = "tab20b",
+    figsize: tuple[float, float] | None = None,
 ) -> Axes:
     """
     Plots all layers of the MultiSegment.
     """
     if ax is None:
-        _, ax = plt.subplots(figsize=(15, len(ms.layers) * 0.5))
+        _, ax = plt.subplots(figsize=figsize or (15, len(ms.layers) * 0.5))
         ax.set(title=ms.name, yticks=[], xlim=(ms.start.time, ms.end.time), xlabel="Time (s)")
 
     if style_map is None:
@@ -133,4 +134,26 @@ def plot_multisegment(
     ax.set_yticks([1 - (i + 0.5) / num_layers for i in range(num_layers)])
     ax.set_yticklabels([layer.name for layer in ms.layers])
 
+    return ax
+
+
+def plot_boundary_contour(
+    bc: BoundaryContour,
+    ax: Axes | None = None,
+    figsize: tuple[float, float] | None = None,
+    markerfmt: str = "",
+    linefmt: str = "k1-",
+    **kwargs: Any,
+) -> Axes:
+    """
+    Plots a BoundaryContour.
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize or (15, 6))
+
+    # plot boundaries as vertical lines, with time as x, salience as y
+    for boundary in bc.boundaries[1:-1]:
+        ax.stem(boundary.time, boundary.salience, markerfmt=markerfmt, linefmt=linefmt, **kwargs)
+    ax.axhline(0, color="black", linewidth=0.5)
+    ax.set(title=bc.name, xlim=(bc.start.time, bc.end.time), xlabel="Time (s)")
     return ax
