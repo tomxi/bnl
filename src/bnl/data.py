@@ -123,8 +123,8 @@ class Track:
             print(f"Warning: Failed to load audio from {audio_path}: {e}")
             return None, None
 
-    def load_annotation(self, annotation_type: str, annotation_id: str | int | None = None) -> MultiSegment | Segment:
-        """Loads a specific annotation as a `MultiSegment` or `Segment`."""
+    def load_annotation(self, annotation_type: str, annotation_id: str | int | None = None) -> MultiSegment:
+        """Loads a specific annotation as a `MultiSegment`."""
         if annotation_type not in self.annotations:
             raise ValueError(
                 f"Annotation type '{annotation_type}' not available. Available: {list(self.annotations.keys())}"
@@ -138,7 +138,7 @@ class Track:
             raise ValueError(f"Failed to fetch annotation from {annotation_path}: {e}") from e
 
         if str(annotation_path).lower().endswith(".jams"):
-            return self._load_jams(content, annotation_path, annotation_id)
+            return self._load_jams(content, Path(annotation_path), annotation_id)
         elif str(annotation_path).lower().endswith(".json"):
             return self._load_json(content, name=annotation_type)
         else:
@@ -156,48 +156,49 @@ class Track:
         else:
             raise FileNotFoundError(f"File not found: {path}")
 
-    def _load_jams(
-        self, content: io.StringIO, path: str | Path, annotation_id: str | int | None
-    ) -> MultiSegment | Segment:
-        """Loads a JAMS annotation from a file buffer."""
+    def _load_jams(self, content: io.StringIO, path: Path, annotation_id: str | int | None) -> MultiSegment:
+        """
+        Loads a JAMS annotation as a two-layer MultiSegment containing coarse
+        (`segment_salami_function`) and fine (`segment_salami_lower`) layers.
+        """
         jam = jams.load(content)
+        path_str = str(path)
 
-        if annotation_id is not None:
-            selected_ann = self._select_jams_annotation(jam, annotation_id, path)
-        else:
-            selected_ann = self._find_default_jams_annotation(jam, path)
+        coarse_ann = self._find_salami_annotation(jam, "segment_salami_function", annotation_id, path_str)
+        fine_ann = self._find_salami_annotation(jam, "segment_salami_lower", annotation_id, path_str)
 
-        if selected_ann.namespace == "multi_segment":
-            return MultiSegment.from_jams(selected_ann)
-        else:
-            return Segment.from_jams(selected_ann)
+        coarse_seg = Segment.from_jams(coarse_ann, name="coarse")
+        fine_seg = Segment.from_jams(fine_ann, name="fine")
 
-    def _select_jams_annotation(self, jam: jams.JAMS, annotation_id: str | int, path: str | Path) -> jams.Annotation:
-        """Selects a specific annotation by its ID or index."""
-        if isinstance(annotation_id, int):
-            if 0 <= annotation_id < len(jam.annotations):
-                return jam.annotations[annotation_id]
-            raise ValueError(f"Index {annotation_id} out of range in {path}")
-        elif isinstance(annotation_id, str):
-            matches = [ann for ann in jam.annotations if ann.namespace == annotation_id]
-            if matches:
-                return matches[0]
-            raise ValueError(f"No annotation with namespace '{annotation_id}' in {path}")
-        raise TypeError(f"Invalid annotation_id type: {type(annotation_id)}")
+        return MultiSegment(
+            layers=MultiSegment.align_layers([coarse_seg, fine_seg]),
+            name=f"ref-{coarse_ann.annotation_metadata.annotator.name}",
+        )
 
-    def _find_default_jams_annotation(self, jam: jams.JAMS, path: str | Path) -> jams.Annotation:
-        """Finds the default annotation for auto-loading."""
-        if not jam.annotations:
-            raise ValueError(f"No annotations found in {path}")
+    def _find_salami_annotation(
+        self, jam: jams.JAMS, namespace: str, annotator_id: str | int | None, path: str
+    ) -> jams.Annotation:
+        """Finds a Salami annotation, optionally filtering by annotator."""
+        candidates = [ann for ann in jam.annotations if ann.namespace == namespace]
 
-        # Prioritize multi_segment, then common segment types
-        for ns in ["multi_segment", "segment_open", "segment_salami_function"]:
-            matches = [ann for ann in jam.annotations if ann.namespace == ns]
-            if matches:
-                return matches[0]
+        if not candidates:
+            raise ValueError(f"No '{namespace}' annotation found in {path}")
 
-        # Fallback to just the first annotation if no default types found
-        return jam.annotations[0]
+        if annotator_id is None:
+            return candidates[0]
+
+        if isinstance(annotator_id, int):
+            if 0 <= annotator_id < len(candidates):
+                return candidates[annotator_id]
+            raise ValueError(f"Annotator index {annotator_id} out of range for '{namespace}' in {path}")
+
+        # If annotator_id is a string, search in metadata
+        for ann in candidates:
+            annotator_meta = ann.annotation_metadata.annotator
+            if isinstance(annotator_meta, dict) and annotator_meta.get("name") == annotator_id:
+                return ann
+
+        raise ValueError(f"No annotator '{annotator_id}' found for '{namespace}' in {path}")
 
     def _load_json(self, content: io.StringIO, name: str) -> MultiSegment:
         """Loads a JSON annotation as a MultiSegment."""

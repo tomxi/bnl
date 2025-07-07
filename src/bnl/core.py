@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
+import jams
 from matplotlib.axes import Axes
 
 from bnl import viz
@@ -24,6 +25,9 @@ class Boundary:
         rounded_time = round(self.time, 5)
         object.__setattr__(self, "time", rounded_time)
 
+    def __repr__(self) -> str:
+        return f"B({self.time})"
+
 
 @dataclass(frozen=True, order=True)
 class RatedBoundary(Boundary):
@@ -32,6 +36,9 @@ class RatedBoundary(Boundary):
     """
 
     salience: float
+
+    def __repr__(self) -> str:
+        return f"RB({self.time}, {self.salience:.2f})"
 
 
 @dataclass(frozen=True, order=True, init=False)
@@ -67,6 +74,9 @@ class LeveledBoundary(RatedBoundary):
         # Explicitly call the Boundary object's post-init for time validation.
         super().__post_init__()
 
+    def __repr__(self) -> str:
+        return f"LB({self.time}, {self.level})"
+
 
 # endregion
 
@@ -94,7 +104,7 @@ class TimeSpan:
         return self.end.time - self.start.time
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}(start={self.start.time:.2f}, end={self.end.time:.2f}, name="{self.name}")'
+        return f"TS({self.start}-{self.end}, {self.name})"
 
     def __str__(self) -> str:
         return self.name if self.name != "" else f"[{self.start.time:.2f}-{self.end.time:.2f}]"
@@ -154,6 +164,23 @@ class Segment(TimeSpan):
     def __getitem__(self, key: int) -> TimeSpan:
         return self.sections[key]
 
+    @classmethod
+    def from_jams(cls, segment_annotation: jams.Annotation, name: str = "Segment") -> Segment:
+        """
+        Data Ingestion from jams format.
+        """
+        itvls, labels = segment_annotation.to_interval_values()
+        return cls.from_itvls(itvls, labels, name=name)
+
+    @classmethod
+    def from_itvls(cls, itvls: list[list[float]], labels: list[str], name: str = "Segment") -> Segment:
+        """
+        Data Ingestion from `mir_eval` format of boundaries and labels.
+        """
+        boundaries = [Boundary(itvl[0]) for itvl in itvls]  # assume intervals have no overlap or gaps
+        boundaries.append(Boundary(itvls[-1][1]))  # tag on the end time of the last interval
+        return cls(boundaries=boundaries, labels=labels, name=name)
+
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """
         Plots the segment on a set of axes.
@@ -193,9 +220,11 @@ class MultiSegment(TimeSpan):
 
         for layer in layers[1:]:
             if layer.start != expected_start:
-                raise ValueError("All layers must have the same start time.")
+                raise ValueError(
+                    f"All layers must have the same start time. current: {layer.start} != {expected_start}"
+                )
             if layer.end != expected_end:
-                raise ValueError("All layers must have the same end time.")
+                raise ValueError(f"All layers must have the same end time. current: {layer.end} != {expected_end}")
 
         super().__init__(start=expected_start, end=expected_end, name=name)
 
@@ -206,10 +235,6 @@ class MultiSegment(TimeSpan):
         return self.layers[key]
 
     @classmethod
-    def from_jams(cls) -> MultiSegment:
-        pass
-
-    @classmethod
     def from_json(cls, json_data: list, name: str = "JSON Annotation") -> MultiSegment:
         """
         Data Ingestion from adobe json format, list[layers].
@@ -218,9 +243,7 @@ class MultiSegment(TimeSpan):
         layers = []
         for i, layer in enumerate(json_data):
             itvls, labels = layer
-            boundaries = [Boundary(itvl[0]) for itvl in itvls]  # assume intervals have no overlap or gaps
-            boundaries.append(Boundary(itvls[-1][1]))  # tag on the end time of the last interval
-            layers.append(Segment(boundaries=boundaries, labels=labels, name=f"L{i:02d}"))
+            layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
         return cls(layers=layers, name=name)
 
     def to_contour(self) -> BoundaryContour:
@@ -233,6 +256,32 @@ class MultiSegment(TimeSpan):
         A wrapper around `bnl.viz.plot_multisegment`.
         """
         return viz.plot_multisegment(self, ax=ax, **kwargs)
+
+    @staticmethod
+    def align_layers(layers: list[Segment]) -> list[Segment]:
+        """
+        Adjusts a list of Segment layers to have a common start and end time.
+
+        This is achieved by finding the earliest start time and latest end time
+        among all layers, and then extending each layer to this common span.
+        The first and last sections of each layer are stretched to cover the new span.
+        This method returns a new list of aligned Segment objects.
+        """
+        if not layers:
+            return []
+
+        min_start_time = min(layer.start.time for layer in layers)
+        max_end_time = max(layer.end.time for layer in layers)
+
+        aligned_layers = []
+        for layer in layers:
+            new_boundaries = layer.boundaries.copy()
+            new_boundaries[0] = replace(new_boundaries[0], time=min_start_time)
+            new_boundaries[-1] = replace(new_boundaries[-1], time=max_end_time)
+
+            aligned_layers.append(Segment(boundaries=new_boundaries, labels=layer.labels, name=layer.name))
+
+        return aligned_layers
 
 
 class BoundaryContour(TimeSpan):
