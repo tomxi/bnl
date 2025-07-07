@@ -23,7 +23,7 @@ from . import core, data, ops
 from .core import (
     Boundary,
     BoundaryContour,
-    Hierarchy,
+    BoundaryHierarchy,
     LeveledBoundary,
     MultiSegment,
     RatedBoundary,
@@ -41,7 +41,7 @@ __all__ = [
     "Segment",
     "BoundaryContour",
     "MultiSegment",
-    "Hierarchy",
+    "BoundaryHierarchy",
     # Submodules (toolboxes)
     "core",
     "data",

@@ -140,7 +140,7 @@ class Track:
         if str(annotation_path).lower().endswith(".jams"):
             return self._load_jams(content, annotation_path, annotation_id)
         elif str(annotation_path).lower().endswith(".json"):
-            return self._load_json(content)
+            return self._load_json(content, name=annotation_type)
         else:
             raise NotImplementedError(f"Unsupported file type: {annotation_path}")
 
@@ -199,11 +199,11 @@ class Track:
         # Fallback to just the first annotation if no default types found
         return jam.annotations[0]
 
-    def _load_json(self, content: io.StringIO) -> MultiSegment:
+    def _load_json(self, content: io.StringIO, name: str) -> MultiSegment:
         """Loads a JSON annotation as a MultiSegment."""
         try:
             json_data = json.load(content)
-            return MultiSegment.from_json(json_data)
+            return MultiSegment.from_json(json_data, name=name)
         except json.JSONDecodeError as e:
             raise ValueError(f"Invalid JSON: {e}") from e
 

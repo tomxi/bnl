@@ -117,6 +117,14 @@ class Segment(TimeSpan):
             for i in range(len(self.labels))
         ]
 
+    def __len__(self) -> int:
+        """Returns the number of sections in the segment."""
+        return len(self.labels)
+
+    def __getitem__(self, key: int) -> TimeSpan:
+        """Allows accessing sections by index."""
+        return self.sections[key]
+
     def plot(self):
         """Composes a plot by calling .plot() on each of its internal TimeSpan sections."""
         pass
@@ -125,7 +133,7 @@ class Segment(TimeSpan):
 class MultiSegment(TimeSpan):
     """The primary input object for analysis, containing multiple Segment layers."""
 
-    def __init__(self, layers: list[Segment], name: str = "MultiSegment"):
+    def __init__(self, layers: list[Segment], name: str = "Hierarchical Segmentation"):
         if not layers:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
@@ -144,15 +152,32 @@ class MultiSegment(TimeSpan):
 
         super().__init__(start=expected_start, end=expected_end, name=name)
 
+    def __len__(self) -> int:
+        """Returns the number of layers in the multisegment."""
+        return len(self.layers)
+
+    def __getitem__(self, key: int) -> Segment:
+        """Allows accessing layers by index."""
+        return self.layers[key]
+
     @classmethod
     def from_jams(cls) -> MultiSegment:
         """Data Ingestion from JAMS file."""
         pass
 
     @classmethod
-    def from_json(cls) -> MultiSegment:
-        """Data Ingestion from JSON file."""
-        pass
+    def from_json(cls, json_data: list, name: str = "JSON Annotation") -> MultiSegment:
+        """
+        Data Ingestion from adobe json format, list[layers].
+        each layer is [itvls, labels], itvls is list[[start_time, end_time]], labels is list[str]
+        """
+        layers = []
+        for i, layer in enumerate(json_data):
+            itvls, labels = layer
+            boundaries = [Boundary(itvl[0]) for itvl in itvls]  # assume intervals have no overlap or gaps
+            boundaries.append(Boundary(itvls[-1][1]))  # tag on the end time of the last interval
+            layers.append(Segment(boundaries=boundaries, labels=labels, name=f"L{i:02d}"))
+        return cls(layers=layers, name=name)
 
     def to_contour(self) -> BoundaryContour:
         """Aggregates boundaries into a single salience contour."""
@@ -170,6 +195,14 @@ class BoundaryContour(TimeSpan):
         self.boundaries = sorted(boundaries)
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
 
+    def __len__(self) -> int:
+        """Returns the number of boundaries in the contour."""
+        return len(self.boundaries)
+
+    def __getitem__(self, key: int) -> RatedBoundary:
+        """Allows accessing boundaries by index."""
+        return self.boundaries[key]
+
     def to_levels(self) -> BoundaryHierarchy:
         """Generates a set of leveled boundaries that adhere to monotonicity."""
         pass
@@ -181,6 +214,14 @@ class BoundaryHierarchy(TimeSpan):
     def __init__(self, name: str, boundaries: list[LeveledBoundary]):
         self.boundaries = sorted(boundaries)
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
+
+    def __len__(self) -> int:
+        """Returns the number of boundaries in the hierarchy."""
+        return len(self.boundaries)
+
+    def __getitem__(self, key: int) -> LeveledBoundary:
+        """Allows accessing boundaries by index."""
+        return self.boundaries[key]
 
 
 # endregion
