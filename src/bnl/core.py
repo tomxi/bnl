@@ -10,22 +10,21 @@ from dataclasses import dataclass
 @dataclass(frozen=True, order=True)
 class Boundary:
     """
-    A divider in the flow of time in seconds, quantized to 5 decimal places.
-
-    The time attribute is immutable and cannot be changed after initialization.
+    A divider in the flow of time in seconds, quantized to 1e-5 seconds.
     """
 
     time: float
 
     def __post_init__(self):
-        # Round to 5 decimal places to avoid floating point precision issues.
         rounded_time = round(self.time, 5)
         object.__setattr__(self, "time", rounded_time)
 
 
 @dataclass(frozen=True, order=True)
 class RatedBoundary(Boundary):
-    """A boundary with a continuous measure of importance or salience."""
+    """
+    A boundary with a continuous measure of importance or salience.
+    """
 
     salience: float
 
@@ -33,7 +32,7 @@ class RatedBoundary(Boundary):
 @dataclass(frozen=True, order=True, init=False)
 class LeveledBoundary(RatedBoundary):
     """
-    A definitive structural node within a monotonic hierarchy.
+    A boundary that exists in a monotonic hierarchy, that exists in the first `level` layers.
 
     The `level` must be a positive integer, and the `salience` attribute
     is automatically set to be equal to the `level`.
@@ -42,7 +41,16 @@ class LeveledBoundary(RatedBoundary):
     level: int
 
     def __init__(self, time: float, level: int):
-        """Initializes a LeveledBoundary, deriving salience from level."""
+        """
+        Initializes a LeveledBoundary, deriving salience from level.
+
+        Parameters
+        ----------
+        time : float
+            The time of the boundary in seconds.
+        level : int
+            The discrete hierarchical level of the boundary. Must be a positive integer.
+        """
         if not isinstance(level, int) or level <= 0:
             raise ValueError("`level` must be a positive integer.")
 
@@ -94,6 +102,20 @@ class Segment(TimeSpan):
     """
 
     def __init__(self, boundaries: list[Boundary], labels: list[str], name: str = "Segment"):
+        """
+        Initializes the Segment.
+
+        The `start` and `end` attributes are automatically derived from the `boundaries` list.
+
+        Parameters
+        ----------
+        boundaries : list[Boundary]
+            A list of at least two boundaries, sorted by time.
+        labels : list[str]
+            A list of labels for the sections. Must be `len(boundaries) - 1`.
+        name : str, optional
+            Name of the segment. Defaults to "Segment".
+        """
         if not boundaries or len(boundaries) < 2:
             raise ValueError("A Segment requires at least two boundaries.")
         if len(labels) != len(boundaries) - 1:
@@ -125,9 +147,23 @@ class Segment(TimeSpan):
 
 
 class MultiSegment(TimeSpan):
-    """The primary input object for analysis, containing multiple Segment layers."""
+    """
+    The primary input object for analysis, containing multiple Segment layers.
+    """
 
     def __init__(self, layers: list[Segment], name: str = "Hierarchical Segmentation"):
+        """
+        Initializes the MultiSegment.
+
+        The `start` and `end` attributes are automatically derived from the first layer.
+
+        Parameters
+        ----------
+        layers : list[Segment]
+            A list of Segment layers. All layers must have the same start and end times.
+        name : str, optional
+            Name of the object. Defaults to "Hierarchical Segmentation".
+        """
         if not layers:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
@@ -171,47 +207,68 @@ class MultiSegment(TimeSpan):
         return cls(layers=layers, name=name)
 
     def to_contour(self) -> BoundaryContour:
-        """Aggregates boundaries into a single salience contour."""
         pass
 
     def plot(self):
-        """The main, user-facing plotting method to visualize the input annotations."""
         pass
 
 
 class BoundaryContour(TimeSpan):
-    """An intermediate, purely structural representation of boundary salience over time."""
+    """
+    An intermediate, purely structural representation of boundary salience over time.
+    """
 
     def __init__(self, name: str, boundaries: list[RatedBoundary]):
+        """
+        Initializes the BoundaryContour.
+
+        The `start` and `end` attributes are automatically derived from the `boundaries` list.
+
+        Parameters
+        ----------
+        name : str
+            Name of the contour.
+        boundaries : list[RatedBoundary]
+            A list of rated boundaries. They will be sorted by time upon initialization.
+        """
         self.boundaries = sorted(boundaries)
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
 
     def __len__(self) -> int:
-        """Returns the number of boundaries in the contour."""
         return len(self.boundaries)
 
     def __getitem__(self, key: int) -> RatedBoundary:
-        """Allows accessing boundaries by index."""
         return self.boundaries[key]
 
     def to_levels(self) -> BoundaryHierarchy:
-        """Generates a set of leveled boundaries that adhere to monotonicity."""
         pass
 
 
 class BoundaryHierarchy(TimeSpan):
-    """The structural output of the monotonic casting process."""
+    """
+    The structural output of the monotonic casting process.
+    """
 
     def __init__(self, name: str, boundaries: list[LeveledBoundary]):
+        """
+        Initializes the BoundaryHierarchy.
+
+        The `start` and `end` attributes are automatically derived from the `boundaries` list.
+
+        Parameters
+        ----------
+        name : str
+            Name of the hierarchy.
+        boundaries : list[LeveledBoundary]
+            A list of leveled boundaries. They will be sorted by time upon initialization.
+        """
         self.boundaries = sorted(boundaries)
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
 
     def __len__(self) -> int:
-        """Returns the number of boundaries in the hierarchy."""
         return len(self.boundaries)
 
     def __getitem__(self, key: int) -> LeveledBoundary:
-        """Allows accessing boundaries by index."""
         return self.boundaries[key]
 
 
