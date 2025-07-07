@@ -42,7 +42,10 @@ def salience_by_counting(
             time_counts[time] += 1
 
     # Create rated boundaries with frequency-based salience
-    return BoundaryContour(boundaries=[LeveledBoundary(time=time, level=count) for time, count in time_counts.items()])
+    return BoundaryContour(
+        boundaries=[LeveledBoundary(time=time, level=count) for time, count in time_counts.items()],
+        name=ms.name,
+    )
 
 
 def default_salience(ms: MultiSegment) -> BoundaryContour:
@@ -62,9 +65,9 @@ def default_salience(ms: MultiSegment) -> BoundaryContour:
             boundary_map[boundary.time] = LeveledBoundary(time=boundary.time, level=salience)
 
     if not boundary_map:
-        return BoundaryContour(boundaries=[])
+        return BoundaryContour(boundaries=[], name=ms.name)
 
-    return BoundaryContour(boundaries=list(boundary_map.values()))
+    return BoundaryContour(boundaries=list(boundary_map.values()), name=ms.name)
 
 
 def default_levels(bc: BoundaryContour) -> BoundaryHierarchy:
@@ -74,7 +77,7 @@ def default_levels(bc: BoundaryContour) -> BoundaryHierarchy:
     from .core import BoundaryHierarchy, LeveledBoundary
 
     if not bc.boundaries:
-        return BoundaryHierarchy(boundaries=[])
+        return BoundaryHierarchy(boundaries=[], name=bc.name)
 
     # Create a mapping from each unique salience value to its rank (level)
     unique_saliences = sorted({b.salience for b in bc.boundaries})
@@ -83,7 +86,7 @@ def default_levels(bc: BoundaryContour) -> BoundaryHierarchy:
     # Create LeveledBoundary objects for each boundary in the contour
     leveled_boundaries = [LeveledBoundary(time=b.time, level=salience_to_level[b.salience]) for b in bc.boundaries]
 
-    return BoundaryHierarchy(boundaries=leveled_boundaries)
+    return BoundaryHierarchy(boundaries=leveled_boundaries, name=bc.name)
 
 
 def default_labeling(bh: BoundaryHierarchy) -> MultiSegment:

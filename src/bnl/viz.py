@@ -51,7 +51,7 @@ def plot_timespan(
     style: dict[str, Any] | None = None,
     y_pos: float = 0.0,
     height: float = 1.0,
-    **kwargs,
+    **kwargs: Any,
 ) -> Axes:
     """
     Plots a time span as a labeled rectangle on a set of axes.
