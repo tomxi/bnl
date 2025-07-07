@@ -33,14 +33,15 @@ from .core import (
 
 # --- Define the public-facing API of the `bnl` package ---
 __all__ = [
-    # Promoted from .core
+    # Point
     "Boundary",
     "RatedBoundary",
     "LeveledBoundary",
+    # Containers
     "TimeSpan",
     "Segment",
-    "BoundaryContour",
     "MultiSegment",
+    "BoundaryContour",
     "BoundaryHierarchy",
     # Submodules (toolboxes)
     "core",

@@ -52,7 +52,7 @@ autodoc_default_options = {
     "inherited-members": True,
     "show-inheritance": True,
 }
-autodoc_member_order = "groupwise"
+autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 
 # Templates

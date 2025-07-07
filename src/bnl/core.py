@@ -9,17 +9,16 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, order=True)
 class Boundary:
-    """A raw, unannotated marker on a timeline."""
+    """
+    A divider in the flow of time in seconds, quantized to 5 decimal places.
+
+    The time attribute is immutable and cannot be changed after initialization.
+    """
 
     time: float
 
     def __post_init__(self):
-        """Validates and quantizes the time attribute."""
-        if self.time < 0:
-            raise ValueError("Time cannot be negative.")
-
         # Round to 5 decimal places to avoid floating point precision issues.
-        # Use object.__setattr__ because the dataclass is frozen.
         rounded_time = round(self.time, 5)
         object.__setattr__(self, "time", rounded_time)
 
@@ -66,8 +65,7 @@ class TimeSpan:
     """
     Represents a generic time interval.
 
-    Must have a non-zero, positive duration. If a name is not provided,
-    it defaults to a string representation of the span (e.g., "[0.00-15.32]").
+    Must have a non-zero, positive duration. Allows empty string for name as default.
     """
 
     start: Boundary
@@ -80,14 +78,12 @@ class TimeSpan:
 
     @property
     def duration(self) -> float:
-        """The duration of the time span."""
         return self.end.time - self.start.time
 
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}(start={self.start.time:.2f}, end={self.end.time:.2f}, name="{self.name}")'
 
     def plot(self):
-        """The fundamental drawing method."""
         pass
 
 
@@ -118,11 +114,9 @@ class Segment(TimeSpan):
         ]
 
     def __len__(self) -> int:
-        """Returns the number of sections in the segment."""
         return len(self.labels)
 
     def __getitem__(self, key: int) -> TimeSpan:
-        """Allows accessing sections by index."""
         return self.sections[key]
 
     def plot(self):
@@ -153,16 +147,13 @@ class MultiSegment(TimeSpan):
         super().__init__(start=expected_start, end=expected_end, name=name)
 
     def __len__(self) -> int:
-        """Returns the number of layers in the multisegment."""
         return len(self.layers)
 
     def __getitem__(self, key: int) -> Segment:
-        """Allows accessing layers by index."""
         return self.layers[key]
 
     @classmethod
     def from_jams(cls) -> MultiSegment:
-        """Data Ingestion from JAMS file."""
         pass
 
     @classmethod
