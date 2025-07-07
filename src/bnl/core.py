@@ -246,9 +246,6 @@ class MultiSegment(TimeSpan):
             layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
         return cls(layers=layers, name=name)
 
-    def to_contour(self) -> BoundaryContour:
-        pass
-
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """
         Plots the MultiSegment on an axes.
@@ -302,6 +299,8 @@ class BoundaryContour(TimeSpan):
         boundaries : list[RatedBoundary]
             A list of rated boundaries. They will be sorted by time upon initialization.
         """
+        if len(boundaries) < 2:
+            raise ValueError("At least 2 boundaries for a TimeSpan!")
         self.boundaries = sorted(boundaries)
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
 
@@ -310,9 +309,6 @@ class BoundaryContour(TimeSpan):
 
     def __getitem__(self, key: int) -> RatedBoundary:
         return self.boundaries[key]
-
-    def to_levels(self) -> BoundaryHierarchy:
-        pass
 
 
 class BoundaryHierarchy(TimeSpan):
@@ -333,6 +329,8 @@ class BoundaryHierarchy(TimeSpan):
         boundaries : list[LeveledBoundary]
             A list of leveled boundaries. They will be sorted by time upon initialization.
         """
+        if len(boundaries) < 2:
+            raise ValueError("At least 2 boundaries for a TimeSpan!")
         self.boundaries = sorted(boundaries)
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
 

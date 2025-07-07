@@ -34,7 +34,10 @@ Concise guidance for AI agents working with this music information retrieval cod
 The API is designed to support the following workflow for investigating boundary monotonicity.
 
 * **Core Transformation Pipeline**:
-    1.  `MultiSegment.to_contour() -> BoundaryContour`
-        * This method aggregates boundaries from all layers of a `MultiSegment` into a single salience contour.
-    2.  `BoundaryContour.to_levels() -> BoundaryHierarchy`
-        * This is the core algorithmic step. It takes the salience contour and generates a set of leveled boundaries that adhere to the principle of monotonicity.
+`MultiSegment -> BoundaryContour -> BoundaryHierarchy`
+- However... we'll just use `ops` to operate on the `MultiSegment` directly.
+
+* **Core Operations**:
+- `naive_salience(ms: MultiSegment) -> BoundaryContour`
+- `naive_levels(bc: BoundaryContour) -> BoundaryHierarchy`
+- `naive_labeling(bh: BoundaryHierarchy) -> MultiSegment`
