@@ -224,14 +224,15 @@ if st.session_state.get("track_loaded") and hasattr(st.session_state, "track"):
                 # Using the new load_annotation method
                 ref_annotation = track.load_annotation("reference")
                 st.write(f"Loaded 'reference' annotation (type: {type(ref_annotation)}).")
-                if hasattr(ref_annotation, "plot"):
-                    # BNL plot methods return (fig, ax) tuple
-                    fig, _ = ref_annotation.plot()
-                    st.pyplot(fig)
-                else:
-                    st.write("Loaded annotation object does not have a direct .plot() method.")
+                fig, _ = ref_annotation.plot()
+                st.pyplot(fig)
+                adobe_annotation = track.load_annotation("adobe-mu1gamma9")
+                st.write(f"Loaded 'adobe-mu1gamma9' annotation (type: {type(adobe_annotation)}).")
+                adobe_fig, _ = adobe_annotation.plot()
+                st.pyplot(adobe_fig)
+
             except Exception as e:
-                st.error(f"Error loading or plotting 'reference' annotation: {e}")
+                st.error(f"Error loading or plotting annotations: {e}")
         else:
             st.info("No 'reference' annotation key found for this track.")
             st.write("Consider adding UI to select other annotation types and IDs if needed.")
