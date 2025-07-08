@@ -17,7 +17,7 @@ from librosa.util import localmax
 from mir_eval.hierarchy import _round
 from sklearn.neighbors import KernelDensity
 
-from .core import BoundaryContour, BoundaryHierarchy, LeveledBoundary, MultiSegment, RatedBoundary
+from .core import BoundaryContour, BoundaryHierarchy, LeveledBoundary, MultiSegment, RatedBoundary, TimeSpan
 
 # region: Different Notions of Boundary Salience
 
@@ -171,7 +171,7 @@ def _boundary_peakpick_kde(bc: BoundaryContour, window: float = 1.0, frame_size:
     kde.fit(times, sample_weight=saliences)
 
     # Evaluate the KDE on a fine grid to find peaks.
-    grid_times = _build_grid(bc, frame_size=frame_size)
+    grid_times = _build_time_grid(bc, frame_size=frame_size)
     log_density = kde.score_samples(grid_times)
     density = np.exp(log_density)
 
@@ -194,13 +194,13 @@ def _boundary_peakpick_kde(bc: BoundaryContour, window: float = 1.0, frame_size:
     return BoundaryContour(name=bc.name, boundaries=final_boundaries)
 
 
-def _build_grid(bc: BoundaryContour, frame_size: float = 0.1) -> np.ndarray:
+def _build_time_grid(span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
     """
     Build a grid of times using the same logic as mir_eval to build the ticks
     """
     # Figure out how many frames we need
-    n_frames = int((_round(bc.end.time, frame_size) - _round(bc.start.time, frame_size)) / frame_size)
-    return np.arange(n_frames + 1) * frame_size + bc.start.time
+    n_frames = int((_round(span.end.time, frame_size) - _round(span.start.time, frame_size)) / frame_size)
+    return np.arange(n_frames + 1) * frame_size + span.start.time
 
 
 # endregion: Two ways to clean up boudnaries closeby in time
