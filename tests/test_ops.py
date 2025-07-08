@@ -1,14 +1,14 @@
 from bnl import core, ops
 
 
-def test_salience_by_counting():
-    """Test salience_by_counting function."""
+def test_calculate_salience_by_count():
+    """Test salience calculation with 'count' strategy."""
     s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])
     s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])
     s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])
     ms = core.MultiSegment([s1, s2, s3], name="test_ms")
 
-    hierarchy = ops.salience_by_counting(ms)
+    hierarchy = ops.calculate_salience(ms, strategy="count")
     assert isinstance(hierarchy, core.BoundaryHierarchy)
     assert hierarchy.name == "test_ms"
 
@@ -21,14 +21,14 @@ def test_salience_by_counting():
         assert b.level == expected_levels[b.time]
 
 
-def test_default_salience():
-    """Test default_salience function."""
+def test_calculate_salience_by_depth():
+    """Test salience calculation with 'depth' strategy."""
     s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])  # coarsest, salience=3
     s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])  # medium, salience=2
     s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])  # finest, salience=1
     ms = core.MultiSegment([s1, s2, s3], name="test_ms")
 
-    hierarchy = ops.default_salience(ms)
+    hierarchy = ops.calculate_salience(ms, strategy="depth")
     assert isinstance(hierarchy, core.BoundaryHierarchy)
     assert hierarchy.name == "test_ms"
 
@@ -46,8 +46,8 @@ def test_default_salience():
         assert b.level == expected_levels[b.time]
 
 
-def test_default_levels():
-    """Test default_levels function."""
+def test_level_by_distinct_salience():
+    """Test level_by_distinct_salience function."""
     boundaries = [
         core.RatedBoundary(0.0, 10.0),
         core.RatedBoundary(1.0, 2.5),
@@ -58,7 +58,7 @@ def test_default_levels():
     ]
     bc = core.BoundaryContour("test_bc", boundaries)
 
-    hierarchy = ops.default_levels(bc)
+    hierarchy = ops.level_by_distinct_salience(bc)
     assert isinstance(hierarchy, core.BoundaryHierarchy)
     assert hierarchy.name == "test_bc"
 
@@ -86,3 +86,34 @@ def test_default_levels():
     assert len(found_boundaries) == len(expected_levels)
     for time, level in expected_levels.items():
         assert found_boundaries[time].level == level
+
+
+def test_calculate_salience_by_prob():
+    """Test salience calculation with 'prob' strategy."""
+    # Layer 1: 1 effective boundary, weight = 1/1 = 1
+    s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])
+    # Layer 2: 1 eff bdr, weight = 1/1 = 1
+    s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])
+    # Layer 3: 3 eff bdr, weight = 1/3 = 0.33
+    s3 = core.Segment.from_itvls([[0, 1], [1, 2], [2, 4], [4, 5]], ["w", "x", "y", "z"])
+    ms = core.MultiSegment([s1, s2, s3], name="test_ms")
+
+    contour = ops.calculate_salience(ms, strategy="prob")
+    assert isinstance(contour, core.BoundaryContour)
+    assert contour.name == "test_ms"
+
+    # Boundaries:
+    # t=0: s1(1) + s2(1) + s3(0.33) = 2.33
+    # t=1: s1(1) + s3(0.33) = 1.33
+    # t=2: s2(1) + s3(0.33) = 1.33
+    # t=4: s3(0.33) = 0.33
+    # t=5: s1(1) + s2(1) + s3(0.33) = 2.33
+    expected_saliences = {0.0: 7 / 3, 1.0: 4 / 3, 2.0: 4 / 3, 4.0: 1 / 3, 5.0: 7 / 3}
+    assert len(contour.boundaries) == len(expected_saliences)
+
+    # Use pytest.approx for float comparison
+    from pytest import approx
+
+    found_saliences = {b.time: b.salience for b in contour.boundaries}
+    for time, salience in expected_saliences.items():
+        assert found_saliences[time] == approx(salience)
