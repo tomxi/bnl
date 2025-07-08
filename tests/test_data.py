@@ -19,28 +19,34 @@ def dataset() -> Dataset:
     return Dataset(TEST_MANIFEST)
 
 
+@pytest.fixture(scope="module")
+def dataset_cloud() -> Dataset:
+    """Provides a Dataset instance for testing."""
+    bucket_url = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
+    return Dataset(manifest_path=f"{bucket_url}/manifest_cloud_boolean.csv")
+
+
 def test_dataset_loading(dataset: Dataset):
     """Tests basic dataset and track loading."""
     assert len(dataset) > 0
     track = dataset[TRACK_ID]
     assert track.track_id == TRACK_ID
-    assert "annotation_ref_hier_jams_path" in track.info
-    assert "annotation_adobe-mu1gamma1_path" in track.info
+    assert len(track.annotations) > 0
 
 
-def test_load_reference_annotation(dataset: Dataset):
-    """Tests loading a reference JAMS annotation."""
-    track = dataset[TRACK_ID]
-    annotation = track.load_annotation("ref_hier_jams")
+def test_load_cloud_est(dataset: Dataset, dataset_cloud: Dataset):
+    test_track_est = dataset[TRACK_ID].load_annotation("adobe-mu1gamma1")
+    cloud_track_est = dataset_cloud[TRACK_ID].load_annotation("adobe-mu1gamma1")
 
-    assert isinstance(annotation, MultiSegment)
-    assert len(annotation.layers) == 2  # Based on the structure of 8.jams
+    assert isinstance(test_track_est, MultiSegment)
+    assert len(test_track_est.layers) > 0
+    assert test_track_est == cloud_track_est
 
 
-def test_load_adobe_annotation(dataset: Dataset):
-    """Tests loading an Adobe JSON annotation."""
-    track = dataset[TRACK_ID]
-    annotation = track.load_annotation("adobe-mu1gamma1")
+def test_load_cloud_ref(dataset: Dataset, dataset_cloud: Dataset):
+    test_track_ref = dataset[TRACK_ID].load_annotation("ref_hier_jams")
+    cloud_track_ref = dataset_cloud[TRACK_ID].load_annotation("reference")
 
-    assert isinstance(annotation, MultiSegment)
-    assert len(annotation.layers) > 0
+    assert isinstance(test_track_ref, MultiSegment)
+    assert len(test_track_ref.layers) == 2
+    assert test_track_ref == cloud_track_ref

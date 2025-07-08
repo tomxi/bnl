@@ -8,16 +8,16 @@ from bnl import core
 
 
 def test_boundary_init():
-    b = core.Boundary(1.234567)
-    assert b.time == 1.23457  # Rounded to 5 decimal places
-    assert repr(b) == "B(1.23457)"
+    b1 = core.Boundary(1.2345677)
+    b2 = core.Boundary(1.2345679899)
+    assert b1 == b2
+    assert repr(b1) == "B(1.23457)"
 
 
 def test_boundary_comparison():
-    b1 = core.Boundary(1.0)
-    b2 = core.Boundary(2.0)
+    b1 = core.Boundary(1.2345677)
+    b2 = core.Boundary(1.599)
     assert b1 < b2
-    assert b1 != b2
 
 
 def test_rated_boundary_init():
