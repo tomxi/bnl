@@ -9,7 +9,6 @@ either directly or through the fluent API provided by the `bnl.core` classes.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from dataclasses import replace
 from typing import Literal
 
 import numpy as np
@@ -141,7 +140,7 @@ def _boundary_absorb(bc: BoundaryContour, window: float = 1.0) -> BoundaryContou
     if len(bc.boundaries) == 2:
         return bc
 
-    outer_boundaries = [bc.start, bc.end]
+    outer_boundaries = [bc.boundaries[0], bc.boundaries[-1]]
     inner_boundaries = sorted(bc.boundaries[1:-1], key=lambda b: b.salience, reverse=True)
 
     kept_boundaries = list(outer_boundaries)
@@ -151,7 +150,8 @@ def _boundary_absorb(bc: BoundaryContour, window: float = 1.0) -> BoundaryContou
         if not is_absorbed:
             kept_boundaries.append(new_b)
 
-    return BoundaryContour(name=bc.name, boundaries=sorted(kept_boundaries))
+    boundaries = [RatedBoundary(b.time, b.salience) for b in sorted(kept_boundaries)]
+    return BoundaryContour(name=bc.name, boundaries=boundaries)
 
 
 def _boundary_peakpick_kde(bc: BoundaryContour, window: float = 1.0, frame_size: float = 0.1) -> BoundaryContour:
@@ -186,9 +186,9 @@ def _boundary_peakpick_kde(bc: BoundaryContour, window: float = 1.0, frame_size:
 
     # Combine with original outer boundaries and return a new contour.
     final_boundaries = [
-        replace(bc.start, salience=max_salience),
+        RatedBoundary(bc.start.time, salience=max_salience),
         *new_inner_boundaries,
-        replace(bc.end, salience=max_salience),
+        RatedBoundary(bc.end.time, salience=max_salience),
     ]
 
     return BoundaryContour(name=bc.name, boundaries=final_boundaries)

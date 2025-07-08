@@ -1,14 +1,14 @@
 from bnl import core, ops
 
 
-def test_calculate_salience_by_count():
+def test_boundary_salience_by_count():
     """Test salience calculation with 'count' strategy."""
     s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])
     s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])
     s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])
     ms = core.MultiSegment([s1, s2, s3], name="test_ms")
 
-    hierarchy = ops.calculate_salience(ms, strategy="count")
+    hierarchy = ops.boundary_salience(ms, strategy="count")
     assert isinstance(hierarchy, core.BoundaryHierarchy)
     assert hierarchy.name == "test_ms"
 
@@ -21,14 +21,14 @@ def test_calculate_salience_by_count():
         assert b.level == expected_levels[b.time]
 
 
-def test_calculate_salience_by_depth():
+def test_boundary_salience_by_depth():
     """Test salience calculation with 'depth' strategy."""
     s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])  # coarsest, salience=3
     s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])  # medium, salience=2
     s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])  # finest, salience=1
     ms = core.MultiSegment([s1, s2, s3], name="test_ms")
 
-    hierarchy = ops.calculate_salience(ms, strategy="depth")
+    hierarchy = ops.boundary_salience(ms, strategy="depth")
     assert isinstance(hierarchy, core.BoundaryHierarchy)
     assert hierarchy.name == "test_ms"
 
@@ -88,7 +88,7 @@ def test_level_by_distinct_salience():
         assert found_boundaries[time].level == level
 
 
-def test_calculate_salience_by_prob():
+def test_boundary_salience_by_prob():
     """Test salience calculation with 'prob' strategy."""
     # Layer 1: 1 effective boundary, weight = 1/1 = 1
     s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])
@@ -98,7 +98,7 @@ def test_calculate_salience_by_prob():
     s3 = core.Segment.from_itvls([[0, 1], [1, 2], [2, 4], [4, 5]], ["w", "x", "y", "z"])
     ms = core.MultiSegment([s1, s2, s3], name="test_ms")
 
-    contour = ops.calculate_salience(ms, strategy="prob")
+    contour = ops.boundary_salience(ms, strategy="prob")
     assert isinstance(contour, core.BoundaryContour)
     assert contour.name == "test_ms"
 
