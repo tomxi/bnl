@@ -6,7 +6,9 @@
 numpy
 pandas
 matplotlib
-seaborn
+plotly
+scipy
+scikit-learn
 
 # Audio processing and MIR
 librosa
@@ -14,7 +16,7 @@ jams
 mir_eval
 
 # Data handling
-pyarrow
+# pyarrow
 requests
 
 # Web app framework
