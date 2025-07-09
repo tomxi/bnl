@@ -183,51 +183,59 @@ time_plot_data = time_explorer.get_plot_data()
 resulting_saliences = time_plot_data["peak_saliences"]
 
 # Stage 2: Analyze the saliences from stage 1
+# Initialize with empty data; populate if there are saliences from stage 1
+salience_plot_data = {
+    "grid": np.array([]),
+    "density": np.array([]),
+    "peaks": np.array([]),
+    "peak_saliences": np.array([]),
+}
+quantized_saliences = np.array([])
+
 if resulting_saliences.size > 0:
     salience_explorer = KDEBoundaryExplorer(resulting_saliences)
     salience_explorer.update_bandwidth(salience_bandwidth)
     salience_plot_data = salience_explorer.get_plot_data()
-
-    # --- NEW: Find the "snapped" salience values for each original time peak ---
-    quantized_saliences = []
     salience_levels = salience_plot_data["peaks"]
-    if salience_levels.size > 0:
-        for s in resulting_saliences:
-            # Find the index of the closest salience level
-            closest_level_idx = np.argmin(np.abs(salience_levels - s))
-            quantized_saliences.append(salience_levels[closest_level_idx])
-    quantized_saliences = np.array(quantized_saliences)
 
-else:
-    # If no peaks, create empty data for the second plot and snapped values
-    salience_plot_data = {
-        "grid": np.array([]),
-        "density": np.array([]),
-        "peaks": np.array([]),
-        "peak_saliences": np.array([]),
-    }
-    quantized_saliences = np.array([])
+    # Vectorized "snapping" of time peaks to the nearest salience level
+    if salience_levels.size > 0:
+        closest_level_indices = np.argmin(np.abs(salience_levels[:, np.newaxis] - resulting_saliences), axis=0)
+        quantized_saliences = salience_levels[closest_level_indices]
 
 
 # --- EFFICIENT PLOTTING WITH SUBPLOTS ---
-EXPECTED_NUM_TRACES = 5
+# Adding rug plots increases the number of traces from 5 to 7
+EXPECTED_NUM_TRACES = 7
 if "fig" not in st.session_state or len(st.session_state.fig.data) != EXPECTED_NUM_TRACES:
     st.session_state.fig = make_subplots(
         rows=1, cols=2, shared_yaxes=True, column_widths=[0.8, 0.2], horizontal_spacing=0.02
     )
-    # Main plot traces
+    # --- Traces for Main Plot (Time) ---
     st.session_state.fig.add_trace(go.Scatter(name="Time KDE Density", line=dict(color="royalblue")), row=1, col=1)
     st.session_state.fig.add_trace(
-        go.Scatter(name="Original Peaks", mode="markers", marker=dict(color="red", size=8, symbol="x")),
-        row=1,
-        col=1,
+        go.Scatter(name="Original Peaks", mode="markers", marker=dict(color="red", size=8, symbol="x")), row=1, col=1
     )
     st.session_state.fig.add_trace(
         go.Scatter(name="Snapped Peaks", mode="markers", marker=dict(color="orange", size=8, symbol="circle")),
         row=1,
         col=1,
     )
-    # Marginal plot traces
+    st.session_state.fig.add_trace(
+        go.Scatter(
+            name="Time Data Rug",
+            x=initial_times,
+            y=np.zeros_like(initial_times),
+            mode="markers",
+            marker_symbol="line-ns",
+            marker=dict(color="rgba(128, 128, 128, 0.7)", size=12, line_width=1.5),
+            showlegend=False,
+        ),
+        row=1,
+        col=1,
+    )
+
+    # --- Traces for Marginal Plot (Salience) ---
     st.session_state.fig.add_trace(
         go.Scatter(name="Salience KDE Density", line=dict(color="mediumseagreen")), row=1, col=2
     )
@@ -236,33 +244,53 @@ if "fig" not in st.session_state or len(st.session_state.fig.data) != EXPECTED_N
         row=1,
         col=2,
     )
+    st.session_state.fig.add_trace(
+        go.Scatter(
+            name="Salience Data Rug",
+            x=np.zeros_like(resulting_saliences),
+            y=resulting_saliences,
+            mode="markers",
+            marker_symbol="line-ew",
+            marker=dict(color="rgba(128, 128, 128, 0.7)", size=12, line_width=1.5),
+            showlegend=False,
+        ),
+        row=1,
+        col=2,
+    )
 
-    # Layout
+    # --- Layout ---
     st.session_state.fig.update_layout(
         title_text="Stage 1: Temporal Merging (Left) & Stage 2: Salience Quantization (Right)",
         height=600,
         margin=dict(l=20, r=20, t=60, b=20),
-        legend=dict(yanchor="top", y=0.98, xanchor="left", x=0.01),
+        legend=dict(yanchor="top", y=0.98, xanchor="left", x=0.01, traceorder="normal"),
+        xaxis=dict(zeroline=False),
+        yaxis=dict(zeroline=False),
+        xaxis2=dict(zeroline=False),
     )
     st.session_state.fig.update_xaxes(title_text="Time", row=1, col=1)
     st.session_state.fig.update_yaxes(title_text="Density / Salience", row=1, col=1)
     st.session_state.fig.update_xaxes(title_text="Density", row=1, col=2)
 
+
 # Update data on every run
 with st.session_state.fig.batch_update():
-    # Main plot data
+    # --- Main plot data (Time) ---
     st.session_state.fig.data[0].x = time_plot_data["grid"]
     st.session_state.fig.data[0].y = time_plot_data["density"]
     st.session_state.fig.data[1].x = time_plot_data["peaks"]
     st.session_state.fig.data[1].y = time_plot_data["peak_saliences"]
     st.session_state.fig.data[2].x = time_plot_data["peaks"]
     st.session_state.fig.data[2].y = quantized_saliences
+    st.session_state.fig.data[3].x = initial_times  # Time Rug
 
-    # Marginal plot data (swapping x and y for vertical orientation)
-    st.session_state.fig.data[3].x = salience_plot_data["density"]
-    st.session_state.fig.data[3].y = salience_plot_data["grid"]
-    st.session_state.fig.data[4].x = salience_plot_data["peak_saliences"]
-    st.session_state.fig.data[4].y = salience_plot_data["peaks"]
+    # --- Marginal plot data (Salience) - swapping x and y for vertical orientation ---
+    st.session_state.fig.data[4].x = salience_plot_data["density"]
+    st.session_state.fig.data[4].y = salience_plot_data["grid"]
+    st.session_state.fig.data[5].x = salience_plot_data["peak_saliences"]
+    st.session_state.fig.data[5].y = salience_plot_data["peaks"]
+    st.session_state.fig.data[6].y = resulting_saliences  # Salience Rug
+
 
 st.plotly_chart(st.session_state.fig, use_container_width=True)
 
