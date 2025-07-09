@@ -118,33 +118,35 @@ initial_times = np.array([b.time for b in boundary_contour.boundaries])
 initial_saliences = np.array([b.salience for b in boundary_contour.boundaries])
 
 st.sidebar.write("### Stage 1: Time Grouping")
-# Configuration for Time Slider (Linear Scale)
-time_bw_min, time_bw_max, time_bw_default, time_bw_step = 0.05, 7.0, 1.0, 0.05
-time_bw_options = np.round(np.arange(0, time_bw_max, time_bw_step) + time_bw_min, 2)
+# Configuration for Time Slider (Log Scale)
+time_bw_min, time_bw_max, time_bw_default = 0.1, 10.0, 1.0
+time_bw_min_log, time_bw_max_log = np.log10(time_bw_min), np.log10(time_bw_max)
+time_bw_options = np.logspace(time_bw_min_log, time_bw_max_log, num=50)
 # Find the closest default value in the new options to ensure it's a valid choice
 time_bw_val = min(time_bw_options, key=lambda x: abs(x - time_bw_default))
 
 time_bandwidth = st.sidebar.select_slider(
-    "Time KDE Bandwidth (σ)",
+    "Time KDE Bandwidth (σ, Log Scale)",
     options=time_bw_options,
     value=time_bw_val,
-    format_func=lambda x: f"{x:.2f} s",  # Format as seconds with 2 decimal places
-    help="Controls the smoothness of the temporal density estimate.",
+    format_func=lambda x: f"{x:.3f} s",
+    help="Controls the smoothness of the temporal density estimate. The slider is on a log scale for finer control.",
 )
 
 
 st.sidebar.write("### Stage 2: Salience Quantization")
 # Configuration for Salience Slider (Log Scale)
-sal_bw_min_log, sal_bw_max_log = np.log10(0.00001), np.log10(0.01)
+sal_bw_min, sal_bw_max, sal_bw_default = 1e-4, 1e-2, 1e-3
+sal_bw_min_log, sal_bw_max_log = np.log10(sal_bw_min), np.log10(sal_bw_max)
 sal_bw_options = np.logspace(sal_bw_min_log, sal_bw_max_log, num=50)
-default_sal_bw = 0.0005
-sal_bw_val = min(sal_bw_options, key=lambda x: abs(x - default_sal_bw))
+# Find the closest default value in the new options to ensure it's a valid choice
+sal_bw_val = min(sal_bw_options, key=lambda x: abs(x - sal_bw_default))
 
 salience_bandwidth = st.sidebar.select_slider(
     "Salience KDE Bandwidth (Log Scale)",
     options=sal_bw_options,
     value=sal_bw_val,
-    format_func=lambda x: f"{x * 1e6:.0f}μ",  # Format for readability
+    format_func=lambda x: f"{x:.5f}",  # Format for readability
     help="Controls the smoothness of the salience density estimate. The slider is on a log scale for finer control.",
 )
 
@@ -260,14 +262,11 @@ def make_interactive_plot():
 
 
 @st.cache_data
-def compute_persistence_data(p_initial_times, p_initial_saliences, time_bw_params, sal_bw_range):
+def compute_persistence_data(p_initial_times, p_initial_saliences, time_bw_range, sal_bw_range):
     """
     Pre-computes the number of peaks across the entire parameter space.
     This function is cached; it will re-run only when the track's data changes.
     """
-    time_bw_range = np.arange(time_bw_params[0], time_bw_params[1], time_bw_params[2])
-    # sal_bw_range is now passed in directly, no need to compute it here.
-
     # Use a local explorer instance for this computation, based on the specific track's data
     _time_explorer = KDEBoundaryExplorer(p_initial_times, p_initial_saliences)
 
@@ -334,8 +333,10 @@ def make_persistence_plot(
     fig.add_hline(y=current_sal_bw, line_width=2, line_dash="dash", line_color="red", name="Salience BW", row=2, col=1)
 
     # Update axes and layout
-    fig.update_xaxes(title_text="Time Bandwidth (σ)", row=2, col=1)
+    fig.update_xaxes(title_text="Time Bandwidth (σ)", row=2, col=1, type="log")
     fig.update_yaxes(title_text="Salience Bandwidth", row=2, col=1, type="log")
+    fig.update_xaxes(row=1, col=1, type="log")
+    fig.update_yaxes(row=1, col=1, type="log")
     fig.update_layout(
         title_text="Peak (left) and Level (right) vs. Bandwidth Persistence Landscape",
         height=450,
@@ -385,10 +386,9 @@ st.plotly_chart(st.session_state.fig, use_container_width=True)
 # state, and only the crosshair positions are updated on slider interaction.
 
 # Compute or retrieve from cache
-time_bw_params = (time_bw_min, time_bw_max, time_bw_step)
 with st.spinner("Computing persistence landscape... This may take a moment."):
     time_bw_range, sal_bw_range, time_persistence, salience_persistence = compute_persistence_data(
-        initial_times, initial_saliences, time_bw_params, sal_bw_options
+        initial_times, initial_saliences, time_bw_options, sal_bw_options
     )
 
 # Create the plot if it's the first run or if the track has changed
