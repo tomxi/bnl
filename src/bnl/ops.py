@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
-from typing import Literal
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
 from librosa.util import localmax
@@ -53,10 +54,10 @@ class _SalienceStrategy(ABC):
     _registry: dict[str, _SalienceStrategy] = {}
 
     @classmethod
-    def register(cls, name: str):
+    def register(cls, name: str) -> Callable[[type[_SalienceStrategy]], type[_SalienceStrategy]]:
         """Registers a strategy in a central registry."""
 
-        def decorator(strategy_cls):
+        def decorator(strategy_cls: type[_SalienceStrategy]) -> type[_SalienceStrategy]:
             cls._registry[name] = strategy_cls()
             return strategy_cls
 
@@ -134,10 +135,10 @@ class _CleanStrategy(ABC):
     _registry: dict[str, type[_CleanStrategy]] = {}
 
     @classmethod
-    def register(cls, name: str):
+    def register(cls, name: str) -> Callable[[type[_CleanStrategy]], type[_CleanStrategy]]:
         """A class method to register strategies in a central registry."""
 
-        def decorator(strategy_cls):
+        def decorator(strategy_cls: type[_CleanStrategy]) -> type[_CleanStrategy]:
             cls._registry[name] = strategy_cls
             return strategy_cls
 
@@ -152,6 +153,9 @@ class _CleanStrategy(ABC):
 @_CleanStrategy.register("absorb")
 class _CleanByAbsorb(_CleanStrategy):
     """Clean boundaries by absorbing less salient ones within a window."""
+
+    def __init__(self) -> None:
+        pass
 
     def __call__(self, bc: BoundaryContour, window: float = 1.0) -> BoundaryContour:
         from .core import BoundaryContour, RatedBoundary
@@ -198,11 +202,11 @@ class _CleanByKDE(_CleanStrategy):
         self.kde.fit(times, sample_weight=saliences)
 
         grid_times = self._build_time_grid(bc, frame_size=frame_size)
-        density = np.exp(self.kde.score_samples(grid_times))
+        density = np.exp(self.kde.score_samples(grid_times.reshape(-1, 1)))
 
         peak_indices = localmax(density)
         peak_times = grid_times.flatten()[peak_indices]
-        peak_saliences = np.exp(self.kde.score_samples(peak_times))
+        peak_saliences = np.exp(self.kde.score_samples(peak_times.reshape(-1, 1)))
         max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 0
 
         new_inner_boundaries = [RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)]
@@ -214,15 +218,14 @@ class _CleanByKDE(_CleanStrategy):
         return BoundaryContour(name=bc.name, boundaries=final_boundaries)
 
 
-def clean_boundaries(bc: BoundaryContour, strategy: str = "absorb", **kwargs) -> BoundaryContour:
+def clean_boundaries(bc: BoundaryContour, strategy: str = "absorb", **kwargs: Any) -> BoundaryContour:
     """
     Clean up boundaries by removing boundaries that are closeby in time.
     """
     if strategy not in _CleanStrategy._registry:
         raise ValueError(f"Unknown boundary cleaning strategy: {strategy}")
 
-    strategy_class = _CleanStrategy._registry[strategy]
-    strategy_instance = strategy_class(**kwargs)
+    strategy_instance = _CleanStrategy._registry[strategy](**kwargs)
     return strategy_instance(bc)
 
 

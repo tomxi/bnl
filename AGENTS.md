@@ -24,8 +24,11 @@ Concise guidance for AI agents working with this music information retrieval cod
 
 *(Add development insights, common patterns, useful commands, etc.)*
 - Don't attempt to edit notebooks; feel free to read them, but don't create or edit them.
+
 ### User is working on...
-- Get the guassian convoled Boundary Saliecne Curve working
+- Updating all the plotting to plotly
+- build a standalone webapp that's very similar to exp.py: it will have the track selection drop down, but other than that, it's gonna be used as a play ground for developing plotting code for using with plotly. Two subfigs stacked top and bottom for placeholding: 1 a reference MultiSegment Hierarchy, and 2 one estimate MultiSegment Hierarchy.
+- the next step will be to have dropdowns that show all availabel reference to show in subplot1 and all estimates to show in subplot2, but this involves cleaning up the data.py module and deserves its own task. Let's take incrementabl steps
 
 ### User Feedbacks
 ### **Key Methods & Research Pipeline**
@@ -33,7 +36,7 @@ Concise guidance for AI agents working with this music information retrieval cod
 The API is designed to support the following workflow for investigating boundary monotonicity.
 
 * **Core Transformation Pipeline**:
-`MultiSegment -> BoundaryContour -> BoundaryHierarchy`
+`MultiSegment -> BoundaryContour -> BoundaryHierarchy ->MultiSegment`
 - We'll just use `ops` to operate on the `MultiSegment` directly.
 
 

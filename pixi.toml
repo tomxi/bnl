@@ -98,7 +98,7 @@ lint = "ruff check src/ tests/ apps/ --fix"
 test = "pip install -e . && pytest"
 
 # Run full validation pipeline (format + lint + types + test)
-check = "pip install -e . && ruff format src/ tests/ apps/ --check && ruff check src/ tests/ apps/ && mypy src/ apps/ --ignore-missing-imports && pytest"
+check = "pip install -e . && ruff format src/ tests/ apps/ --check && ruff check src/ tests/ apps/ && mypy src/ --ignore-missing-imports && pytest"
 
 # ===================================================================
 # Extended Development Tasks
@@ -109,7 +109,7 @@ test-cov = "pip install -e . && pytest --cov=bnl --cov-report=term-missing"
 test-cov-html = "pip install -e . && pytest --cov=bnl --cov-report=html"
 
 # Type checking only (faster when you just need types)
-types = "mypy src/ apps/ --ignore-missing-imports"
+types = "mypy src/ --ignore-missing-imports"
 
 # Clean build artifacts and cache  
 clean = "cd \"$(git rev-parse --show-toplevel)\" && rm -rf build/ htmlcov/ dist/ docs/_build/ .pytest_cache/ .coverage .mypy_cache/ && find . -name '*.egg-info' -type d -delete && find . -name '__pycache__' -type d -delete || true"

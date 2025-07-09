@@ -347,7 +347,7 @@ class BoundaryContour(TimeSpan):
 
         return viz.plot_boundary_contour(self, ax=ax, **kwargs)
 
-    def clean(self, strategy: str = "absorb", **kwargs) -> BoundaryContour:
+    def clean(self, strategy: str = "absorb", **kwargs: Any) -> BoundaryContour:
         """
         Cleans up the boundary contour using a specified strategy.
 
