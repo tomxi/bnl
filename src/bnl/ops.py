@@ -154,10 +154,10 @@ class _CleanStrategy(ABC):
 class _CleanByAbsorb(_CleanStrategy):
     """Clean boundaries by absorbing less salient ones within a window."""
 
-    def __init__(self) -> None:
-        pass
+    def __init__(self, window: float = 1.0) -> None:
+        self.window = window
 
-    def __call__(self, bc: BoundaryContour, window: float = 1.0) -> BoundaryContour:
+    def __call__(self, bc: BoundaryContour) -> BoundaryContour:
         from .core import BoundaryContour, RatedBoundary
 
         if len(bc.boundaries) <= 2:
@@ -168,7 +168,7 @@ class _CleanByAbsorb(_CleanStrategy):
 
         kept_boundaries = list(outer_boundaries)
         for new_b in inner_boundaries:
-            is_absorbed = any(abs(new_b.time - kept_b.time) <= window for kept_b in kept_boundaries)
+            is_absorbed = any(abs(new_b.time - kept_b.time) <= self.window for kept_b in kept_boundaries)
             if not is_absorbed:
                 kept_boundaries.append(new_b)
 
@@ -180,18 +180,21 @@ class _CleanByAbsorb(_CleanStrategy):
 class _CleanByKDE(_CleanStrategy):
     """Clean boundaries by finding peaks in a weighted kernel density estimate."""
 
-    def __init__(self, bandwidth: float = 1.0):
+    def __init__(self, bandwidth: float = 1.0, frame_size: float = 0.1):
         self.kde = KernelDensity(kernel="gaussian", bandwidth=bandwidth)
+        self.frame_size = frame_size
 
-    def _build_time_grid(self, span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
+    def _build_time_grid(self, span: TimeSpan) -> np.ndarray:
         """
         Build a grid of times using the same logic as mir_eval to build the ticks
         """
         # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
-        n_frames = int((_round(span.end.time, frame_size) - _round(span.start.time, frame_size)) / frame_size)
-        return np.arange(n_frames + 1) * frame_size + span.start.time
+        n_frames = int(
+            (_round(span.end.time, self.frame_size) - _round(span.start.time, self.frame_size)) / self.frame_size
+        )
+        return np.arange(n_frames + 1) * self.frame_size + span.start.time
 
-    def __call__(self, bc: BoundaryContour, frame_size: float = 0.1) -> BoundaryContour:
+    def __call__(self, bc: BoundaryContour) -> BoundaryContour:
         if len(bc.boundaries) < 4:
             return bc
 
@@ -201,7 +204,7 @@ class _CleanByKDE(_CleanStrategy):
 
         self.kde.fit(times, sample_weight=saliences)
 
-        grid_times = self._build_time_grid(bc, frame_size=frame_size)
+        grid_times = self._build_time_grid(bc)
         density = np.exp(self.kde.score_samples(grid_times.reshape(-1, 1)))
 
         peak_indices = localmax(density)

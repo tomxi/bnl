@@ -45,3 +45,18 @@ The API is designed to support the following workflow for investigating boundary
 - **Trust the Data Models:** The core data classes in `bnl.core` (e.g., `BoundaryHierarchy`, `Segment`) have validation built-in. For example, a `BoundaryHierarchy` must have at least two boundaries. Functions operating on these objects can and should *assume* they are well-formed. Avoid writing defensive checks for conditions the data model already prevents.
 - **Clarity Over Cleverness:** A straightforward, readable implementation (e.g., a simple loop or a generator function) is superior to a complex one-liner that is difficult to debug and understand.
 - **Efficient Hierarchy Construction:** When transforming a `BoundaryHierarchy` into a `MultiSegment`, the most efficient strategy is to first group boundaries by level (e.g., into a dictionary) and then iterate through the levels, accumulating boundaries. This is much better than re-filtering the entire list of boundaries for each level.
+
+### Notebook errors:
+```
+---------------------------------------------------------------------------
+AttributeError                            Traceback (most recent call last)
+Cell In[44], line 2
+      1 # est.plot(figsize=(6,4));
+----> 2 est.plot_plotly()
+
+File <string>:13, in plot_plotly(self, fig, **kwargs)
+
+File <string>:28, in plot_multisegment(ms, fig, colorscale, figsize)
+
+AttributeError: module '_plotly_utils.colors.qualitative' has no attribute 'get_colorscale'
+```

@@ -17,7 +17,7 @@ from __future__ import annotations
 __version__ = "0.2.1"
 
 # --- Import submodules for explicit, namespaced access ---
-from . import core, data, ops, viz
+from . import core, data, ops, viz, viz_plotly
 
 # --- Promote the core data structures to the top level ---
 from .core import (
@@ -48,4 +48,5 @@ __all__ = [
     "data",
     "ops",
     "viz",
+    "viz_plotly",
 ]

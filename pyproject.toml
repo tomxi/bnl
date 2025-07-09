@@ -27,6 +27,7 @@ dependencies = [
     "numpy",
     "pandas",
     "matplotlib",
+    "plotly",
     "librosa",
     "pyarrow",
     "seaborn",
@@ -74,7 +75,7 @@ line-ending = "lf"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "C90", "N", "UP", "A", "B"]
-ignore = []
+ignore = ["B905"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["bnl"]

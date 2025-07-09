@@ -118,6 +118,21 @@ class TimeSpan:
 
         return viz.plot_timespan(self, ax=ax, **kwargs)
 
+    def plot_plotly(self, fig=None, **kwargs: Any):
+        """
+        Plots the time span on a Plotly figure.
+
+        A wrapper around `bnl.viz_plotly.plot_timespan`.
+
+        Returns
+        -------
+        Figure
+            A Plotly Figure object with the timespan visualization.
+        """
+        from . import viz_plotly
+
+        return viz_plotly.plot_timespan(self, fig=fig, **kwargs)
+
 
 class Segment(TimeSpan):
     """
@@ -193,6 +208,21 @@ class Segment(TimeSpan):
 
         return viz.plot_segment(self, ax=ax, **kwargs)
 
+    def plot_plotly(self, fig=None, **kwargs: Any):
+        """
+        Plots the segment on a Plotly figure.
+
+        A wrapper around `bnl.viz_plotly.plot_segment`.
+
+        Returns
+        -------
+        Figure
+            A Plotly Figure object with the segment visualization.
+        """
+        from . import viz_plotly
+
+        return viz_plotly.plot_segment(self, fig=fig, **kwargs)
+
 
 class MultiSegment(TimeSpan):
     """
@@ -259,6 +289,21 @@ class MultiSegment(TimeSpan):
         from . import viz
 
         return viz.plot_multisegment(self, ax=ax, **kwargs)
+
+    def plot_plotly(self, fig=None, **kwargs: Any):
+        """
+        Plots the MultiSegment on a Plotly figure.
+
+        A wrapper around `bnl.viz_plotly.plot_multisegment`.
+
+        Returns
+        -------
+        Figure
+            A Plotly Figure object with the multi-segment visualization.
+        """
+        from . import viz_plotly
+
+        return viz_plotly.plot_multisegment(self, fig=fig, **kwargs)
 
     def to_contour(self, strategy: str = "depth") -> BoundaryContour:
         """
@@ -346,6 +391,21 @@ class BoundaryContour(TimeSpan):
         from . import viz
 
         return viz.plot_boundary_contour(self, ax=ax, **kwargs)
+
+    def plot_plotly(self, fig=None, **kwargs: Any):
+        """
+        Plots the BoundaryContour on a Plotly figure.
+
+        A wrapper around `bnl.viz_plotly.plot_boundary_contour`.
+
+        Returns
+        -------
+        Figure
+            A Plotly Figure object with the boundary contour visualization.
+        """
+        from . import viz_plotly
+
+        return viz_plotly.plot_boundary_contour(self, fig=fig, **kwargs)
 
     def clean(self, strategy: str = "absorb", **kwargs: Any) -> BoundaryContour:
         """
