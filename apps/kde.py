@@ -7,14 +7,9 @@ from scipy.signal import find_peaks
 from dataclasses import dataclass
 from typing import List
 
-
-# --- Data Structures ---
-@dataclass
-class RatedBoundary:
-    """A simple data class for our weighted time points."""
-
-    time: float
-    salience: float
+import bnl
+import os
+from bnl import RatedBoundary, ops
 
 
 # --- Core Computational Class (Reused for both stages) ---
@@ -88,12 +83,43 @@ st.markdown("""
 This app performs a two-stage analysis. The main plot merges temporal boundaries using a KDE. The narrow plot on the right acts as a marginal histogram, taking the *saliences* of the merged peaks and performing a second KDE to find significant salience levels.
 """)
 
-# --- Sample Data Generation ---
-coarse_boundaries = [RatedBoundary(2.0, 1 / 3), RatedBoundary(10.0, 1 / 3), RatedBoundary(15.0, 1 / 3)]
-fine_boundaries = [RatedBoundary(t, 1 / 300) for t in np.linspace(start=0, stop=20, num=300)]
-all_boundaries = coarse_boundaries + fine_boundaries
-initial_times = np.array([b.time for b in all_boundaries])
-initial_saliences = np.array([b.salience for b in all_boundaries])
+
+# --- Load Real Data ---
+@st.cache_resource
+def load_real_data(manifest_path="~/data/salami/metadata.csv", track_id=8):
+    """Loads a boundary contour from the salami dataset."""
+    manifest_path = os.path.expanduser(manifest_path)
+    if not os.path.exists(manifest_path):
+        st.error(f"Data manifest not found at {manifest_path}. Using sample data.")
+        return None
+
+    try:
+        slm_ds = bnl.data.Dataset(manifest_path=manifest_path)
+        track = slm_ds[track_id]
+        est = track.load_annotation("adobe-mu1gamma9")
+        bc = ops.boundary_salience(est, strategy="depth")
+        return bc
+    except Exception as e:
+        st.error(f"Failed to load data for track {track_id}: {e}")
+        return None
+
+
+# Attempt to load real data, fall back to sample data
+boundary_contour = load_real_data()
+
+if boundary_contour:
+    initial_times = np.array([b.time for b in boundary_contour.boundaries])
+    initial_saliences = np.array([b.salience for b in boundary_contour.boundaries])
+    st.sidebar.success(f"Loaded {len(initial_times)} boundaries for track {boundary_contour.name}.")
+else:
+    # --- Sample Data Generation ---
+    st.sidebar.warning("Using sample data.")
+    coarse_boundaries = [RatedBoundary(2.0, 1 / 3), RatedBoundary(10.0, 1 / 3), RatedBoundary(15.0, 1 / 3)]
+    fine_boundaries = [RatedBoundary(t, 1 / 300) for t in np.linspace(start=0, stop=20, num=300)]
+    all_boundaries = coarse_boundaries + fine_boundaries
+    initial_times = np.array([b.time for b in all_boundaries])
+    initial_saliences = np.array([b.salience for b in all_boundaries])
+
 
 # --- Sidebar Controls ---
 st.sidebar.header("Stage 1: Time Grouping")
@@ -109,10 +135,10 @@ time_bandwidth = st.sidebar.slider(
 st.sidebar.header("Stage 2: Salience Quantization")
 salience_bandwidth = st.sidebar.slider(
     "Salience KDE Bandwidth",
-    min_value=0.001,
-    max_value=0.05,
-    value=0.005,
-    step=0.001,
+    min_value=0.0001,
+    max_value=0.005,
+    value=0.0005,
+    step=0.0001,
     format="%.3f",
     help="Controls the smoothness of the salience density estimate.",
 )
