@@ -24,6 +24,7 @@ mir_eval = "*"
 python = "3.12.*"
 requests = ">=2.32.4,<3"
 ffmpeg = ">=7.1.1,<8"
+plotly = ">=6.2.0,<7"
 
 [host-dependencies]
 pip = "*"
@@ -34,6 +35,7 @@ wheel = "*"
 
 [pypi-dependencies]
 jams = "*"
+streamlit-plotly-events = "*"
 
 [feature.docs.dependencies]
 # Documentation dependencies
@@ -87,35 +89,30 @@ cloud = ["cloud"]
 # ===================================================================
 
 # Format source code (run frequently during development)
-format = "ruff format"
-
-# Check code style without fixing (useful for CI)
-lint = "ruff check"
+format = "ruff format src/ tests/ apps/"
 
 # Fix code style issues automatically
-fix = "ruff check --fix"
+lint = "ruff check src/ tests/ apps/ --fix"
 
 # Run all tests
 test = "pip install -e . && pytest"
 
 # Run full validation pipeline (format + lint + types + test)
-check = "pip install -e . && ruff format --check && ruff check && mypy src/ apps/ --ignore-missing-imports && pytest"
+check = "pip install -e . && ruff format src/ tests/ apps/ --check && ruff check src/ tests/ apps/ && mypy src/ apps/ --ignore-missing-imports && pytest"
 
 # ===================================================================
 # Extended Development Tasks
 # ===================================================================
 
-# Install package in development mode (editable install)
-install = "pip install -e ."
-
 # Run tests with coverage report
 test-cov = "pip install -e . && pytest --cov=bnl --cov-report=term-missing"
+test-cov-html = "pip install -e . && pytest --cov=bnl --cov-report=html"
 
 # Type checking only (faster when you just need types)
 types = "mypy src/ apps/ --ignore-missing-imports"
 
 # Clean build artifacts and cache  
-clean = "rm -rf build/ dist/ .pytest_cache/ .coverage .mypy_cache/ src/**/__pycache__/ tests/**/__pycache__/ *.egg-info/ || true"
+clean = "cd \"$(git rev-parse --show-toplevel)\" && rm -rf build/ htmlcov/ dist/ docs/_build/ .pytest_cache/ .coverage .mypy_cache/ && find . -name '*.egg-info' -type d -delete && find . -name '__pycache__' -type d -delete || true"
 
 # ===================================================================
 # Application & Data Tasks
@@ -123,6 +120,7 @@ clean = "rm -rf build/ dist/ .pytest_cache/ .coverage .mypy_cache/ src/**/__pyca
 
 # Run the Streamlit experiment app
 exp = "streamlit run ./apps/exp.py"
+kde = "streamlit run ./apps/kde.py"
 
 # Build local data manifest for development
 build-local-manifest = "python scripts/build_local_manifest.py"

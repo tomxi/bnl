@@ -22,7 +22,7 @@ Basic Usage
     # Create segmentation from boundaries
     boundaries = [0.0, 2.5, 5.0, 7.5, 10.0]
     labels = ['A', 'B', 'A', 'C']
-          seg = Segmentation.from_boundaries(boundaries, labels)
+    seg = Segmentation.from_boundaries(boundaries, labels)
 
     # Access properties
     print(f"Duration: {seg.end - seg.start}")

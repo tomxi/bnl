@@ -1,159 +1,159 @@
-"""Visualization utilities for segmentations."""
+"""Visualization tools for bnl."""
 
-import itertools
+from __future__ import annotations
+
 from typing import TYPE_CHECKING, Any
 
-import librosa.display
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 import numpy as np
-from cycler import cycler
-from matplotlib.figure import Figure, SubFigure
+from matplotlib.axes import Axes
 
-# Import Segmentation for type hinting only to avoid circular dependency
 if TYPE_CHECKING:
-    from .core import Segmentation  # pragma: no cover
+    from bnl.core import BoundaryContour, MultiSegment, Segment, TimeSpan
 
 
-def label_style_dict(
-    labels: list[Any] | np.ndarray, boundary_color: str = "white", **kwargs: Any
+def create_style_map(
+    labels: set[str],
+    colormap: str = "tab20b",
 ) -> dict[str, dict[str, Any]]:
-    """Create a mapping of labels to matplotlib style properties.
+    """
+    Creates a default, consistent color map for all labels.
 
     Parameters
     ----------
-    labels : list or ndarray
-        List of labels. Duplicates are processed once.
-    boundary_color : str, default="white"
-        Color for segment boundaries.
-    **kwargs : dict
-        Additional style properties to apply to all labels.
+    labels : set[str]
+        A set of unique label names.
+    colormap : str, optional
+        The matplotlib colormap to use, by default "tab20b".
 
     Returns
     -------
-    dict
-        {label: {style_property: value}} mapping with keys like 'facecolor',
-        'edgecolor', 'linewidth', 'hatch', and 'label'.
+    dict[str, dict[str, Any]]
+        A dictionary mapping each label to its style properties.
     """
-    # Extract unique labels from potentially nested structure
-    unique_labels = np.unique(np.concatenate([np.atleast_1d(label) for label in labels if label is not None]))
+    unique_labels = sorted(list(labels))
+    cmap = plt.get_cmap(colormap)
+    colors = cmap(np.linspace(0, 1, len(unique_labels)))
+    style_map = {}
 
-    # More hatch patterns for more labels
-    hatchs = ["", "..", "O.", "*", "xx", "xxO", "\\O", "oo", "\\"]
-    more_hatchs = [h + "--" for h in hatchs]
+    for label, color in zip(unique_labels, colors, strict=False):
+        r, g, b, _ = color
+        luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        textcolor = "white" if luminance < 0.5 else "black"
+        style = {"color": color, "textcolor": textcolor}
+        style_map[label] = style
+    return style_map
 
-    if len(unique_labels) <= 80:
-        hatch_cycler = cycler(hatch=hatchs)
-        fc_cycler = cycler(color=plt.get_cmap("tab10").colors)  # type: ignore[attr-defined]
-        p_cycler = hatch_cycler * fc_cycler
-    else:
-        hatch_cycler = cycler(hatch=hatchs + more_hatchs)
-        fc_cycler = cycler(color=plt.get_cmap("tab20").colors)  # type: ignore[attr-defined]
-        # make it repeat...
-        p_cycler = itertools.cycle(hatch_cycler * fc_cycler)  # type: ignore[assignment]
 
-    # Create style mapping for each unique label
-    seg_map = {}
-    for lab, properties in zip(unique_labels, p_cycler):
-        # Extract relevant style properties
-        style = {k: v for k, v in properties.items() if k in ["color", "facecolor", "edgecolor", "linewidth", "hatch"]}
+def plot_timespan(
+    span: TimeSpan,
+    ax: Axes,
+    style: dict[str, Any] | None = None,
+    y_pos: float = 0.0,
+    height: float = 1.0,
+    **kwargs: Any,
+) -> Axes:
+    """
+    Plots a time span as a labeled rectangle on a set of axes.
+    """
+    style = style or {}
+    color = style.get("color", "gray")
+    textcolor = style.get("textcolor", "white")
 
-        # Convert color to facecolor to preserve edgecolor on rectangles
-        if "color" in style:
-            style["facecolor"] = style.pop("color")
+    ax.axvspan(
+        span.start.time,
+        span.end.time,
+        ymin=y_pos,
+        ymax=y_pos + height,
+        facecolor=color,
+        edgecolor="white",
+        linewidth=0.5,
+        **kwargs,
+    )
 
-        # Build final style dictionary
-        seg_map[lab] = {
-            "linewidth": 1,
-            "edgecolor": boundary_color,
-            "label": lab,
-            **style,
-            **kwargs,
-        }
-    return seg_map
+    center_time = span.start.time + span.duration / 2
+    ax.text(
+        center_time,
+        y_pos + height / 2,
+        span.name,
+        ha="center",
+        va="center",
+        color=textcolor,
+        fontsize=8,
+    )
+    return ax
 
 
 def plot_segment(
-    seg: "Segmentation",
-    ax: plt.Axes | None = None,
-    label_text: bool = True,
-    title: bool = True,
-    ytick: str = "",
-    time_ticks: bool = True,
+    segment: Segment,
+    ax: Axes | None = None,
     style_map: dict[str, dict[str, Any]] | None = None,
-) -> tuple[Figure | SubFigure, plt.Axes]:
-    """Plot a `Segmentation` object.
-
-    Parameters
-    ----------
-    seg : bnl.core.Segmentation
-        The segmentation to plot.
-    ax : matplotlib.axes.Axes, optional
-        An existing axes to plot on.
-    label_text : bool, default=True
-        Whether to display segment labels.
-    title : bool, default=True
-        Whether to display the segmentation's name as a title.
-    ytick : str, optional
-        A label for the y-axis.
-    time_ticks : bool, default=True
-        Whether to display time ticks on the x-axis.
-    style_map : dict, optional
-        A precomputed mapping from labels to style properties.
+    y_pos: float = 0.0,
+    height: float = 1.0,
+) -> Axes:
     """
-    fig: Figure | SubFigure
+    Plots a Segment by drawing each of its sections.
+    """
     if ax is None:
-        fig, ax = plt.subplots(figsize=(6, 0.6))  # short and wide
-    else:
-        fig = ax.figure
+        _, ax = plt.subplots(figsize=(15, len(segment.sections) * 0.5))
+        ax.set(title=segment.name, yticks=[], xlim=(segment.start.time, segment.end.time), xlabel="Time (s)")
 
-    # only plot if there are segments
-    if len(seg) > 0:
-        # Generate style map if not provided
-        if style_map is None:
-            style_map = label_style_dict(seg.labels)
+    if style_map is None:
+        style_map = create_style_map(set(segment.labels))
 
-        ax.set_xlim(seg.start, seg.end)
-        for span in seg.segments:
-            # Get style for span, using a default if name is None or not in map
-            span_style = style_map.get(span.name if span.name is not None else "", {})
-            # Plot the segment using TimeSpan interface
-            span.plot(ax=ax, text=label_text, **span_style)
-    else:
-        ax.text(
-            0.5,
-            0.5,
-            "Empty Segmentation",
-            ha="center",
-            va="center",
-            transform=ax.transAxes,
-            fontsize=10,
-            color="gray",
-        )
+    for section in segment.sections:
+        # using str() to guard sections with empty string as name, so it's not just gray
+        section_style = style_map.get(str(section), {})
+        plot_timespan(section, ax, style=section_style, y_pos=y_pos, height=height)
+    return ax
 
-    if title and seg.name:
-        ax.set_title(seg.name)
 
-    # Set xlim only if start and end are different to avoid matplotlib warning
-    if seg.start != seg.end:
-        ax.set_xlim(seg.start, seg.end)
-    else:
-        # For empty or zero-duration segments, set a small default range
-        ax.set_xlim(-0.1, 0.1)
+def plot_multisegment(
+    ms: MultiSegment,
+    ax: Axes | None = None,
+    style_map: dict[str, dict[str, Any]] | None = None,
+    colormap: str = "tab20b",
+    figsize: tuple[float, float] | None = None,
+) -> Axes:
+    """
+    Plots all layers of the MultiSegment.
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize or (15, len(ms.layers) * 0.5))
+        ax.set(title=ms.name, yticks=[], xlim=(ms.start.time, ms.end.time), xlabel="Time (s)")
 
-    ax.set_ylim(0, 1)
+    if style_map is None:
+        unique_labels = {label for layer in ms.layers for label in layer.labels}
+        style_map = create_style_map(unique_labels, colormap)
+    num_layers = len(ms.layers)
+    for i, layer in enumerate(ms.layers):
+        y_pos = 1 - (i + 1) / num_layers
+        height = 1 / num_layers
+        plot_segment(layer, ax, style_map=style_map, y_pos=y_pos, height=height)
 
-    if time_ticks:
-        ax.xaxis.set_major_locator(ticker.AutoLocator())
-        ax.xaxis.set_major_formatter(librosa.display.TimeFormatter())
-        ax.set_xlabel("Time (s)")
-    else:
-        ax.set_xticks([])
+    ax.set_yticks([1 - (i + 0.5) / num_layers for i in range(num_layers)])
+    ax.set_yticklabels([layer.name for layer in ms.layers])
 
-    if ytick:
-        ax.set_yticks([0.5])
-        ax.set_yticklabels([ytick])
-    else:
-        ax.set_yticks([])
+    return ax
 
-    return fig, ax
+
+def plot_boundary_contour(
+    bc: BoundaryContour,
+    ax: Axes | None = None,
+    figsize: tuple[float, float] | None = None,
+    markerfmt: str = "",
+    linefmt: str = "k1-",
+    **kwargs: Any,
+) -> Axes:
+    """
+    Plots a BoundaryContour.
+    """
+    if ax is None:
+        _, ax = plt.subplots(figsize=figsize or (15, 6))
+
+    # plot boundaries as vertical lines, with time as x, salience as y
+    for boundary in bc.boundaries[1:-1]:
+        ax.stem(boundary.time, boundary.salience, markerfmt=markerfmt, linefmt=linefmt, **kwargs)
+    ax.axhline(0, color="black", linewidth=0.5)
+    ax.set(title=bc.name, xlim=(bc.start.time, bc.end.time), xlabel="Time (s)")
+    return ax

@@ -1,7 +1,7 @@
-Viz Module
-===========
+Ops Module
+==========
 
-.. automodule:: bnl.viz
+.. automodule:: bnl.ops
    :members:
    :undoc-members:
    :show-inheritance: 
