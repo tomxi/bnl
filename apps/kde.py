@@ -1,14 +1,13 @@
-import streamlit as st
+import os
+
 import numpy as np
 import plotly.graph_objects as go
+import streamlit as st
 from plotly.subplots import make_subplots
-from sklearn.neighbors import KernelDensity
 from scipy.signal import find_peaks
-from dataclasses import dataclass
-from typing import List
+from sklearn.neighbors import KernelDensity
 
 import bnl
-import os
 from bnl import RatedBoundary, ops
 
 
@@ -80,7 +79,10 @@ class KDEBoundaryExplorer:
 st.set_page_config(layout="wide")
 st.title("Hierarchical KDE Boundary Explorer")
 st.markdown("""
-This app performs a two-stage analysis. The main plot merges temporal boundaries using a KDE. The narrow plot on the right acts as a marginal histogram, taking the *saliences* of the merged peaks and performing a second KDE to find significant salience levels.
+This app performs a two-stage analysis.
+The main plot merges temporal boundaries using a KDE.
+The narrow plot on the right acts as a marginal histogram, 
+taking the *saliences* of the merged peaks and performing a second KDE to find significant salience levels.
 """)
 
 
@@ -161,7 +163,7 @@ salience_bandwidth = st.sidebar.slider(
     max_value=0.005,
     value=0.0005,
     step=0.0001,
-    format="%.3f",
+    format="%.4f",
     help="Controls the smoothness of the salience density estimate.",
 )
 
@@ -180,46 +182,62 @@ time_explorer.update_bandwidth(time_bandwidth)
 time_plot_data = time_explorer.get_plot_data()
 resulting_saliences = time_plot_data["peak_saliences"]
 
-# FIX: Check if there are peaks from stage 1 before running stage 2
+# Stage 2: Analyze the saliences from stage 1
 if resulting_saliences.size > 0:
-    # Stage 2: Analyze the saliences from stage 1
     salience_explorer = KDEBoundaryExplorer(resulting_saliences)
     salience_explorer.update_bandwidth(salience_bandwidth)
     salience_plot_data = salience_explorer.get_plot_data()
+
+    # --- NEW: Find the "snapped" salience values for each original time peak ---
+    quantized_saliences = []
+    salience_levels = salience_plot_data["peaks"]
+    if salience_levels.size > 0:
+        for s in resulting_saliences:
+            # Find the index of the closest salience level
+            closest_level_idx = np.argmin(np.abs(salience_levels - s))
+            quantized_saliences.append(salience_levels[closest_level_idx])
+    quantized_saliences = np.array(quantized_saliences)
+
 else:
-    # If no peaks, create empty data for the second plot
+    # If no peaks, create empty data for the second plot and snapped values
     salience_plot_data = {
         "grid": np.array([]),
         "density": np.array([]),
         "peaks": np.array([]),
         "peak_saliences": np.array([]),
     }
+    quantized_saliences = np.array([])
 
 
 # --- EFFICIENT PLOTTING WITH SUBPLOTS ---
-# 1. Initialize the subplot figure ONCE and store it in session state.
-if "fig" not in st.session_state:
+EXPECTED_NUM_TRACES = 5
+if "fig" not in st.session_state or len(st.session_state.fig.data) != EXPECTED_NUM_TRACES:
     st.session_state.fig = make_subplots(
         rows=1, cols=2, shared_yaxes=True, column_widths=[0.8, 0.2], horizontal_spacing=0.02
     )
-    # Add empty traces that we will update later
-    # Main plot (time)
+    # Main plot traces
     st.session_state.fig.add_trace(go.Scatter(name="Time KDE Density", line=dict(color="royalblue")), row=1, col=1)
     st.session_state.fig.add_trace(
-        go.Scatter(name="Time Peaks", mode="markers", marker=dict(color="red", size=8, symbol="x")), row=1, col=1
+        go.Scatter(name="Original Peaks", mode="markers", marker=dict(color="red", size=8, symbol="x")),
+        row=1,
+        col=1,
     )
-
-    # Marginal plot (salience)
+    st.session_state.fig.add_trace(
+        go.Scatter(name="Snapped Peaks", mode="markers", marker=dict(color="orange", size=8, symbol="circle")),
+        row=1,
+        col=1,
+    )
+    # Marginal plot traces
     st.session_state.fig.add_trace(
         go.Scatter(name="Salience KDE Density", line=dict(color="mediumseagreen")), row=1, col=2
     )
     st.session_state.fig.add_trace(
-        go.Scatter(name="Salience Levels", mode="markers", marker=dict(color="orange", size=8, symbol="cross")),
+        go.Scatter(name="Salience Levels", mode="markers", marker=dict(color="orange", size=8, symbol="circle")),
         row=1,
         col=2,
     )
 
-    # Set the layout properties that don't change
+    # Layout
     st.session_state.fig.update_layout(
         title_text="Stage 1: Temporal Merging (Left) & Stage 2: Salience Quantization (Right)",
         height=600,
@@ -230,21 +248,22 @@ if "fig" not in st.session_state:
     st.session_state.fig.update_yaxes(title_text="Density / Salience", row=1, col=1)
     st.session_state.fig.update_xaxes(title_text="Density", row=1, col=2)
 
-# 2. On every script run, update the DATA of the existing figure.
+# Update data on every run
 with st.session_state.fig.batch_update():
-    # Update main plot data
+    # Main plot data
     st.session_state.fig.data[0].x = time_plot_data["grid"]
     st.session_state.fig.data[0].y = time_plot_data["density"]
     st.session_state.fig.data[1].x = time_plot_data["peaks"]
     st.session_state.fig.data[1].y = time_plot_data["peak_saliences"]
+    st.session_state.fig.data[2].x = time_plot_data["peaks"]
+    st.session_state.fig.data[2].y = quantized_saliences
 
-    # Update marginal plot data (swapping x and y for vertical orientation)
-    st.session_state.fig.data[2].x = salience_plot_data["density"]
-    st.session_state.fig.data[2].y = salience_plot_data["grid"]
-    st.session_state.fig.data[3].x = salience_plot_data["peak_saliences"]
-    st.session_state.fig.data[3].y = salience_plot_data["peaks"]
+    # Marginal plot data (swapping x and y for vertical orientation)
+    st.session_state.fig.data[3].x = salience_plot_data["density"]
+    st.session_state.fig.data[3].y = salience_plot_data["grid"]
+    st.session_state.fig.data[4].x = salience_plot_data["peak_saliences"]
+    st.session_state.fig.data[4].y = salience_plot_data["peaks"]
 
-# 3. Display the single figure from session state.
 st.plotly_chart(st.session_state.fig, use_container_width=True)
 
 # --- Raw Data Expanders ---
