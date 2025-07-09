@@ -84,29 +84,52 @@ This app performs a two-stage analysis. The main plot merges temporal boundaries
 """)
 
 
-# --- Load Real Data ---
+# --- Data Loading ---
 @st.cache_resource
-def load_real_data(manifest_path="~/data/salami/metadata.csv", track_id=8):
-    """Loads a boundary contour from the salami dataset."""
+def get_dataset(manifest_path="~/data/salami/metadata.csv"):
+    """Loads the dataset object, returns None if not found."""
     manifest_path = os.path.expanduser(manifest_path)
     if not os.path.exists(manifest_path):
-        st.error(f"Data manifest not found at {manifest_path}. Using sample data.")
+        st.sidebar.error(f"Manifest not found: {manifest_path}")
         return None
-
     try:
-        slm_ds = bnl.data.Dataset(manifest_path=manifest_path)
-        track = slm_ds[track_id]
-        est = track.load_annotation("adobe-mu1gamma9")
-        bc = ops.boundary_salience(est, strategy="depth")
-        return bc
+        return bnl.data.Dataset(manifest_path=manifest_path)
     except Exception as e:
-        st.error(f"Failed to load data for track {track_id}: {e}")
+        st.sidebar.error(f"Error loading dataset: {e}")
         return None
 
 
-# Attempt to load real data, fall back to sample data
-boundary_contour = load_real_data()
+@st.cache_data
+def load_boundary_contour(_dataset, track_id):
+    """Loads a specific track's boundary contour."""
+    if _dataset is None or track_id is None:
+        return None
+    try:
+        track = _dataset[track_id]
+        est = track.load_annotation("adobe-mu1gamma9")
+        return ops.boundary_salience(est, strategy="depth")
+    except Exception as e:
+        st.warning(f"Failed to load data for track {track_id}: {e}")
+        return None
 
+
+slm_ds = get_dataset()
+
+# --- Sidebar Controls ---
+st.sidebar.header("Data Selection")
+
+if slm_ds:
+    try:
+        # Default to track 8 if available
+        default_index = slm_ds.track_ids.index("8")
+    except ValueError:
+        default_index = 0
+    track_id = st.sidebar.selectbox("Select Track ID", slm_ds.track_ids, index=default_index)
+    boundary_contour = load_boundary_contour(slm_ds, track_id)
+else:
+    boundary_contour = None
+
+# Fallback to sample data if loading fails
 if boundary_contour:
     initial_times = np.array([b.time for b in boundary_contour.boundaries])
     initial_saliences = np.array([b.salience for b in boundary_contour.boundaries])
@@ -121,7 +144,6 @@ else:
     initial_saliences = np.array([b.salience for b in all_boundaries])
 
 
-# --- Sidebar Controls ---
 st.sidebar.header("Stage 1: Time Grouping")
 time_bandwidth = st.sidebar.slider(
     "Time KDE Bandwidth (σ)",
