@@ -24,6 +24,7 @@ mir_eval = "*"
 python = "3.12.*"
 requests = ">=2.32.4,<3"
 ffmpeg = ">=7.1.1,<8"
+plotly = ">=6.2.0,<7"
 
 [host-dependencies]
 pip = "*"
@@ -118,6 +119,7 @@ clean = "cd \"$(git rev-parse --show-toplevel)\" && rm -rf build/ htmlcov/ dist/
 
 # Run the Streamlit experiment app
 exp = "streamlit run ./apps/exp.py"
+kde = "streamlit run ./apps/kde.py"
 
 # Build local data manifest for development
 build-local-manifest = "python scripts/build_local_manifest.py"
