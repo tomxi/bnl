@@ -9,8 +9,6 @@ from typing import Any
 import jams
 from matplotlib.axes import Axes
 
-from bnl import viz
-
 # region: Point-like Objects
 
 
@@ -116,6 +114,8 @@ class TimeSpan:
 
         A wrapper around `bnl.viz.plot_timespan`.
         """
+        from . import viz
+
         return viz.plot_timespan(self, ax=ax, **kwargs)
 
 
@@ -189,6 +189,8 @@ class Segment(TimeSpan):
 
         A wrapper around `bnl.viz.plot_segment`.
         """
+        from . import viz
+
         return viz.plot_segment(self, ax=ax, **kwargs)
 
 
@@ -254,7 +256,30 @@ class MultiSegment(TimeSpan):
 
         A wrapper around `bnl.viz.plot_multisegment`.
         """
+        from . import viz
+
         return viz.plot_multisegment(self, ax=ax, **kwargs)
+
+    def to_contour(self, strategy: str = "depth") -> BoundaryContour:
+        """
+        Calculates boundary salience and converts to a BoundaryContour.
+
+        This is a convenience wrapper around `bnl.ops.boundary_salience`.
+
+        Parameters
+        ----------
+        strategy : {'depth', 'count', 'prob'}, default 'depth'
+            The salience calculation strategy to use. See `bnl.ops.boundary_salience`
+            for more details.
+
+        Returns
+        -------
+        BoundaryContour
+            The resulting boundary structure.
+        """
+        from . import ops  # Local import to avoid circular dependency at runtime
+
+        return ops.boundary_salience(self, strategy=strategy)
 
     @staticmethod
     def align_layers(layers: Sequence[Segment]) -> Sequence[Segment]:
@@ -318,7 +343,41 @@ class BoundaryContour(TimeSpan):
 
         A wrapper around `bnl.viz.plot_boundary_contour`.
         """
+        from . import viz
+
         return viz.plot_boundary_contour(self, ax=ax, **kwargs)
+
+    def clean(self, strategy: str = "absorb", **kwargs) -> BoundaryContour:
+        """
+        Cleans up the boundary contour using a specified strategy.
+
+        This is a convenience wrapper around `bnl.ops.clean_boundaries`.
+
+        Parameters
+        ----------
+        strategy : {'absorb', 'kde'}, default 'absorb'
+            The cleaning strategy to use. See `bnl.ops.clean_boundaries`
+            for more details and strategy-specific parameters.
+        **kwargs
+            Additional keyword arguments to pass to the strategy (e.g., `window`).
+
+        Returns
+        -------
+        BoundaryContour
+            A new, cleaned BoundaryContour.
+        """
+        from . import ops
+
+        return ops.clean_boundaries(self, strategy=strategy, **kwargs)
+
+    def to_hierarchy(self) -> BoundaryHierarchy:
+        """
+        [STUB] Converts the BoundaryContour to a BoundaryHierarchy by setting boundary salience to discrete levels.
+        """
+        from . import ops
+
+        # TODO: Implement this.
+        return ops.level_by_distinct_salience(self)
 
 
 class BoundaryHierarchy(BoundaryContour):
