@@ -77,7 +77,7 @@ class KDEBoundaryExplorer:
 # --- Streamlit Application ---
 
 st.set_page_config(layout="wide")
-st.title("Hierarchical KDE Boundary Explorer")
+st.sidebar.title("Hierarchical KDE Boundary Explorer")
 
 
 # --- Data Loading ---
@@ -112,12 +112,10 @@ def load_boundary_contour(_dataset, track_id):
 slm_ds = get_dataset()
 
 # --- Sidebar Controls ---
-st.sidebar.header("Data Selection")
 track_id = st.sidebar.selectbox("Select Track ID", slm_ds.track_ids, index=8)
 boundary_contour = load_boundary_contour(slm_ds, track_id)
 initial_times = np.array([b.time for b in boundary_contour.boundaries])
 initial_saliences = np.array([b.salience for b in boundary_contour.boundaries])
-st.sidebar.success(f"Loaded {len(initial_times)} boundaries for track {boundary_contour.name}.")
 
 st.sidebar.header("Stage 1: Time Grouping")
 time_bw_min, time_bw_max, time_bw_val, time_bw_step = 0.1, 5.0, 1.0, 0.05
@@ -131,16 +129,22 @@ time_bandwidth = st.sidebar.slider(
 )
 
 st.sidebar.header("Stage 2: Salience Quantization")
-sal_bw_min, sal_bw_max, sal_bw_val, sal_bw_step = 0.0001, 0.005, 0.0005, 0.0001
-salience_bandwidth = st.sidebar.slider(
-    "Salience KDE Bandwidth",
-    min_value=sal_bw_min,
-    max_value=sal_bw_max,
+# Create a log-spaced range for the salience bandwidth slider
+sal_bw_min_log, sal_bw_max_log = np.log10(0.00001), np.log10(0.01)
+# Use a moderate number of steps for responsiveness
+sal_bw_options = np.logspace(sal_bw_min_log, sal_bw_max_log, num=100)
+
+# Find the closest default value in the new options
+default_sal_bw = 0.0005
+sal_bw_val = min(sal_bw_options, key=lambda x: abs(x - default_sal_bw))
+
+salience_bandwidth = st.sidebar.select_slider(
+    "Salience KDE Bandwidth (Log Scale)",
+    options=sal_bw_options,
     value=sal_bw_val,
-    step=sal_bw_step,
-    format="%.4f",
-    help="Controls the smoothness of the salience density estimate.",
+    help="Controls the smoothness of the salience density estimate. The slider is on a log scale for finer control.",
 )
+
 
 # --- App Description ---
 st.sidebar.markdown("---")
@@ -253,13 +257,13 @@ def make_interactive_plot():
 
 
 @st.cache_data
-def compute_persistence_data(p_initial_times, p_initial_saliences, time_bw_params, sal_bw_params):
+def compute_persistence_data(p_initial_times, p_initial_saliences, time_bw_params, sal_bw_range):
     """
     Pre-computes the number of peaks across the entire parameter space.
     This function is cached; it will re-run only when the track's data changes.
     """
     time_bw_range = np.arange(time_bw_params[0], time_bw_params[1], time_bw_params[2])
-    sal_bw_range = np.arange(sal_bw_params[0], sal_bw_params[1], sal_bw_params[2])
+    # sal_bw_range is now passed in directly, no need to compute it here.
 
     # Use a local explorer instance for this computation, based on the specific track's data
     _time_explorer = KDEBoundaryExplorer(p_initial_times, p_initial_saliences)
@@ -287,14 +291,29 @@ def compute_persistence_data(p_initial_times, p_initial_saliences, time_bw_param
 def make_persistence_plot(
     time_bw_range, sal_bw_range, time_persistence, salience_persistence, current_time_bw, current_sal_bw
 ):
-    """Creates the persistence landscape and heatmap."""
-    fig = make_subplots(rows=1, cols=2, column_widths=[0.4, 0.6], horizontal_spacing=0.1)
-    # Plot 1: Time Persistence
-    fig.add_trace(go.Scatter(x=time_bw_range, y=time_persistence, mode="lines", name="Time Peaks"), row=1, col=1)
-    fig.add_vline(x=current_time_bw, line_width=2, line_dash="dash", line_color="red", row=1, col=1)
-    fig.update_xaxes(title_text="Time Bandwidth (σ)", row=1, col=1)
-    fig.update_yaxes(title_text="Number of Time Peaks", row=1, col=1)
-    # Plot 2: Salience Persistence Heatmap
+    """Creates the persistence landscape and heatmap, arranged vertically to share the x-axis."""
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.1,
+        row_heights=[0.3, 0.7],
+        subplot_titles=(
+            "Number of Temporal Boundaries",
+            "Number of Salience Levels",
+        ),
+    )
+
+    # Plot 1 (Top): Time Persistence (Number of Boundaries vs. Time Bandwidth)
+    fig.add_trace(
+        go.Scatter(x=time_bw_range, y=time_persistence, mode="lines", name="Time Peaks", showlegend=False),
+        row=1,
+        col=1,
+    )
+    fig.add_vline(x=current_time_bw, line_width=2, line_dash="dash", line_color="red", name="Time BW", row=1, col=1)
+    fig.update_yaxes(title_text="Num Boundaries", row=1, col=1)
+
+    # Plot 2 (Bottom): Salience Persistence Heatmap
     fig.add_trace(
         go.Heatmap(
             z=salience_persistence,
@@ -304,16 +323,22 @@ def make_persistence_plot(
             showscale=True,
             colorbar=dict(title="Num Levels"),
         ),
-        row=1,
-        col=2,
+        row=2,
+        col=1,
     )
-    fig.add_vline(x=current_time_bw, line_width=2, line_dash="dash", line_color="red", row=1, col=2)
-    fig.add_hline(y=current_sal_bw, line_width=2, line_dash="dash", line_color="red", row=1, col=2)
-    fig.update_xaxes(title_text="Time Bandwidth (σ)", row=1, col=2)
-    fig.update_yaxes(title_text="Salience Bandwidth", row=1, col=2)
+    # Add cursors to the heatmap
+    fig.add_vline(x=current_time_bw, line_width=2, line_dash="dash", line_color="red", name="Time BW", row=2, col=1)
+    fig.add_hline(y=current_sal_bw, line_width=2, line_dash="dash", line_color="red", name="Salience BW", row=2, col=1)
+
+    # Update axes and layout
+    fig.update_xaxes(title_text="Time Bandwidth (σ)", row=2, col=1)
+    fig.update_yaxes(title_text="Salience Bandwidth", row=2, col=1, type="log")
     fig.update_layout(
-        height=350, title_text="Peak (left) and Level (right) vs. Bandwidth Persistence Landscape"
-    )  # Reduced height
+        title_text="Peak (left) and Level (right) vs. Bandwidth Persistence Landscape",
+        height=450,
+        showlegend=True,
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+    )
     return fig
 
 
@@ -354,11 +379,11 @@ st.plotly_chart(st.session_state.fig, use_container_width=True)
 # --- Persistence Landscape Plot ---
 # Compute or retrieve from cache
 time_bw_params = (time_bw_min, time_bw_max, time_bw_step)
-sal_bw_params = (sal_bw_min, sal_bw_max, sal_bw_step)
+# The salience range is now the log-spaced options from the slider
 # Show a spinner during the potentially long computation
 with st.spinner("Computing persistence landscape... This may take a moment."):
     time_bw_range, sal_bw_range, time_persistence, salience_persistence = compute_persistence_data(
-        initial_times, initial_saliences, time_bw_params, sal_bw_params
+        initial_times, initial_saliences, time_bw_params, sal_bw_options
     )
 
 # Create persistence plots
