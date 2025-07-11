@@ -25,6 +25,7 @@ python = "3.12.*"
 requests = ">=2.32.4,<3"
 ffmpeg = ">=7.1.1,<8"
 plotly = ">=6.2.0,<7"
+sphinx-autodoc-typehints = ">=3.2.0,<4"
 
 [host-dependencies]
 pip = "*"
@@ -135,7 +136,7 @@ build-cloud-manifest = "python scripts/build_cloud_manifest.py"
 # ===================================================================
 
 # Build documentation (output to docs/_build/html)
-docs-build = "pixi run docs-clean && sphinx-build -b html docs docs/_build/html"
+docs-build = "pixi run docs-clean && sphinx-build -E -b html docs docs/_build/html"
 
 # Serve docs with live reload for development
 docs-serve = "sphinx-autobuild docs docs/_build/html --host 127.0.0.1"

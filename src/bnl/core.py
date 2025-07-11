@@ -167,23 +167,33 @@ class Segment(TimeSpan):
         if len(labels) != len(boundaries) - 1:
             raise ValueError("Number of labels must be one less than the number of boundaries.")
 
-        self.boundaries = list(boundaries)
-        if self.boundaries != sorted(self.boundaries):
+        self._boundaries = list(boundaries)
+        if self._boundaries != sorted(self._boundaries):
             raise ValueError("Boundaries must be sorted by time.")
 
-        self.labels = labels
-        super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
+        self._labels = labels
+        super().__init__(start=self._boundaries[0], end=self._boundaries[-1], name=name)
+
+    @property
+    def boundaries(self) -> Sequence[Boundary]:
+        """A list of at least two boundaries, sorted by time."""
+        return self._boundaries
+
+    @property
+    def labels(self) -> Sequence[str]:
+        """A list of labels for the sections."""
+        return self._labels
 
     @property
     def sections(self) -> Sequence[TimeSpan]:
         """A list of all the labeled time spans that compose the segment."""
         return [
-            TimeSpan(start=self.boundaries[i], end=self.boundaries[i + 1], name=self.labels[i])
-            for i in range(len(self.labels))
+            TimeSpan(start=self._boundaries[i], end=self._boundaries[i + 1], name=self._labels[i])
+            for i in range(len(self._labels))
         ]
 
     def __len__(self) -> int:
-        return len(self.labels)
+        return len(self._labels)
 
     def __getitem__(self, key: int) -> TimeSpan:
         return self.sections[key]
