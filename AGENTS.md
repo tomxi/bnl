@@ -85,4 +85,15 @@ A lengthy debugging session to fix the documentation revealed a canonical, maint
     4.  **Custom Template (`docs/_templates/autosummary/class.rst`):** This is the most critical piece. The template uses an `.. autoclass::` directive that includes `:members:` but also **`:exclude-members: __init__`**. This is the targeted fix that prevents the duplicate `__init__` block from ever appearing in the final HTML.
     5.  **The Workaround:** The `:toctree:` option within `autosummary` did not work as expected. A manual, explicit `.. toctree::` block was added after each `autosummary` directive in `api/bnl.rst` as a necessary workaround to force the linking. This may need manual updates if `__all__` changes.
 
+### The "Dangling Transition" Warning
+
+A persistent warning, `Document may not end with a transition`, arises from a fundamental conflict in the desired Sphinx configuration. This is considered an acceptable side effect for achieving the correct visual output.
+
+-   **The Cornerstone Requirement:** The setting `autoclass_content = "both"` is **essential**. It is the only configuration that correctly merges the `__init__` method's parameters into the main class docstring.
+-   **The Conflict:** When `autoclass_content = "both"` is active, Sphinx decides to join the class docstring and the `__init__` docstring, placing a "transition" marker (an RST horizontal rule) between them.
+-   **The Cause of the Warning:** To prevent a redundant `__init__` block from appearing in the final HTML, an `autodoc-skip-member` hook is used in `conf.py` to hide the `__init__` method. This hook acts *too early* in the build process. It yanks the `__init__` method away *after* Sphinx has already decided to add the transition marker, but *before* the `__init__` content is appended. This leaves the transition marker stranded at the end of the document, triggering the `docutils` warning.
+-   **Conclusion:** The warnings are a known, benign artifact of a configuration that correctly produces the desired HTML. Do not attempt to "fix" them by removing the `autodoc-skip-member` hook or changing `autoclass_content`, as this will break the visual output of the documentation.
+
 ### Notebook errors:
+
+```
