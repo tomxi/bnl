@@ -36,6 +36,7 @@ wheel = "*"
 [pypi-dependencies]
 jams = "*"
 streamlit-plotly-events = "*"
+autoclasstoc = "*"
 
 [feature.docs.dependencies]
 # Documentation dependencies

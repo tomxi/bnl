@@ -9,15 +9,6 @@ Core
 .. autosummary::
    :toctree: generated
 
-   Boundary
-   RatedBoundary
-   LeveledBoundary
-   TimeSpan
-   Segment
-   MultiSegment
-   BoundaryContour
-   BoundaryHierarchy
-
 Operations
 ----------
 
@@ -25,10 +16,6 @@ Operations
 
 .. autosummary::
    :toctree: generated
-
-   boundary_salience
-   clean_boundaries
-   level_by_distinct_salience
 
 Data
 ----
@@ -38,9 +25,6 @@ Data
 .. autosummary::
    :toctree: generated
 
-   Dataset
-   Track
-
 Visualization
 -------------
 
@@ -49,11 +33,8 @@ Visualization
 .. autosummary::
    :toctree: generated
 
-   create_style_map
-   plot_boundary_contour
-   plot_multisegment
-   plot_segment
-   plot_timespan
-
 .. automodule:: bnl.viz_plotly
+
+.. autosummary::
+   :toctree: generated
  

@@ -1,9 +1,9 @@
-{{ fullname | escape | underline }}
+{{ fullname | escape | underline}}
 
-.. currentmodule:: {{ module }}
-
-.. autoclass:: {{ objname }}
+.. autoclass:: {{ fullname }}
+   :show-inheritance:
    :members:
    :undoc-members:
-   :show-inheritance:
-   :exclude-members: __init__ 
+   :inherited-members:
+
+   .. autoclasstoc:: 

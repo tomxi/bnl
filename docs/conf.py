@@ -25,6 +25,7 @@ extensions = [
     "sphinx.ext.autosummary",
     "sphinx_copybutton",
     "myst_parser",
+    "autoclasstoc",
 ]
 
 
@@ -47,7 +48,7 @@ napoleon_use_admonition_for_examples = False
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 autodoc_typehints_format = "short"
-autoclass_content = "both"
+autoclass_content = "class"
 
 # Enable autosummary to generate stub pages for each documented item.
 autosummary_generate = True
@@ -68,7 +69,3 @@ html_theme_options = {
 html_context = {
     "display_github": True,
 }
-
-
-def setup(app):
-    pass
