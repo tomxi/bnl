@@ -46,7 +46,7 @@ napoleon_use_admonition_for_examples = False
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 autodoc_typehints_format = "short"
-autoclass_content = "class"
+autoclass_content = "both"
 
 # Enable autosummary to generate stub pages for each documented item.
 autosummary_generate = True
@@ -67,3 +67,20 @@ html_theme_options = {
 html_context = {
     "display_github": True,
 }
+
+
+# -- autoclasstoc configuration ----------------------------------------------
+def autodoc_skip_member(app, what, name, obj, skip, options):
+    """
+    Prevents __init__ from being documented.
+    """
+    if name == "__init__":
+        return True
+    return skip
+
+
+def setup(app):
+    """
+    Connects the custom skip function to the `autodoc-skip-member` event.
+    """
+    app.connect("autodoc-skip-member", autodoc_skip_member)
