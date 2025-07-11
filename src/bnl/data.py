@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+__all__ = [
+    "Track",
+    "Dataset",
+]
+
 import io
 import json
 from collections.abc import Iterator

@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+__all__ = [
+    "create_style_map",
+    "plot_timespan",
+    "plot_segment",
+    "plot_multisegment",
+    "plot_boundary_contour",
+]
+
 from typing import TYPE_CHECKING, Any
 
 import matplotlib.pyplot as plt
@@ -16,20 +24,14 @@ def create_style_map(
     labels: set[str],
     colormap: str = "tab20b",
 ) -> dict[str, dict[str, Any]]:
-    """
-    Creates a default, consistent color map for all labels.
+    """Creates a default, consistent color map for all labels.
 
-    Parameters
-    ----------
-    labels : set[str]
-        A set of unique label names.
-    colormap : str, optional
-        The matplotlib colormap to use, by default "tab20b".
+    Args:
+        labels (set[str]): A set of unique label names.
+        colormap (str, optional): The matplotlib colormap to use, by default "tab20b".
 
-    Returns
-    -------
-    dict[str, dict[str, Any]]
-        A dictionary mapping each label to its style properties.
+    Returns:
+        dict[str, dict[str, Any]]: A dictionary mapping each label to its style properties.
     """
     unique_labels = sorted(list(labels))
     cmap = plt.get_cmap(colormap)

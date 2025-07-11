@@ -112,7 +112,7 @@ test-cov-html = "pip install -e . && pytest --cov=bnl --cov-report=html"
 types = "mypy src/ --ignore-missing-imports"
 
 # Clean build artifacts and cache  
-clean = "cd \"$(git rev-parse --show-toplevel)\" && rm -rf build/ htmlcov/ dist/ docs/_build/ .pytest_cache/ .coverage .mypy_cache/ && find . -name '*.egg-info' -type d -delete && find . -name '__pycache__' -type d -delete || true"
+clean = "rm -rf build/ htmlcov/ dist/ .pytest_cache/ .coverage .mypy_cache/ 'src/bnl.egg-info' && find . -name '__pycache__' -type d -exec rm -rf {} + && pixi run docs-clean"
 
 # ===================================================================
 # Application & Data Tasks
@@ -134,10 +134,10 @@ build-cloud-manifest = "python scripts/build_cloud_manifest.py"
 # ===================================================================
 
 # Build documentation (output to docs/_build/html)
-docs-build = "sphinx-build -b html docs docs/_build/html"
+docs-build = "pixi run docs-clean && sphinx-build -b html docs docs/_build/html"
 
 # Serve docs with live reload for development
 docs-serve = "sphinx-autobuild docs docs/_build/html --host 127.0.0.1"
 
 # Clean documentation build artifacts
-docs-clean = "rm -rf docs/_build"
+docs-clean = "rm -rf docs/_build docs/api/generated"

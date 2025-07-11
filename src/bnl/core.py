@@ -2,6 +2,17 @@
 
 from __future__ import annotations
 
+__all__ = [
+    "Boundary",
+    "RatedBoundary",
+    "LeveledBoundary",
+    "TimeSpan",
+    "Segment",
+    "MultiSegment",
+    "BoundaryContour",
+    "BoundaryHierarchy",
+]
+
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
@@ -52,15 +63,11 @@ class LeveledBoundary(RatedBoundary):
     level: int
 
     def __init__(self, time: float, level: int):
-        """
-        Initializes a LeveledBoundary, deriving salience from level.
+        """Initializes a LeveledBoundary, deriving salience from level.
 
-        Parameters
-        ----------
-        time : float
-            The time of the boundary in seconds.
-        level : int
-            The discrete hierarchical level of the boundary. Must be a positive integer.
+        Args:
+            time (float): The time of the boundary in seconds.
+            level (int): The discrete hierarchical level of the boundary. Must be a positive integer.
         """
         if not isinstance(level, int) or level <= 0:
             raise ValueError("`level` must be a positive integer.")
@@ -119,14 +126,15 @@ class TimeSpan:
         return viz.plot_timespan(self, ax=ax, **kwargs)
 
     def plot_plotly(self, fig=None, **kwargs: Any):
-        """
-        Plots the time span on a Plotly figure.
+        """Plots the time span on a Plotly figure.
 
         A wrapper around `bnl.viz_plotly.plot_timespan`.
 
-        Returns
-        -------
-        Figure
+        Args:
+            fig: Optional Plotly Figure to add to.
+            **kwargs: Additional keyword arguments to pass to the plotting function.
+
+        Returns:
             A Plotly Figure object with the timespan visualization.
         """
         from . import viz_plotly
@@ -135,25 +143,20 @@ class TimeSpan:
 
 
 class Segment(TimeSpan):
-    """
-    An ordered sequence of boundaries that partition a span into labeled sections.
-    Represents one layer of annotation.
+    """An ordered sequence of boundaries that partition a span into labeled sections.
+
+    Represents one layer of annotation. While it inherits from `TimeSpan`,
+    its `start` and `end` attributes are automatically derived from the provided
+    `boundaries`.
     """
 
     def __init__(self, boundaries: Sequence[Boundary], labels: Sequence[str], name: str = "Segment"):
-        """
-        Initializes the Segment.
+        """Initializes the Segment.
 
-        The `start` and `end` attributes are automatically derived from the `boundaries` list.
-
-        Parameters
-        ----------
-        boundaries : Sequence[Boundary]
-            A list of at least two boundaries, sorted by time.
-        labels : Sequence[str]
-            A list of labels for the sections. Must be `len(boundaries) - 1`.
-        name : str, optional
-            Name of the segment. Defaults to "Segment".
+        Args:
+            boundaries (Sequence[Boundary]): A list of at least two boundaries, sorted by time.
+            labels (Sequence[str]): A list of labels for the sections. Must be `len(boundaries) - 1`.
+            name (str, optional): Name of the segment. Defaults to "Segment".
         """
         if not boundaries or len(boundaries) < 2:
             raise ValueError("A Segment requires at least two boundaries.")
@@ -209,14 +212,15 @@ class Segment(TimeSpan):
         return viz.plot_segment(self, ax=ax, **kwargs)
 
     def plot_plotly(self, fig=None, **kwargs: Any):
-        """
-        Plots the segment on a Plotly figure.
+        """Plots the segment on a Plotly figure.
 
         A wrapper around `bnl.viz_plotly.plot_segment`.
 
-        Returns
-        -------
-        Figure
+        Args:
+            fig: Optional Plotly Figure to add to.
+            **kwargs: Additional keyword arguments to pass to the plotting function.
+
+        Returns:
             A Plotly Figure object with the segment visualization.
         """
         from . import viz_plotly
@@ -230,17 +234,13 @@ class MultiSegment(TimeSpan):
     """
 
     def __init__(self, layers: Sequence[Segment], name: str = "Hierarchical Segmentation"):
-        """
-        Initializes the MultiSegment.
+        """Initializes the MultiSegment.
 
         The `start` and `end` attributes are automatically derived from the first layer.
 
-        Parameters
-        ----------
-        layers : list[Segment]
-            A list of Segment layers. All layers must have the same start and end times.
-        name : str, optional
-            Name of the object. Defaults to "Hierarchical Segmentation".
+        Args:
+            layers (list[Segment]): A list of Segment layers. All layers must have the same start and end times.
+            name (str, optional): Name of the object. Defaults to "Hierarchical Segmentation".
         """
         if len(layers) <= 0:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
@@ -270,9 +270,17 @@ class MultiSegment(TimeSpan):
 
     @classmethod
     def from_json(cls, json_data: list, name: str = "JSON Annotation") -> MultiSegment:
-        """
-        Data Ingestion from adobe json format, list[layers].
-        each layer is [itvls, labels], itvls is list[[start_time, end_time]], labels is list[str]
+        """Data Ingestion from adobe json format.
+
+        Args:
+            json_data (list): A list of layers, where each layer is a tuple of
+                (intervals, labels). `intervals` is a list of [start, end] times,
+                and `labels` is a list of strings.
+            name (str, optional): Name for the created MultiSegment.
+                Defaults to "JSON Annotation".
+
+        Returns:
+            MultiSegment: A new MultiSegment instance.
         """
         layers = []
         for i, layer in enumerate(json_data, start=1):
@@ -291,14 +299,15 @@ class MultiSegment(TimeSpan):
         return viz.plot_multisegment(self, ax=ax, **kwargs)
 
     def plot_plotly(self, fig=None, **kwargs: Any):
-        """
-        Plots the MultiSegment on a Plotly figure.
+        """Plots the MultiSegment on a Plotly figure.
 
         A wrapper around `bnl.viz_plotly.plot_multisegment`.
 
-        Returns
-        -------
-        Figure
+        Args:
+            fig: Optional Plotly Figure to add to.
+            **kwargs: Additional keyword arguments to pass to the plotting function.
+
+        Returns:
             A Plotly Figure object with the multi-segment visualization.
         """
         from . import viz_plotly
@@ -306,21 +315,16 @@ class MultiSegment(TimeSpan):
         return viz_plotly.plot_multisegment(self, fig=fig, **kwargs)
 
     def to_contour(self, strategy: str = "depth") -> BoundaryContour:
-        """
-        Calculates boundary salience and converts to a BoundaryContour.
+        """Calculates boundary salience and converts to a BoundaryContour.
 
         This is a convenience wrapper around `bnl.ops.boundary_salience`.
 
-        Parameters
-        ----------
-        strategy : {'depth', 'count', 'prob'}, default 'depth'
-            The salience calculation strategy to use. See `bnl.ops.boundary_salience`
-            for more details.
+        Args:
+            strategy (str, optional): The salience calculation strategy.
+                See `bnl.ops.boundary_salience` for details. Defaults to 'depth'.
 
-        Returns
-        -------
-        BoundaryContour
-            The resulting boundary structure.
+        Returns:
+            BoundaryContour: The resulting boundary structure.
         """
         from . import ops  # Local import to avoid circular dependency at runtime
 
@@ -328,13 +332,17 @@ class MultiSegment(TimeSpan):
 
     @staticmethod
     def align_layers(layers: Sequence[Segment]) -> Sequence[Segment]:
-        """
-        Adjusts a list of Segment layers to have a common start and end time.
+        """Adjusts a list of Segment layers to have a common start and end time.
 
         This is achieved by finding the earliest start time and latest end time
         among all layers, and then extending each layer to this common span.
         The first and last sections of each layer are stretched to cover the new span.
-        This method returns a new list of aligned Segment objects.
+
+        Args:
+            layers (Sequence[Segment]): The list of Segment layers to align.
+
+        Returns:
+            Sequence[Segment]: A new list of aligned Segment objects.
         """
         if not layers:
             return []
@@ -359,17 +367,14 @@ class BoundaryContour(TimeSpan):
     """
 
     def __init__(self, name: str, boundaries: Sequence[RatedBoundary]):
-        """
-        Initializes the BoundaryContour.
+        """Initializes the BoundaryContour.
 
         The `start` and `end` attributes are automatically derived from the `boundaries` list.
 
-        Parameters
-        ----------
-        name : str
-            Name of the contour.
-        boundaries : Sequence[RatedBoundary]
-            A list of rated boundaries. They will be sorted by time upon initialization.
+        Args:
+            name (str): Name of the contour.
+            boundaries (Sequence[RatedBoundary]): A list of rated boundaries.
+                They will be sorted by time upon initialization.
         """
         if len(boundaries) < 2:
             raise ValueError("At least 2 boundaries for a TimeSpan!")
@@ -393,14 +398,15 @@ class BoundaryContour(TimeSpan):
         return viz.plot_boundary_contour(self, ax=ax, **kwargs)
 
     def plot_plotly(self, fig=None, **kwargs: Any):
-        """
-        Plots the BoundaryContour on a Plotly figure.
+        """Plots the BoundaryContour on a Plotly figure.
 
         A wrapper around `bnl.viz_plotly.plot_boundary_contour`.
 
-        Returns
-        -------
-        Figure
+        Args:
+            fig: Optional Plotly Figure to add to.
+            **kwargs: Additional keyword arguments to pass to the plotting function.
+
+        Returns:
             A Plotly Figure object with the boundary contour visualization.
         """
         from . import viz_plotly
@@ -408,23 +414,17 @@ class BoundaryContour(TimeSpan):
         return viz_plotly.plot_boundary_contour(self, fig=fig, **kwargs)
 
     def clean(self, strategy: str = "absorb", **kwargs: Any) -> BoundaryContour:
-        """
-        Cleans up the boundary contour using a specified strategy.
+        """Cleans up the boundary contour using a specified strategy.
 
         This is a convenience wrapper around `bnl.ops.clean_boundaries`.
 
-        Parameters
-        ----------
-        strategy : {'absorb', 'kde'}, default 'absorb'
-            The cleaning strategy to use. See `bnl.ops.clean_boundaries`
-            for more details and strategy-specific parameters.
-        **kwargs
-            Additional keyword arguments to pass to the strategy (e.g., `window`).
+        Args:
+            strategy (str): The cleaning strategy to use. See `bnl.ops.clean_boundaries`
+                for details. Defaults to 'absorb'.
+            **kwargs: Additional keyword arguments to pass to the strategy (e.g., `window`).
 
-        Returns
-        -------
-        BoundaryContour
-            A new, cleaned BoundaryContour.
+        Returns:
+            BoundaryContour: A new, cleaned BoundaryContour.
         """
         from . import ops
 
@@ -448,17 +448,14 @@ class BoundaryHierarchy(BoundaryContour):
     boundaries: Sequence[LeveledBoundary]
 
     def __init__(self, name: str, boundaries: Sequence[LeveledBoundary]):
-        """
-        Initializes the BoundaryHierarchy.
+        """Initializes the BoundaryHierarchy.
 
         The `start` and `end` attributes are automatically derived from the `boundaries` list.
 
-        Parameters
-        ----------
-        name : str
-            Name of the hierarchy.
-        boundaries : Sequence[LeveledBoundary]
-            A list of leveled boundaries. They will be sorted by time upon initialization.
+        Args:
+            name (str): Name of the hierarchy.
+            boundaries (Sequence[LeveledBoundary]): A list of leveled boundaries.
+                They will be sorted by time upon initialization.
         """
         # Validate that all boundaries are LeveledBoundary instances
         for boundary in boundaries:
@@ -472,11 +469,13 @@ class BoundaryHierarchy(BoundaryContour):
         return self.boundaries[key]
 
     def to_multisegment(self) -> MultiSegment:
-        """
-        Convert the BoundaryHierarchy to a MultiSegment.
+        """Convert the BoundaryHierarchy to a MultiSegment.
 
-        The MultiSegment will have layers from coarsest (highest level) to finest (lowest level).
-        Empty strings for all labels.
+        The MultiSegment will have layers from coarsest (highest level) to
+        finest (lowest level), with empty strings for all labels.
+
+        Returns:
+            MultiSegment: The resulting MultiSegment object.
         """
         layers = []
         max_level = max(b.level for b in self.boundaries)

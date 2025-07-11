@@ -23,37 +23,35 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.mathjax",
     "sphinx.ext.autosummary",
-    "numpydoc",
     "sphinx_copybutton",
     "myst_parser",
 ]
 
 
 # Napoleon settings
-napoleon_google_docstring = False
-napoleon_numpy_docstring = True
-napoleon_include_init_with_doc = False
+napoleon_google_docstring = True
+napoleon_numpy_docstring = False
+napoleon_include_init_with_doc = True
 napoleon_include_private_with_doc = False
 napoleon_include_special_with_doc = True
 napoleon_use_admonition_for_examples = False
-napoleon_use_admonition_for_notes = False
-napoleon_use_admonition_for_references = False
-napoleon_use_ivar = False
-napoleon_use_param = True
-napoleon_use_rtype = True
+# napoleon_use_admonition_for_notes = False
+# napoleon_use_admonition_for_references = False
+# napoleon_use_ivar = False
+# napoleon_use_param = True
+# napoleon_use_rtype = True
 
-# Numpydoc settings
-numpydoc_show_class_members = False
-numpydoc_class_members_toctree = False
+# Numpydoc settings is not needed since we are using napoleon for google style
 
 # Autodoc settings
-autodoc_default_options = {
-    "members": True,
-    "inherited-members": True,
-    "show-inheritance": True,
-}
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
+autodoc_typehints_format = "short"
+autoclass_content = "both"
+
+# Enable autosummary to generate stub pages for each documented item.
+autosummary_generate = True
+autosummary_ignore_module_all = False
 
 # Templates
 templates_path = ["_templates"]
@@ -64,9 +62,13 @@ html_theme = "sphinx_rtd_theme"
 html_theme_options = {
     "navigation_depth": 4,
     "collapse_navigation": False,
+    "sticky_navigation": True,
 }
-
 # Custom navigation links
 html_context = {
     "display_github": True,
 }
+
+
+def setup(app):
+    pass

@@ -8,6 +8,12 @@ either directly or through the fluent API provided by the `bnl.core` classes.
 
 from __future__ import annotations
 
+__all__ = [
+    "boundary_salience",
+    "clean_boundaries",
+    "level_by_distinct_salience",
+]
+
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
 from collections.abc import Callable
@@ -24,23 +30,17 @@ from .core import BoundaryContour, BoundaryHierarchy, LeveledBoundary, MultiSegm
 
 
 def boundary_salience(ms: MultiSegment, strategy: str = "depth") -> BoundaryContour:
-    """
-    runs boundary salience from a MultiSegment using a specified strategy.
+    """Runs boundary salience from a MultiSegment using a specified strategy.
 
-    Parameters
-    ----------
-    ms : MultiSegment
-        The input multi-segment structure.
-    strategy : {'depth', 'count', 'prob'}, default 'depth'
-        The salience calculation strategy:
-        - 'depth': Salience based on the coarsest layer (returns BoundaryHierarchy).
-        - 'count': Salience based on frequency (returns BoundaryHierarchy).
-        - 'prob': Salience weighted by layer density (returns BoundaryContour).
+    Args:
+        ms (MultiSegment): The input multi-segment structure.
+        strategy (str, optional): The salience calculation strategy. Defaults to "depth".
+            - 'depth': Salience based on the coarsest layer (returns BoundaryHierarchy).
+            - 'count': Salience based on frequency (returns BoundaryHierarchy).
+            - 'prob': Salience weighted by layer density (returns BoundaryContour).
 
-    Returns
-    -------
-    BoundaryContour
-        The resulting boundary structure. Can be a BoundaryHierarchy if the
+    Returns:
+        BoundaryContour: The resulting boundary structure. Can be a BoundaryHierarchy if the
         strategy directly produces leveled boundaries.
     """
     if strategy not in _SalienceStrategy._registry:

@@ -1,5 +1,4 @@
 {
-    "autoDocstring.docstringFormat": "numpy",
     "[python]": {
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true
@@ -9,9 +8,10 @@
         "**/*.egg-info": true,
         "**/.pytest_cache": true
     },
-    "python.experiments.optInto": ["pythonTestAdapter"],
+    // Testing configuration
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    // REPL behavior - disabled smart send for cleaner execution
     "python.REPL.enableREPLSmartSend": false
 }

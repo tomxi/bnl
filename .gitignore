@@ -23,9 +23,8 @@ coverage.xml
 # .vscode/
 
 # Documentation
-docs/_*/
-docs/**/_generated_*/
-docs/build/
+docs/_build/
+docs/api/generated/
 site/
 
 # Pixi

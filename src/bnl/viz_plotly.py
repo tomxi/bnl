@@ -136,25 +136,22 @@ def plot_multisegment(
     colorscale: str = "D3",
     hatch: bool = True,
 ) -> Figure:
-    """
-    Plots all layers of the MultiSegment with interactive features.
+    """Plots all layers of the MultiSegment with interactive features.
 
-    Parameters
-    ----------
-    ms : MultiSegment
-        The MultiSegment to plot.
-    fig : Figure, optional
-        Existing Plotly figure to add to. If None, creates a new figure.
-    figsize : tuple, optional
-        Figure size (width, height) in pixels.
-    colorscale : str, default "Plotly"
-        Plotly colorscale to use. Can be a qualitative scale name (e.g., "Set3", "Pastel")
-        or a continuous scale to be sampled (e.g., "Viridis").
+    Args:
+        ms (MultiSegment): The MultiSegment to plot.
+        fig (Figure, optional): Existing Plotly figure to add to. If None,
+            creates a new figure. Defaults to None.
+        figsize (tuple[float, float], optional): Figure size (width, height) in pixels.
+            Defaults to None.
+        colorscale (str, optional): Plotly colorscale to use. Can be a
+            qualitative scale name (e.g., "Set3", "Pastel") or a continuous
+            scale to be sampled (e.g., "Viridis"). Defaults to "D3".
+        hatch (bool, optional): Whether to use hatch patterns for different
+            labels. Defaults to True.
 
-    Returns
-    -------
-    Figure
-        The Plotly figure with the MultiSegment.
+    Returns:
+        Figure: The Plotly figure with the MultiSegment.
     """
     if fig is None:
         width, height = figsize or (800, len(ms.layers) * 25 + 200)
@@ -216,28 +213,20 @@ def plot_boundary_contour(
     line_color: str = "black",
     **kwargs: Any,
 ) -> Figure:
-    """
-    Plots a BoundaryContour with interactive hover information.
+    """Plots a BoundaryContour with interactive hover information.
 
-    Parameters
-    ----------
-    bc : BoundaryContour
-        The BoundaryContour to plot.
-    fig : Figure, optional
-        Existing Plotly figure to add to. If None, creates a new figure.
-    figsize : tuple, optional
-        Figure size (width, height) in pixels.
-    marker_size : int, default 8
-        Size of boundary markers.
-    line_color : str, default "black"
-        Color of the boundary lines.
-    **kwargs
-        Additional keyword arguments.
+    Args:
+        bc (BoundaryContour): The BoundaryContour to plot.
+        fig (Figure, optional): Existing Plotly figure to add to. If None,
+            creates a new figure. Defaults to None.
+        figsize (tuple[float, float], optional): Figure size (width, height) in pixels.
+            Defaults to None.
+        marker_size (int, optional): Size of boundary markers. Defaults to 8.
+        line_color (str, optional): Color of the boundary lines. Defaults to "black".
+        **kwargs: Additional keyword arguments.
 
-    Returns
-    -------
-    Figure
-        The Plotly figure with the BoundaryContour.
+    Returns:
+        Figure: The Plotly figure with the BoundaryContour.
     """
     if fig is None:
         width, height = figsize or (800, 400)
