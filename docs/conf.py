@@ -42,8 +42,6 @@ napoleon_use_admonition_for_examples = False
 # napoleon_use_param = True
 # napoleon_use_rtype = True
 
-# Numpydoc settings is not needed since we are using napoleon for google style
-
 # Autodoc settings
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"

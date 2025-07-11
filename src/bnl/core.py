@@ -53,21 +53,25 @@ class RatedBoundary(Boundary):
 
 @dataclass(frozen=True, order=True, init=False)
 class LeveledBoundary(RatedBoundary):
-    """
-    A boundary that exists in a monotonic hierarchy, that exists in the first `level` layers.
+    """A boundary that exists in a monotonic hierarchy.
 
-    The `level` must be a positive integer, and the `salience` attribute
-    is automatically set to be equal to the `level`.
+    This object represents a boundary that has been assigned a discrete
+    hierarchical level. The `salience` attribute is automatically set
+    to be equal to the `level`.
     """
 
+    #: The discrete hierarchical level of the boundary.
     level: int
 
     def __init__(self, time: float, level: int):
-        """Initializes a LeveledBoundary, deriving salience from level.
-
+        """
         Args:
             time (float): The time of the boundary in seconds.
-            level (int): The discrete hierarchical level of the boundary. Must be a positive integer.
+            level (int): The discrete hierarchical level of the boundary.
+                         Must be a positive integer.
+
+        Raises:
+            ValueError: If `level` is not a positive integer.
         """
         if not isinstance(level, int) or level <= 0:
             raise ValueError("`level` must be a positive integer.")

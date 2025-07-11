@@ -1,9 +1,10 @@
 {{ fullname | escape | underline}}
 
 .. autoclass:: {{ fullname }}
-   :show-inheritance:
    :members:
    :undoc-members:
    :inherited-members:
+   :show-inheritance:
+   :exclude-members: __init__
 
    .. autoclasstoc:: 
