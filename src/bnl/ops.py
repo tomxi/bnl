@@ -43,21 +43,21 @@ def boundary_salience(ms: MultiSegment, strategy: str = "depth") -> BoundaryCont
         BoundaryContour: The resulting boundary structure. Can be a BoundaryHierarchy if the
         strategy directly produces leveled boundaries.
     """
-    if strategy not in _SalienceStrategy._registry:
+    if strategy not in SalienceStrategy._registry:
         raise ValueError(f"Unknown salience strategy: {strategy}")
-    return _SalienceStrategy._registry[strategy](ms)
+    return SalienceStrategy._registry[strategy](ms)
 
 
-class _SalienceStrategy(ABC):
+class SalienceStrategy(ABC):
     """Abstract base class for salience calculation strategies."""
 
-    _registry: dict[str, _SalienceStrategy] = {}
+    _registry: dict[str, SalienceStrategy] = {}
 
     @classmethod
-    def register(cls, name: str) -> Callable[[type[_SalienceStrategy]], type[_SalienceStrategy]]:
+    def register(cls, name: str) -> Callable[[type[SalienceStrategy]], type[SalienceStrategy]]:
         """Registers a strategy in a central registry."""
 
-        def decorator(strategy_cls: type[_SalienceStrategy]) -> type[_SalienceStrategy]:
+        def decorator(strategy_cls: type[SalienceStrategy]) -> type[SalienceStrategy]:
             cls._registry[name] = strategy_cls()
             return strategy_cls
 
@@ -68,8 +68,8 @@ class _SalienceStrategy(ABC):
         raise NotImplementedError
 
 
-@_SalienceStrategy.register("count")
-class _SalByCount(_SalienceStrategy):
+@SalienceStrategy.register("count")
+class _SalByCount(SalienceStrategy):
     """Salience based on frequency of occurrence."""
 
     def __call__(self, ms: MultiSegment) -> BoundaryHierarchy:
@@ -80,12 +80,12 @@ class _SalByCount(_SalienceStrategy):
         time_counts: Counter[float] = Counter(b.time for layer in ms.layers for b in layer.boundaries)
         return BoundaryHierarchy(
             boundaries=[LeveledBoundary(time=time, level=count) for time, count in time_counts.items()],
-            name=ms.name,
+            name=ms.name or "Salience Hierarchy",
         )
 
 
-@_SalienceStrategy.register("depth")
-class _SalByDepth(_SalienceStrategy):
+@SalienceStrategy.register("depth")
+class _SalByDepth(SalienceStrategy):
     """Salience based on the coarsest layer of appearance."""
 
     def __call__(self, ms: MultiSegment) -> BoundaryHierarchy:
@@ -99,11 +99,11 @@ class _SalByDepth(_SalienceStrategy):
         for salience, layer in enumerate(reversed(ms.layers), start=1):
             for boundary in layer.boundaries:
                 boundary_map[boundary.time] = LeveledBoundary(time=boundary.time, level=salience)
-        return BoundaryHierarchy(boundaries=list(boundary_map.values()), name=ms.name)
+        return BoundaryHierarchy(boundaries=list(boundary_map.values()), name=ms.name or "Salience Hierarchy")
 
 
-@_SalienceStrategy.register("prob")
-class _SalByProb(_SalienceStrategy):
+@SalienceStrategy.register("prob")
+class _SalByProb(SalienceStrategy):
     """Salience weighted by layer density."""
 
     def __call__(self, ms: MultiSegment) -> BoundaryContour:
@@ -119,26 +119,38 @@ class _SalByProb(_SalienceStrategy):
                 for boundary in layer.boundaries:
                     time_saliences[boundary.time] += weight
         return BoundaryContour(
-            name=ms.name,
+            name=ms.name or "Salience Contour",
             boundaries=[RatedBoundary(t, s) for t, s in time_saliences.items()],
         )
 
 
 # endregion: Different Notions of Boundary Salience
 
+
 # region: Two ways to clean up boundaries closeby in time
+def clean_boundaries(bc: BoundaryContour, strategy: str = "absorb", **kwargs: Any) -> BoundaryContour:
+    """
+    Clean up boundaries by removing boundaries that are closeby in time.
+    """
+    if strategy not in CleanStrategy._registry:
+        raise ValueError(f"Unknown boundary cleaning strategy: {strategy}")
+
+    # Retrieve the class from the registry and instantiate it with the provided arguments.
+    strategy_class = CleanStrategy._registry[strategy]
+    strategy_instance = strategy_class(**kwargs)
+    return strategy_instance(bc)
 
 
-class _CleanStrategy(ABC):
+class CleanStrategy(ABC):
     """Abstract base class for boundary cleaning strategies."""
 
-    _registry: dict[str, type[_CleanStrategy]] = {}
+    _registry: dict[str, type[CleanStrategy]] = {}
 
     @classmethod
-    def register(cls, name: str) -> Callable[[type[_CleanStrategy]], type[_CleanStrategy]]:
+    def register(cls, name: str) -> Callable[[type[CleanStrategy]], type[CleanStrategy]]:
         """A class method to register strategies in a central registry."""
 
-        def decorator(strategy_cls: type[_CleanStrategy]) -> type[_CleanStrategy]:
+        def decorator(strategy_cls: type[CleanStrategy]) -> type[CleanStrategy]:
             cls._registry[name] = strategy_cls
             return strategy_cls
 
@@ -150,8 +162,8 @@ class _CleanStrategy(ABC):
         raise NotImplementedError
 
 
-@_CleanStrategy.register("absorb")
-class _CleanByAbsorb(_CleanStrategy):
+@CleanStrategy.register("absorb")
+class _CleanByAbsorb(CleanStrategy):
     """Clean boundaries by absorbing less salient ones within a window."""
 
     def __init__(self, window: float = 1.0) -> None:
@@ -173,44 +185,47 @@ class _CleanByAbsorb(_CleanStrategy):
                 kept_boundaries.append(new_b)
 
         boundaries = [RatedBoundary(b.time, b.salience) for b in sorted(kept_boundaries)]
-        return BoundaryContour(name=bc.name, boundaries=boundaries)
+        return BoundaryContour(name=bc.name or "Cleaned Contour", boundaries=boundaries)
 
 
-@_CleanStrategy.register("kde")
-class _CleanByKDE(_CleanStrategy):
+@CleanStrategy.register("kde")
+class _CleanByKDE(CleanStrategy):
     """Clean boundaries by finding peaks in a weighted kernel density estimate."""
 
-    def __init__(self, bandwidth: float = 1.0, frame_size: float = 0.1):
-        self.kde = KernelDensity(kernel="gaussian", bandwidth=bandwidth)
-        self.frame_size = frame_size
+    def __init__(
+        self,
+        time_bw: float = 1.0,
+    ):
+        self.time_kde = KernelDensity(kernel="gaussian", bandwidth=time_bw)
+        self._ticks: np.ndarray | None = None
 
-    def _build_time_grid(self, span: TimeSpan) -> np.ndarray:
+    def _build_time_grid(self, span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
         """
         Build a grid of times using the same logic as mir_eval to build the ticks
         """
-        # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
-        n_frames = int(
-            (_round(span.end.time, self.frame_size) - _round(span.start.time, self.frame_size)) / self.frame_size
-        )
-        return np.arange(n_frames + 1) * self.frame_size + span.start.time
+        if self._ticks is None:
+            # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
+            n_frames = int((_round(span.end.time, frame_size) - _round(span.start.time, frame_size)) / frame_size)
+            self._ticks = np.arange(n_frames + 1) * frame_size + span.start.time
+        return self._ticks
 
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
-        if len(bc.boundaries) < 4:
+        if len(bc.boundaries) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
             return bc
 
         inner_boundaries = bc.boundaries[1:-1]
-        times = np.array([b.time for b in inner_boundaries]).reshape(-1, 1)
+        times = np.array([b.time for b in inner_boundaries])
         saliences = np.array([b.salience for b in inner_boundaries])
 
-        self.kde.fit(times, sample_weight=saliences)
+        self.time_kde.fit(times.reshape(-1, 1), sample_weight=saliences)
 
-        grid_times = self._build_time_grid(bc)
-        density = np.exp(self.kde.score_samples(grid_times.reshape(-1, 1)))
+        grid_times = self._build_time_grid(bc, frame_size=0.1)
+        log_density = self.time_kde.score_samples(grid_times.reshape(-1, 1))
 
-        peak_indices = localmax(density)
+        peak_indices = localmax(log_density)
         peak_times = grid_times.flatten()[peak_indices]
-        peak_saliences = np.exp(self.kde.score_samples(peak_times.reshape(-1, 1)))
-        max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 0
+        peak_saliences = np.exp(log_density[peak_indices])
+        max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 1
 
         new_inner_boundaries = [RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)]
         final_boundaries = [
@@ -218,18 +233,7 @@ class _CleanByKDE(_CleanStrategy):
             *new_inner_boundaries,
             RatedBoundary(bc.end.time, max_salience),
         ]
-        return BoundaryContour(name=bc.name, boundaries=final_boundaries)
-
-
-def clean_boundaries(bc: BoundaryContour, strategy: str = "absorb", **kwargs: Any) -> BoundaryContour:
-    """
-    Clean up boundaries by removing boundaries that are closeby in time.
-    """
-    if strategy not in _CleanStrategy._registry:
-        raise ValueError(f"Unknown boundary cleaning strategy: {strategy}")
-
-    strategy_instance = _CleanStrategy._registry[strategy](**kwargs)
-    return strategy_instance(bc)
+        return BoundaryContour(name=bc.name or "Cleaned Contour", boundaries=final_boundaries)
 
 
 # endregion: Two ways to clean up boundaries closeby in time
@@ -255,7 +259,7 @@ def level_by_distinct_salience(bc: BoundaryContour) -> BoundaryHierarchy:
         LeveledBoundary(time=bc.boundaries[-1].time, level=max_level),
     ]
 
-    return BoundaryHierarchy(boundaries=leveled_boundaries, name=bc.name)
+    return BoundaryHierarchy(boundaries=leveled_boundaries, name=bc.name or "Distinct Salience Hierarchy")
 
 
 # endregion: Stratification into levels

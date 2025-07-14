@@ -93,9 +93,17 @@ ignore_missing_imports = true
 disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
+addopts = [
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+]
 markers = [
     "remote_data: marks tests as requiring remote data access (deselect with '-m \"not remote_data\"')",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:jsonschema.*",
 ]
+
+[tool.coverage.run]
+source = ["src"]

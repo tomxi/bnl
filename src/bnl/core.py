@@ -18,6 +18,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import jams
+import plotly.graph_objects as go
 from matplotlib.axes import Axes
 
 # region: Point-like Objects
@@ -103,11 +104,13 @@ class TimeSpan:
 
     start: Boundary
     end: Boundary
-    name: str = ""
+    name: str | None = None
 
     def __post_init__(self) -> None:
         if self.end.time <= self.start.time:
             raise ValueError("TimeSpan must have a non-zero, positive duration.")
+        if self.name is None:
+            self.name = f"[{self.start.time:.2f}-{self.end.time:.2f}]"
 
     @property
     def duration(self) -> float:
@@ -117,7 +120,8 @@ class TimeSpan:
         return f"TS({self.start}-{self.end}, {self.name})"
 
     def __str__(self) -> str:
-        return self.name if self.name != "" else f"[{self.start.time:.2f}-{self.end.time:.2f}]"
+        assert self.name is not None
+        return self.name
 
     def plot(self, ax: Axes, **kwargs: Any) -> Axes:
         """
@@ -125,25 +129,9 @@ class TimeSpan:
 
         This is a wrapper around :func:`~bnl.viz.plot_timespan`.
         """
-        from . import viz
+        from .viz import plot_timespan  # type: ignore
 
-        return viz.plot_timespan(self, ax=ax, **kwargs)
-
-    def plot_plotly(self, fig=None, **kwargs: Any):
-        """Plots the time span on a Plotly figure.
-
-        This is a wrapper around :func:`~bnl.viz_plotly.plot_timespan`.
-
-        Args:
-            fig: Optional Plotly Figure to add to.
-            **kwargs: Additional keyword arguments to pass to the plotting function.
-
-        Returns:
-            A Plotly Figure object with the timespan visualization.
-        """
-        from . import viz_plotly
-
-        return viz_plotly.plot_timespan(self, fig=fig, **kwargs)
+        return plot_timespan(self, ax=ax, **kwargs)
 
 
 class Segment(TimeSpan):
@@ -212,26 +200,9 @@ class Segment(TimeSpan):
         This method overrides :meth:`~.TimeSpan.plot`. It is a wrapper
         around :func:`~bnl.viz.plot_segment`.
         """
-        from . import viz
+        from .viz import plot_segment
 
-        return viz.plot_segment(self, ax=ax, **kwargs)
-
-    def plot_plotly(self, fig=None, **kwargs: Any):
-        """Plots the segment on a Plotly figure.
-
-        This method overrides :meth:`~.TimeSpan.plot_plotly`. It is a wrapper
-        around :func:`~bnl.viz_plotly.plot_segment`.
-
-        Args:
-            fig: Optional Plotly Figure to add to.
-            **kwargs: Additional keyword arguments to pass to the plotting function.
-
-        Returns:
-            A Plotly Figure object with the segment visualization.
-        """
-        from . import viz_plotly
-
-        return viz_plotly.plot_segment(self, fig=fig, **kwargs)
+        return plot_segment(self, ax=ax, **kwargs)
 
 
 class MultiSegment(TimeSpan):
@@ -305,7 +276,7 @@ class MultiSegment(TimeSpan):
 
         return viz.plot_multisegment(self, ax=ax, **kwargs)
 
-    def plot_plotly(self, fig=None, **kwargs: Any):
+    def plot_plotly(self, fig: go.Figure | None = None, **kwargs: Any) -> go.Figure:
         """Plots the MultiSegment on a Plotly figure.
 
         This method overrides :meth:`~.TimeSpan.plot_plotly`. It is a wrapper
@@ -364,7 +335,7 @@ class MultiSegment(TimeSpan):
             new_boundaries[0] = replace(new_boundaries[0], time=min_start_time)
             new_boundaries[-1] = replace(new_boundaries[-1], time=max_end_time)
 
-            aligned_layers.append(Segment(boundaries=new_boundaries, labels=layer.labels, name=layer.name))
+            aligned_layers.append(Segment(boundaries=new_boundaries, labels=layer.labels, name=layer.name or ""))
 
         return aligned_layers
 
@@ -390,10 +361,10 @@ class BoundaryContour(TimeSpan):
         super().__init__(start=self.boundaries[0], end=self.boundaries[-1], name=name)
 
     def __len__(self) -> int:
-        return len(self.boundaries)
+        return len(self.boundaries) - 2
 
     def __getitem__(self, key: int) -> RatedBoundary:
-        return self.boundaries[key]
+        return self.boundaries[1:-1][key]
 
     def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
         """
@@ -406,7 +377,7 @@ class BoundaryContour(TimeSpan):
 
         return viz.plot_boundary_contour(self, ax=ax, **kwargs)
 
-    def plot_plotly(self, fig=None, **kwargs: Any):
+    def plot_plotly(self, fig: go.Figure | None = None, **kwargs: Any) -> go.Figure:
         """Plots the BoundaryContour on a Plotly figure.
 
         This method overrides :meth:`~.TimeSpan.plot_plotly`. It is a wrapper
@@ -475,9 +446,6 @@ class BoundaryHierarchy(BoundaryContour):
         # Call parent constructor which handles sorting and TimeSpan initialization
         super().__init__(name=name, boundaries=boundaries)
 
-    def __getitem__(self, key: int) -> LeveledBoundary:
-        return self.boundaries[key]
-
     def to_multisegment(self) -> MultiSegment:
         """Convert the BoundaryHierarchy to a MultiSegment.
 
@@ -494,7 +462,7 @@ class BoundaryHierarchy(BoundaryContour):
             labels = [""] * (len(level_boundaries) - 1)
             layers.append(Segment(boundaries=level_boundaries, labels=labels, name=f"L{max_level - level + 1:02d}"))
 
-        return MultiSegment(layers=layers, name=self.name)
+        return MultiSegment(layers=layers, name=self.name or "BoundaryHierarchy")
 
 
 # endregion

@@ -79,7 +79,7 @@ def test_timespan_init():
 
 def test_timespan_init_default_name():
     ts = core.TimeSpan(core.Boundary(1.0), core.Boundary(2.0))
-    assert ts.name == ""
+    assert ts.name == "[1.00-2.00]"
     assert str(ts) == "[1.00-2.00]"
 
 
@@ -215,10 +215,10 @@ def test_boundary_contour_init():
     boundaries = [core.RatedBoundary(1, 1), core.RatedBoundary(0, 5), core.RatedBoundary(2, 2)]
     contour = core.BoundaryContour("test_contour", boundaries)
     assert contour.name == "test_contour"
-    assert len(contour) == 3
-    assert contour[0].time == 0 and contour[0].salience == 5
-    assert contour[1].time == 1 and contour[1].salience == 1
-    assert contour[2].time == 2 and contour[2].salience == 2
+    assert len(contour) == 1
+    # Check the effective (internal) boundary
+    assert contour[0].time == 1 and contour[0].salience == 1
+    # Check start and end boundaries
     assert contour.start.time == 0
     assert contour.end.time == 2
 
@@ -232,10 +232,10 @@ def test_boundary_hierarchy_init():
     boundaries = [core.LeveledBoundary(1, 1), core.LeveledBoundary(0, 2), core.LeveledBoundary(2, 1)]
     hier = core.BoundaryHierarchy("test_hier", boundaries)
     assert hier.name == "test_hier"
-    assert len(hier) == 3
-    assert hier[0].time == 0 and hier[0].level == 2
-    assert hier[1].time == 1 and hier[1].level == 1
-    assert hier[2].time == 2 and hier[2].level == 1
+    assert len(hier) == 1
+    # Check the effective (internal) boundary
+    assert hier[0].time == 1 and hier[0].level == 1
+    # Check start and end boundaries
     assert hier.start.time == 0
     assert hier.end.time == 2
 

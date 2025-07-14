@@ -77,7 +77,7 @@ def plot_timespan(
     ax.text(
         center_time,
         y_pos + height / 2,
-        span.name,
+        span.name or "",
         ha="center",
         va="center",
         color=textcolor,
@@ -103,10 +103,16 @@ def plot_segment(
     if style_map is None:
         style_map = create_style_map(set(segment.labels))
 
-    for section in segment.sections:
-        # using str() to guard sections with empty string as name, so it's not just gray
-        section_style = style_map.get(str(section), {})
-        plot_timespan(section, ax, style=section_style, y_pos=y_pos, height=height)
+    for i, section in enumerate(segment.sections):
+        # Plot section span
+        ax.axvspan(section.start.time, section.end.time, color=f"C{i}", alpha=0.3, label=section.name)
+
+        # Plot section label
+        text_x = section.start.time + 0.01 * segment.duration
+        ax.text(text_x, 0.5, section.name or "", va="center", ha="left", fontsize="large", color=f"C{i}")
+
+    # Configure axes
+    ax.set_yticks([])
     return ax
 
 
@@ -134,7 +140,7 @@ def plot_multisegment(
         plot_segment(layer, ax, style_map=style_map, y_pos=y_pos, height=height)
 
     ax.set_yticks([1 - (i + 0.5) / num_layers for i in range(num_layers)])
-    ax.set_yticklabels([layer.name for layer in ms.layers])
+    ax.set_yticklabels([layer.name or "" for layer in ms.layers])
 
     return ax
 

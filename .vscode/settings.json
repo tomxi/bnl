@@ -9,9 +9,14 @@
         "**/.pytest_cache": true
     },
     // Testing configuration
+    "python.testing.pytestArgs": [
+        "--cov=src",
+        "--cov-report=xml" // Or your preferred report format
+    ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    
     // REPL behavior - disabled smart send for cleaner execution
     "python.REPL.enableREPLSmartSend": false
 }

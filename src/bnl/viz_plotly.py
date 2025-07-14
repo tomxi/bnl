@@ -5,14 +5,19 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import pandas as pd
 import plotly.colors as pc
-import plotly.express as px
 import plotly.graph_objects as go
 from plotly.graph_objects import Figure
 
 if TYPE_CHECKING:
     from bnl.core import BoundaryContour, MultiSegment
+
+
+__all__ = [
+    "create_style_map",
+    "plot_multisegment",
+    "plot_boundary_contour",
+]
 
 
 def _get_contrasting_text_color(color_str: str) -> str:
@@ -27,7 +32,7 @@ def _get_contrasting_text_color(color_str: str) -> str:
             # Fallback for named colors, etc., though less common with Plotly scales
             from PIL import ImageColor
 
-            r, g, b = ImageColor.getrgb(color_str)
+            r, g, b, *_ = ImageColor.getrgb(color_str)
     except (ValueError, ImportError):
         return "black"  # Default to black on parsing error
 
@@ -36,7 +41,7 @@ def _get_contrasting_text_color(color_str: str) -> str:
     return "white" if luminance < 0.5 else "black"
 
 
-def _create_style_maps(
+def create_style_map(
     labels: list[str],
     colorscale: str = "Plotly",
     font_size: int = 10,
@@ -75,7 +80,7 @@ def _plot_bars_for_label(
     pattern_map: dict[str, str],
     char_width_in_seconds: float,
     text_style_map: dict[str, dict],
-):
+) -> None:
     """Helper to plot all sections of a given label as a single horizontal bar trace."""
     durations, start_times, y_positions, hover_texts, annotations = [], [], [], [], []
 
@@ -186,21 +191,25 @@ def plot_multisegment(
                 ordered_unique_labels.append(section.name)
                 seen_labels.add(section.name)
 
-    color_map, pattern_map, text_style_map = _create_style_maps(
-        ordered_unique_labels, colorscale, font_size=font_size, all_hatch_patterns=None if hatch else []
+    color_map, pattern_map, text_style_map = create_style_map(
+        [label for label in ordered_unique_labels if label is not None],
+        colorscale,
+        font_size=font_size,
+        all_hatch_patterns=None if hatch else [],
     )
 
     # Plot the actual data as bar traces, which will also create the legend
     for label in ordered_unique_labels:
-        _plot_bars_for_label(
-            fig,
-            ms,
-            label,
-            color_map,
-            pattern_map,
-            char_width_in_seconds,
-            text_style_map,
-        )
+        if label is not None:
+            _plot_bars_for_label(
+                fig,
+                ms,
+                label,
+                color_map,
+                pattern_map,
+                char_width_in_seconds,
+                text_style_map,
+            )
 
     return fig
 
@@ -232,38 +241,50 @@ def plot_boundary_contour(
         width, height = figsize or (800, 400)
         fig = go.Figure()
         fig.update_layout(
-            title=bc.name,
+            title_text=bc.name,
             xaxis_title="Time (s)",
-            yaxis_title="Salience",
+            # yaxis_title="Salience",
             xaxis=dict(range=[bc.start.time, bc.end.time]),
             width=width,
             height=height,
+            showlegend=False,
         )
+
+    # Always add the baseline
+    fig.add_hline(y=0, line_color="black", line_width=1, opacity=0.5)
 
     boundaries = bc.boundaries[1:-1]
     if boundaries:
         times = [b.time for b in boundaries]
         saliences = [b.salience for b in boundaries]
 
+        # This is the idiomatic way to draw many disconnected lines (stems) in Plotly.
+        # By creating a single trace with `None` separating the coordinates for each
+        # line, we can draw all stems in a single, efficient batch operation.
+        stem_x = [v for t in times for v in (t, t, None)]
+        stem_y = [v for s in saliences for v in (0, s, None)]
+
+        # Draw all stems in a single, efficient trace
+        fig.add_trace(
+            go.Scatter(
+                x=stem_x,
+                y=stem_y,
+                mode="lines",
+                line=dict(color=line_color, width=1.5),
+                hoverinfo="none",
+            )
+        )
+
+        # Add invisible markers on top for hover info
         fig.add_trace(
             go.Scatter(
                 x=times,
                 y=saliences,
                 mode="markers",
-                marker=dict(size=marker_size, color=line_color),
-                error_y=dict(
-                    type="data",
-                    symmetric=False,
-                    arrayminus=saliences,
-                    color=line_color,
-                    thickness=1.5,
-                    width=0,
-                ),
+                marker_opacity=0,
+                marker_size=marker_size,
                 hovertemplate=("<b>Boundary</b><br>Time: %{x:.3f}s<br>Salience: %{y:.3f}<extra></extra>"),
-                showlegend=False,
             )
         )
-
-    fig.add_hline(y=0, line_color="black", line_width=1, opacity=0.5)
 
     return fig
