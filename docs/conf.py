@@ -8,9 +8,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from bnl import __version__
 
 # -- Project information -----------------------------------------------------
-project = "BNL"
-copyright = "2025, Tom Xi"
-author = "Tom Xi"
+project = "bnl"
+copyright = "2025, Qingyang (Tom) Xi"
+author = "Qingyang (Tom) Xi"
 
 # The full version, including alpha/beta/rc tags
 
@@ -32,21 +32,21 @@ extensions = [
 # Napoleon settings
 napoleon_google_docstring = True
 napoleon_numpy_docstring = False
-napoleon_include_init_with_doc = True
+napoleon_include_init_with_doc = False
 napoleon_include_private_with_doc = False
-napoleon_include_special_with_doc = True
+napoleon_include_special_with_doc = False
 napoleon_use_admonition_for_examples = False
-# napoleon_use_admonition_for_notes = False
-# napoleon_use_admonition_for_references = False
-# napoleon_use_ivar = False
-# napoleon_use_param = True
-# napoleon_use_rtype = True
+napoleon_use_admonition_for_notes = False
+napoleon_use_admonition_for_references = False
+napoleon_use_ivar = False
+napoleon_use_param = True
+napoleon_use_rtype = True
 
 # Autodoc settings
 autodoc_member_order = "bysource"
 autodoc_typehints = "description"
 autodoc_typehints_format = "short"
-autoclass_content = "both"
+autoclass_content = "class"
 
 # Enable autosummary to generate stub pages for each documented item.
 autosummary_generate = True
@@ -69,18 +69,4 @@ html_context = {
 }
 
 
-# -- autoclasstoc configuration ----------------------------------------------
-def autodoc_skip_member(app, what, name, obj, skip, options):
-    """
-    Prevents __init__ from being documented.
-    """
-    if name == "__init__":
-        return True
-    return skip
-
-
-def setup(app):
-    """
-    Connects the custom skip function to the `autodoc-skip-member` event.
-    """
-    app.connect("autodoc-skip-member", autodoc_skip_member)
+autoclasstoc_sections = ["public-attrs", "public-methods-without-dunders"]

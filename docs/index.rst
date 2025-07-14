@@ -1,5 +1,3 @@
-.. BNL documentation master file
-
 BNL: Boundaries and Labels
 ===========================
 
@@ -12,6 +10,4 @@ A Python library for hierarchical text segmentation and evaluation.
    :maxdepth: 2
    :caption: Documentation:
 
-   pages/quickstart
-   pages/examples
    api/bnl

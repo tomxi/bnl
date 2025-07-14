@@ -2,5 +2,7 @@
 
 .. autoclass:: {{ fullname }}
    :show-inheritance:
+   :members:
 
-   .. autoclasstoc:: 
+   .. autoclasstoc::
+

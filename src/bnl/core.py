@@ -123,7 +123,7 @@ class TimeSpan:
         """
         Plots the time span on a set of axes.
 
-        A wrapper around `bnl.viz.plot_timespan`.
+        This is a wrapper around :func:`~bnl.viz.plot_timespan`.
         """
         from . import viz
 
@@ -132,7 +132,7 @@ class TimeSpan:
     def plot_plotly(self, fig=None, **kwargs: Any):
         """Plots the time span on a Plotly figure.
 
-        A wrapper around `bnl.viz_plotly.plot_timespan`.
+        This is a wrapper around :func:`~bnl.viz_plotly.plot_timespan`.
 
         Args:
             fig: Optional Plotly Figure to add to.
@@ -209,7 +209,8 @@ class Segment(TimeSpan):
         """
         Plots the segment on a set of axes.
 
-        A wrapper around `bnl.viz.plot_segment`.
+        This method overrides :meth:`~.TimeSpan.plot`. It is a wrapper
+        around :func:`~bnl.viz.plot_segment`.
         """
         from . import viz
 
@@ -218,7 +219,8 @@ class Segment(TimeSpan):
     def plot_plotly(self, fig=None, **kwargs: Any):
         """Plots the segment on a Plotly figure.
 
-        A wrapper around `bnl.viz_plotly.plot_segment`.
+        This method overrides :meth:`~.TimeSpan.plot_plotly`. It is a wrapper
+        around :func:`~bnl.viz_plotly.plot_segment`.
 
         Args:
             fig: Optional Plotly Figure to add to.
@@ -296,7 +298,8 @@ class MultiSegment(TimeSpan):
         """
         Plots the MultiSegment on an axes.
 
-        A wrapper around `bnl.viz.plot_multisegment`.
+        This method overrides :meth:`~.TimeSpan.plot`. It is a wrapper
+        around :func:`~bnl.viz.plot_multisegment`.
         """
         from . import viz
 
@@ -305,7 +308,8 @@ class MultiSegment(TimeSpan):
     def plot_plotly(self, fig=None, **kwargs: Any):
         """Plots the MultiSegment on a Plotly figure.
 
-        A wrapper around `bnl.viz_plotly.plot_multisegment`.
+        This method overrides :meth:`~.TimeSpan.plot_plotly`. It is a wrapper
+        around :func:`~bnl.viz_plotly.plot_multisegment`.
 
         Args:
             fig: Optional Plotly Figure to add to.
@@ -395,7 +399,8 @@ class BoundaryContour(TimeSpan):
         """
         Plots the BoundaryContour on an axes.
 
-        A wrapper around `bnl.viz.plot_boundary_contour`.
+        This method overrides :meth:`~.TimeSpan.plot`. It is a wrapper
+        around :func:`~bnl.viz.plot_boundary_contour`.
         """
         from . import viz
 
@@ -404,7 +409,8 @@ class BoundaryContour(TimeSpan):
     def plot_plotly(self, fig=None, **kwargs: Any):
         """Plots the BoundaryContour on a Plotly figure.
 
-        A wrapper around `bnl.viz_plotly.plot_boundary_contour`.
+        This method overrides :meth:`~.TimeSpan.plot_plotly`. It is a wrapper
+        around :func:`~bnl.viz_plotly.plot_boundary_contour`.
 
         Args:
             fig: Optional Plotly Figure to add to.
