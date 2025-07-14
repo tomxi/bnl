@@ -14,8 +14,6 @@ numpy = "*"
 pandas = "*"
 matplotlib = "*"
 seaborn = "*"
-
-# Audio processing and MIR
 librosa = "*"
 pyarrow = "*"
 mir_eval = "*"
@@ -82,7 +80,6 @@ dev = ["dev"]
 notebooks = ["notebooks"]
 apps = ["apps"]
 cloud = ["cloud"]
-
 [tasks]
 # ===================================================================
 # Core Development Loop
@@ -95,24 +92,20 @@ format = "ruff format src/ tests/ apps/"
 lint = "ruff check src/ tests/ apps/ --fix"
 
 # Run all tests
+
 test = "pip install -e . && pytest"
 
-# Run full validation pipeline (format + lint + types + test)
-check = "pip install -e . && ruff format src/ tests/ apps/ --check && ruff check src/ tests/ apps/ && mypy src/ --ignore-missing-imports && pytest"
+# Type checking only (faster when you just need types)
+types = "mypy src/ --ignore-missing-imports"
 
-# ===================================================================
-# Extended Development Tasks
-# ===================================================================
+# Run full validation pipeline (format + lint + types + test)
+check = "ruff format src/ tests/ apps/ --check && ruff check src/ tests/ apps/ && mypy src/ --ignore-missing-imports && pytest"
 
 # Run tests with coverage report
 test-cov = "pip install -e . && pytest --cov=bnl --cov-report=term-missing"
 test-cov-html = "pip install -e . && pytest --cov=bnl --cov-report=html"
 
-# Type checking only (faster when you just need types)
-types = "mypy src/ --ignore-missing-imports"
 
-# Clean build artifacts and cache  
-clean = "rm -rf build/ htmlcov/ dist/ .pytest_cache/ .coverage .mypy_cache/ 'src/bnl.egg-info' && find . -name '__pycache__' -type d -exec rm -rf {} + && pixi run docs-clean"
 
 # ===================================================================
 # Application & Data Tasks
@@ -120,7 +113,6 @@ clean = "rm -rf build/ htmlcov/ dist/ .pytest_cache/ .coverage .mypy_cache/ 'src
 
 # Run the Streamlit experiment app
 exp = "streamlit run ./apps/exp.py"
-kde = "streamlit run ./apps/kde.py"
 
 # Build local data manifest for development
 build-local-manifest = "python scripts/build_local_manifest.py"
@@ -133,11 +125,13 @@ build-cloud-manifest = "python scripts/build_cloud_manifest.py"
 # Documentation Tasks
 # ===================================================================
 
+# Clean documentation build artifacts
+docs-clean = "rm -rf docs/_build docs/api/generated"
+
 # Build documentation (output to docs/_build/html)
-docs-build = "pixi run docs-clean && sphinx-build -b html docs docs/_build/html"
+docs-build = "sphinx-build -b html docs docs/_build/html"
 
 # Serve docs with live reload for development
 docs-serve = "sphinx-autobuild docs docs/_build/html --host 127.0.0.1"
 
-# Clean documentation build artifacts
-docs-clean = "rm -rf docs/_build docs/api/generated"
+
