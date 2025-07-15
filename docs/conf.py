@@ -44,9 +44,9 @@ napoleon_use_rtype = True
 
 # Autodoc settings
 autodoc_member_order = "bysource"
-autodoc_typehints = "description"
+autodoc_typehints = "signature"
 autodoc_typehints_format = "short"
-autoclass_content = "class"
+autoclass_content = "both"
 
 # Enable autosummary to generate stub pages for each documented item.
 autosummary_generate = True
