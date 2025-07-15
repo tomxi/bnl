@@ -112,9 +112,6 @@ test-cov-html = "pip install -e . && pytest --cov=bnl --cov-report=html"
 # Type checking only (faster when you just need types)
 types = "mypy src/ --ignore-missing-imports"
 
-# Clean build artifacts and cache  
-clean = "rm -rf build/ htmlcov/ dist/ .pytest_cache/ .coverage .mypy_cache/ 'src/bnl.egg-info' && find . -name '__pycache__' -type d -exec rm -rf {} + && pixi run docs-clean"
-
 # ===================================================================
 # Application & Data Tasks
 # ===================================================================
