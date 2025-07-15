@@ -13,13 +13,12 @@ __all__ = [
     "BoundaryHierarchy",
 ]
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
 import jams
 import plotly.graph_objects as go
-from matplotlib.axes import Axes
 
 # region: Point-like Objects
 
@@ -123,16 +122,6 @@ class TimeSpan:
         assert self.name is not None
         return self.name
 
-    def plot(self, ax: Axes, **kwargs: Any) -> Axes:
-        """
-        Plots the time span on a set of axes.
-
-        This is a wrapper around :func:`~bnl.viz.plot_timespan`.
-        """
-        from .viz import plot_timespan  # type: ignore
-
-        return plot_timespan(self, ax=ax, **kwargs)
-
 
 class Segment(TimeSpan):
     """An ordered sequence of boundaries that partition a span into labeled sections.
@@ -176,6 +165,9 @@ class Segment(TimeSpan):
     def __getitem__(self, key: int) -> TimeSpan:
         return self.sections[key]
 
+    def __iter__(self) -> Iterator[TimeSpan]:
+        return iter(self.sections)
+
     @classmethod
     def from_jams(cls, segment_annotation: jams.Annotation, name: str = "Segment") -> Segment:
         """
@@ -193,16 +185,18 @@ class Segment(TimeSpan):
         boundaries.append(Boundary(itvls[-1][1]))  # tag on the end time of the last interval
         return cls(boundaries=boundaries, labels=labels, name=name)
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
+    def plot(
+        self,
+        colorscale: str | list[str] = "D3",
+        hatch: bool = True,
+    ) -> go.Figure:
         """
-        Plots the segment on a set of axes.
-
-        This method overrides :meth:`~.TimeSpan.plot`. It is a wrapper
-        around :func:`~bnl.viz.plot_segment`.
+        Plots the segment on a plotly figure by warpping it in a MultiSegment.
         """
-        from .viz import plot_segment
-
-        return plot_segment(self, ax=ax, **kwargs)
+        ms = MultiSegment(layers=[self], name=str(self))
+        fig = ms.plot(colorscale=colorscale, hatch=hatch)
+        fig.update_layout(yaxis_visible=False)
+        return fig
 
 
 class MultiSegment(TimeSpan):
@@ -245,6 +239,10 @@ class MultiSegment(TimeSpan):
     def __getitem__(self, key: int) -> Segment:
         return self.layers[key]
 
+    def __iter__(self) -> Iterator[Segment]:
+        """Enable iteration over the layers."""
+        return iter(self.layers)
+
     @classmethod
     def from_json(cls, json_data: list, name: str = "JSON Annotation") -> MultiSegment:
         """Data Ingestion from adobe json format.
@@ -265,33 +263,21 @@ class MultiSegment(TimeSpan):
             layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
         return cls(layers=layers, name=name)
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
-        """
-        Plots the MultiSegment on an axes.
-
-        This method overrides :meth:`~.TimeSpan.plot`. It is a wrapper
-        around :func:`~bnl.viz.plot_multisegment`.
-        """
-        from . import viz
-
-        return viz.plot_multisegment(self, ax=ax, **kwargs)
-
-    def plot_plotly(self, fig: go.Figure | None = None, **kwargs: Any) -> go.Figure:
+    def plot(self, colorscale: str | list[str] = "D3", hatch: bool = True) -> go.Figure:
         """Plots the MultiSegment on a Plotly figure.
 
-        This method overrides :meth:`~.TimeSpan.plot_plotly`. It is a wrapper
-        around :func:`~bnl.viz_plotly.plot_multisegment`.
-
         Args:
-            fig: Optional Plotly Figure to add to.
-            **kwargs: Additional keyword arguments to pass to the plotting function.
+            colorscale (str | list[str], optional): Plotly colorscale to use. Can be a
+                qualitative scale name (e.g., "Set3", "Pastel") or a list of colors. Defaults to "D3".
+            hatch (bool, optional): Whether to use hatch patterns for different
+                labels. Defaults to True.
 
         Returns:
             A Plotly Figure object with the multi-segment visualization.
         """
-        from . import viz_plotly
+        from . import viz
 
-        return viz_plotly.plot_multisegment(self, fig=fig, **kwargs)
+        return viz.plot_multisegment(ms=self, colorscale=colorscale, hatch=hatch)
 
     def to_contour(self, strategy: str = "depth") -> BoundaryContour:
         """Calculates boundary salience and converts to a BoundaryContour.
@@ -345,6 +331,9 @@ class BoundaryContour(TimeSpan):
     An intermediate, purely structural representation of boundary salience over time.
     """
 
+    start: RatedBoundary
+    end: RatedBoundary
+
     def __init__(self, name: str, boundaries: Sequence[RatedBoundary]):
         """Initializes the BoundaryContour.
 
@@ -366,22 +355,11 @@ class BoundaryContour(TimeSpan):
     def __getitem__(self, key: int) -> RatedBoundary:
         return self.boundaries[1:-1][key]
 
-    def plot(self, ax: Axes | None = None, **kwargs: Any) -> Axes:
-        """
-        Plots the BoundaryContour on an axes.
+    def __iter__(self) -> Iterator[RatedBoundary]:
+        return iter(self.boundaries[1:-1])
 
-        This method overrides :meth:`~.TimeSpan.plot`. It is a wrapper
-        around :func:`~bnl.viz.plot_boundary_contour`.
-        """
-        from . import viz
-
-        return viz.plot_boundary_contour(self, ax=ax, **kwargs)
-
-    def plot_plotly(self, fig: go.Figure | None = None, **kwargs: Any) -> go.Figure:
+    def plot(self, **kwargs: Any) -> go.Figure:
         """Plots the BoundaryContour on a Plotly figure.
-
-        This method overrides :meth:`~.TimeSpan.plot_plotly`. It is a wrapper
-        around :func:`~bnl.viz_plotly.plot_boundary_contour`.
 
         Args:
             fig: Optional Plotly Figure to add to.
@@ -390,9 +368,9 @@ class BoundaryContour(TimeSpan):
         Returns:
             A Plotly Figure object with the boundary contour visualization.
         """
-        from . import viz_plotly
+        from . import viz
 
-        return viz_plotly.plot_boundary_contour(self, fig=fig, **kwargs)
+        return viz.plot_boundary_contour(self, **kwargs)
 
     def clean(self, strategy: str = "absorb", **kwargs: Any) -> BoundaryContour:
         """Cleans up the boundary contour using a specified strategy.

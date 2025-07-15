@@ -183,31 +183,6 @@ def test_multisegment_align_layers():
     assert core.MultiSegment.align_layers([]) == []
 
 
-def test_plotting_methods_return_axes():
-    import matplotlib.pyplot as plt
-    from matplotlib.axes import Axes
-
-    fig, ax = plt.subplots()
-
-    ts = core.TimeSpan(core.Boundary(0), core.Boundary(1))
-    ax_ts = ts.plot(ax)
-    assert isinstance(ax_ts, Axes)
-
-    seg = core.Segment.from_itvls([[0, 1]], ["A"])
-    ax_seg = seg.plot(ax)
-    assert isinstance(ax_seg, Axes)
-
-    mseg = core.MultiSegment([seg])
-    ax_mseg = mseg.plot(ax)
-    assert isinstance(ax_mseg, Axes)
-
-    bc = core.BoundaryContour("test_bc", [core.RatedBoundary(0, 1), core.RatedBoundary(1, 2), core.RatedBoundary(2, 3)])
-    ax_bc = bc.plot(ax)
-    assert isinstance(ax_bc, Axes)
-
-    plt.close(fig)
-
-
 # endregion
 
 
