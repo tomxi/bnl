@@ -10,6 +10,13 @@ from __future__ import annotations
 
 __all__ = [
     "boundary_salience",
+    "SalienceStrategy",
+    "SalByCount",
+    "SalByDepth",
+    "SalByProb",
+    "CleanStrategy",
+    "CleanByAbsorb",
+    "CleanByKDE",
     "clean_boundaries",
     "level_by_distinct_salience",
 ]
@@ -69,7 +76,7 @@ class SalienceStrategy(ABC):
 
 
 @SalienceStrategy.register("count")
-class _SalByCount(SalienceStrategy):
+class SalByCount(SalienceStrategy):
     """Salience based on frequency of occurrence."""
 
     def __call__(self, ms: MultiSegment) -> BoundaryHierarchy:
@@ -85,7 +92,7 @@ class _SalByCount(SalienceStrategy):
 
 
 @SalienceStrategy.register("depth")
-class _SalByDepth(SalienceStrategy):
+class SalByDepth(SalienceStrategy):
     """Salience based on the coarsest layer of appearance."""
 
     def __call__(self, ms: MultiSegment) -> BoundaryHierarchy:
@@ -103,7 +110,7 @@ class _SalByDepth(SalienceStrategy):
 
 
 @SalienceStrategy.register("prob")
-class _SalByProb(SalienceStrategy):
+class SalByProb(SalienceStrategy):
     """Salience weighted by layer density."""
 
     def __call__(self, ms: MultiSegment) -> BoundaryContour:
@@ -163,22 +170,19 @@ class CleanStrategy(ABC):
 
 
 @CleanStrategy.register("absorb")
-class _CleanByAbsorb(CleanStrategy):
+class CleanByAbsorb(CleanStrategy):
     """Clean boundaries by absorbing less salient ones within a window."""
 
     def __init__(self, window: float = 1.0) -> None:
         self.window = window
 
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
-        from .core import BoundaryContour, RatedBoundary
-
         if len(bc.boundaries) <= 2:
             return bc
 
-        outer_boundaries = [bc.boundaries[0], bc.boundaries[-1]]
         inner_boundaries = sorted(bc.boundaries[1:-1], key=lambda b: b.salience, reverse=True)
 
-        kept_boundaries = list(outer_boundaries)
+        kept_boundaries = [bc.start, bc.end]
         for new_b in inner_boundaries:
             is_absorbed = any(abs(new_b.time - kept_b.time) <= self.window for kept_b in kept_boundaries)
             if not is_absorbed:
@@ -189,7 +193,7 @@ class _CleanByAbsorb(CleanStrategy):
 
 
 @CleanStrategy.register("kde")
-class _CleanByKDE(CleanStrategy):
+class CleanByKDE(CleanStrategy):
     """Clean boundaries by finding peaks in a weighted kernel density estimate."""
 
     def __init__(

@@ -28,27 +28,17 @@ extensions = [
     "autoclasstoc",
 ]
 
-
 # Napoleon settings
-napoleon_google_docstring = True
 napoleon_numpy_docstring = False
-napoleon_include_init_with_doc = False
-napoleon_include_private_with_doc = False
-napoleon_include_special_with_doc = False
-napoleon_use_admonition_for_examples = False
-napoleon_use_admonition_for_notes = False
-napoleon_use_admonition_for_references = False
-napoleon_use_ivar = False
-napoleon_use_param = True
-napoleon_use_rtype = True
+napoleon_include_special_with_doc = False  # false because we set autoclass_content = "both".
 
 # Autodoc settings
 autodoc_member_order = "bysource"
-autodoc_typehints = "signature"
+autodoc_typehints = "description"
 autodoc_typehints_format = "short"
-autoclass_content = "both"
+autoclass_content = "both"  # both because we set napoleon_include_init_with_doc = False.
 
-# Enable autosummary to generate stub pages for each documented item.
+# Enable autosummary to use __all__ to generate stub pages
 autosummary_generate = True
 autosummary_ignore_module_all = False
 
@@ -67,6 +57,5 @@ html_theme_options = {
 html_context = {
     "display_github": True,
 }
-
 
 autoclasstoc_sections = ["public-attrs", "public-methods-without-dunders"]

@@ -26,7 +26,10 @@ Concise guidance for AI agents working with this music information retrieval cod
 - Don't attempt to edit notebooks; feel free to read them, but don't create or edit them.
 
 ### User's tasks:
-
+- The viz_plotly module is a mess... It's not built to plot with subplots/traces which is essential for API UX. I need to fix this.
+- Meanwhile, the matplotlib hierarchy single axis plot is not plotting each level on the correct y_miny_max 'channel'.... I neet to get that back working again
+- The API for casting BCs and around is getting there. I like it ;)
+- Will just have to make a commitment to go with plotly going forward I think. Let's ditch trying to make matplotlib plots up to date and try to go all plotly, and rethink the plotting api from the plotly way.
 
 ### User Feedbacks:
 
