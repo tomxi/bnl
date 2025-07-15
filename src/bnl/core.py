@@ -103,7 +103,7 @@ class TimeSpan:
 
     start: Boundary
     end: Boundary
-    name: str | None = None
+    name: str | None = None  # docstring: Name of the time span, defaults to `[start-end]` if None
 
     def __post_init__(self) -> None:
         if self.end.time <= self.start.time:

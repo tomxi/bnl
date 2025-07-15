@@ -102,8 +102,6 @@ def _plot_bars_for_label(
 
 def plot_multisegment(
     ms: MultiSegment,
-    width: float = 0,
-    height: float = 0,
     colorscale: str | list[str] = "D3",
     hatch: bool = True,
 ) -> go.Figure:
@@ -121,16 +119,14 @@ def plot_multisegment(
     Returns:
         Figure: The Plotly figure with the MultiSegment.
     """
-    height = height or len(ms) * 25 + 70
-    width = width or 700
     fig = go.Figure()
     fig.update_layout(
         title_text=ms.name,
         title_x=0.5,
         xaxis_title="Time (s)",
         yaxis_title=None,
-        width=width,
-        height=height,
+        width=650,
+        height=len(ms) * 25 + 70,
         showlegend=True,
         barmode="overlay",
         uniformtext=dict(mode="hide", minsize=8),
@@ -166,35 +162,24 @@ def plot_multisegment(
 
 def plot_boundary_contour(
     bc: BoundaryContour,
-    figsize: tuple[float, float] | None = None,
-    marker_size: int = 8,
     line_color: str = "black",
-    **kwargs: Any,
 ) -> go.Figure:
     """Plots a BoundaryContour with interactive hover information.
 
     Args:
         bc (BoundaryContour): The BoundaryContour to plot.
-        fig (Figure, optional): Existing Plotly figure to add to. If None,
-            creates a new figure. Defaults to None.
-        figsize (tuple[float, float], optional): Figure size (width, height) in pixels.
-            Defaults to None.
-        marker_size (int, optional): Size of boundary markers. Defaults to 8.
         line_color (str, optional): Color of the boundary lines. Defaults to "black".
-        **kwargs: Additional keyword arguments.
 
     Returns:
         Figure: The Plotly figure with the BoundaryContour.
     """
-    width, height = figsize or (800, 400)
     fig = go.Figure()
     fig.update_layout(
         title_text=bc.name,
+        title_x=0.5,
         xaxis_title="Time (s)",
-        # yaxis_title="Salience",
+        yaxis_title="Salience",
         xaxis=dict(range=[bc.start.time, bc.end.time]),
-        width=width,
-        height=height,
         showlegend=False,
     )
 
@@ -219,18 +204,6 @@ def plot_boundary_contour(
                 y=stem_y,
                 mode="lines",
                 line=dict(color=line_color, width=1.5),
-                hoverinfo="none",
-            )
-        )
-
-        # Add invisible markers on top for hover info
-        fig.add_trace(
-            go.Scatter(
-                x=times,
-                y=saliences,
-                mode="markers",
-                marker_opacity=0,
-                marker_size=marker_size,
                 hovertemplate=("<b>Boundary</b><br>Time: %{x:.3f}s<br>Salience: %{y:.3f}<extra></extra>"),
             )
         )
