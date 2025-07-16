@@ -109,8 +109,6 @@ def plot_multisegment(
 
     Args:
         ms (MultiSegment): The MultiSegment to plot.
-        width (float, optional): Figure width in pixels. Defaults to 0.
-        height (float, optional): Figure height in pixels. Defaults to 0.
         colorscale (str | list[str], optional): Plotly colorscale to use. Can be a
             qualitative scale name (e.g., "Set3", "Pastel") or a list of colors. Defaults to "D3".
         hatch (bool, optional): Whether to use hatch patterns for different
@@ -127,9 +125,8 @@ def plot_multisegment(
         yaxis_title=None,
         width=650,
         height=len(ms) * 25 + 70,
-        showlegend=True,
+        showlegend=False,
         barmode="overlay",
-        uniformtext=dict(mode="hide", minsize=8),
         yaxis=dict(
             categoryorder="array",
             categoryarray=[layer.name for layer in reversed(ms)],
@@ -177,10 +174,13 @@ def plot_boundary_contour(
     fig.update_layout(
         title_text=bc.name,
         title_x=0.5,
+        width=650,
+        height=300,
         xaxis_title="Time (s)",
         yaxis_title="Salience",
         xaxis=dict(range=[bc.start.time, bc.end.time]),
         showlegend=False,
+        margin=dict(l=20, r=20, t=40, b=20),  # make plot bigger
     )
 
     # Always add the baseline

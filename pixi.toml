@@ -37,6 +37,7 @@ wheel = "*"
 jams = "*"
 streamlit-plotly-events = "*"
 autoclasstoc = "*"
+kaleido = "*"
 
 [feature.docs.dependencies]
 # Documentation dependencies
