@@ -159,7 +159,7 @@ def plot_multisegment(
 
 def plot_boundary_contour(
     bc: BoundaryContour,
-    line_color: str = "black",
+    line_color: str = "#666",  # a medium grey that's okay on both white and black backgrounds
 ) -> go.Figure:
     """Plots a BoundaryContour with interactive hover information.
 
@@ -184,7 +184,7 @@ def plot_boundary_contour(
     )
 
     # Always add the baseline
-    fig.add_hline(y=0, line_color="black", line_width=1, opacity=0.5)
+    fig.add_hline(y=0, line_color=line_color, line_width=1, opacity=0.8)
 
     boundaries = bc.boundaries[1:-1]
     if boundaries:
@@ -203,7 +203,7 @@ def plot_boundary_contour(
                 x=stem_x,
                 y=stem_y,
                 mode="lines",
-                line=dict(color=line_color, width=1.5),
+                line=dict(color=line_color, width=1),
                 hovertemplate=("<b>Boundary</b><br>Time: %{x:.3f}s<br>Salience: %{y:.3f}<extra></extra>"),
             )
         )
