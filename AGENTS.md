@@ -23,13 +23,11 @@ Concise guidance for AI agents working with this music information retrieval cod
 ## Agent Notes
 
 *(Add development insights, common patterns, useful commands, etc.)*
-- Don't attempt to edit notebooks; feel free to read them, but don't create or edit them.
 
 ### User's tasks:
-- The viz_plotly module is a mess... It's not built to plot with subplots/traces which is essential for API UX. I need to fix this.
-- Meanwhile, the matplotlib hierarchy single axis plot is not plotting each level on the correct y_miny_max 'channel'.... I neet to get that back working again
-- The API for casting BCs and around is getting there. I like it ;)
-- Will just have to make a commitment to go with plotly going forward I think. Let's ditch trying to make matplotlib plots up to date and try to go all plotly, and rethink the plotting api from the plotly way.
+- we just commited to plotly, now let's clean the data module
+- we want to peel off the app eventually too, and clean the dependencies.
+  
 
 ### User Feedbacks:
 
@@ -39,7 +37,7 @@ The API is designed to support the following workflow for investigating boundary
 
 * **Core Transformation Pipeline**:
 `MultiSegment -> BoundaryContour -> BoundaryHierarchy ->MultiSegment`
-- We'll just use `ops` to operate on the `MultiSegment` directly.
+- We have a chainable command pattern for this.
 
 
 ## Lessons Learnt (ARCHIVE):

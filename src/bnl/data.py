@@ -13,34 +13,12 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
-from urllib.parse import urlparse
 
 import jams
-import librosa
-import numpy as np
 import pandas as pd
 import requests
 
 from .core import MultiSegment, Segment
-
-
-def _parse_jams_metadata(jams_path: Path | str) -> dict[str, Any]:
-    """Loads metadata from a JAMS file."""
-    try:
-        if isinstance(jams_path, str) and jams_path.startswith("http"):
-            response = requests.get(jams_path)
-            response.raise_for_status()
-            jam = jams.load(io.StringIO(response.text))
-        elif Path(jams_path).exists():
-            jam = jams.load(str(jams_path))
-        else:
-            return {}
-
-        meta = jam.file_metadata
-        return {"title": meta.title, "artist": meta.artist, "duration": meta.duration}
-    except Exception as e:
-        print(f"Warning: Could not parse JAMS metadata from {jams_path}: {e}")
-        return {}
 
 
 @dataclass
@@ -80,62 +58,38 @@ class Track:
 
         # Add JAMS metadata if reference annotation exists
         if jams_path_or_url := info.get("annotation_reference_path"):
-            info.update(_parse_jams_metadata(jams_path_or_url))
+            info.update(self._parse_jams_metadata(jams_path_or_url))
 
         self._info_cache = info
         return self._info_cache
 
     @property
-    def has_annotations(self) -> bool:
-        """Checks if the track has any annotations."""
-        return self.manifest_row.filter(like="has_annotation_").any()
+    def refs(self) -> dict[str, MultiSegment]:
+        """Returns available reference annotation paths."""
+        # Get the jams reference file and find all the annotators
+        jams_path = self.info.get("annotation_reference_path")
+        if jams_path:
+            jam = jams.load(jams_path)
+            annotators = [ann.annotation_metadata.annotator.name for ann in jam.annotations].unique()
+            return {anno_id: self.load_annotation("ref", anno_id) for anno_id in annotators}
+        return {}
 
     @property
-    def annotations(self) -> dict[str, str | Path]:
-        """Returns available annotation paths."""
-        ann_paths = {}
-        for key, value in self.info.items():
-            if key.startswith("annotation_") and key.endswith("_path"):
-                ann_type = key.replace("annotation_", "").replace("_path", "")
-                ann_paths[ann_type] = value
-        return ann_paths
+    def ests(self) -> dict[str, MultiSegment]:
+        """Returns available estimated annotation paths."""
+        return {
+            est_id: self._load_json(self.info.get(f"annotation_est_{est_id}_path"), name=est_id)
+            for est_id in ["mu1gamma1", "mu1gamma9", "mu5gamma5"]
+        }
 
-    def load_audio(self) -> tuple[np.ndarray | None, float | None]:
-        """Loads the track's audio waveform and sample rate."""
-        # Find the first audio asset
-        audio_path_key = next(
-            (key for key in self.info.keys() if key.startswith("audio_") and key.endswith("_path")), None
-        )
-
-        if not audio_path_key:
-            return None, None
-
-        audio_path = self.info[audio_path_key]
-        expanded_path = Path(audio_path).expanduser() if isinstance(audio_path, str | Path) else audio_path
-
-        try:
-            if isinstance(audio_path, str) and audio_path.startswith("http"):
-                response = requests.get(audio_path)
-                response.raise_for_status()
-                y, sr = librosa.load(io.BytesIO(response.content), sr=None, mono=True)
-            elif expanded_path.exists():
-                y, sr = librosa.load(expanded_path, sr=None, mono=True)
-            else:
-                print(f"Warning: Audio file not found at: {audio_path}")
-                return None, None
-            return y, sr
-        except Exception as e:
-            print(f"Warning: Failed to load audio from {audio_path}: {e}")
-            return None, None
 
     def load_annotation(self, annotation_type: str, annotation_id: str | int | None = None) -> MultiSegment:
         """Loads a specific annotation as a `MultiSegment`."""
-        if annotation_type not in self.annotations:
-            raise ValueError(
-                f"Annotation type '{annotation_type}' not available. Available: {list(self.annotations.keys())}"
-            )
+        annotation_key = f"annotation_{annotation_type}_path"
+        if annotation_key not in self.info:
+            raise ValueError(f"Annotation type '{annotation_type}' not available for this track.")
 
-        annotation_path = self.annotations[annotation_type]
+        annotation_path = self.info[annotation_key]
 
         try:
             content = self._fetch_content(annotation_path)
@@ -148,6 +102,15 @@ class Track:
             return self._load_json(content, name=annotation_type)
         else:
             raise NotImplementedError(f"Unsupported file type: {annotation_path}")
+
+    def _parse_jams_metadata(self, jams_path: Path | str) -> dict[str, Any]:
+        """Loads metadata from a JAMS file."""
+        try:
+            content = self._fetch_content(jams_path)
+            jam = jams.load(content)
+            return jam.file_metadata.to_dict()
+        except Exception:
+            return {}
 
     def _fetch_content(self, path: str | Path) -> io.StringIO:
         """Fetches file content into a memory buffer."""
@@ -216,10 +179,13 @@ class Track:
 
 class Dataset:
     """A manifest-based dataset."""
+    track_ids: list[str]
+    manifest: pd.DataFrame
+    
 
     def __init__(self, manifest_path: Path | str):
         self.manifest_path = manifest_path
-        self.data_location = "cloud" if urlparse(str(manifest_path)).scheme in ("http", "https") else "local"
+        self.data_location = "cloud" if isinstance(manifest_path, str) and manifest_path.startswith("http") else "local"
 
         if self.data_location == "local":
             expanded_path = Path(manifest_path).expanduser()
@@ -240,14 +206,9 @@ class Dataset:
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Manifest not found: {manifest_path}") from e
 
-        # Validate and process manifest
-        if "track_id" not in self.manifest.columns:
-            raise ValueError("Manifest must contain a 'track_id' column.")
-
         self.manifest["track_id"] = self.manifest["track_id"].astype(str)
         self.manifest.set_index("track_id", inplace=True, drop=False)
 
-        # Sort track IDs
         try:
             self.track_ids = sorted(self.manifest["track_id"].unique(), key=int)
         except ValueError:

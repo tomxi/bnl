@@ -216,22 +216,13 @@ class MultiSegment(TimeSpan):
         if len(layers) <= 0:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
-        self.layers = layers
+        self.layers = self.align_layers(layers)
 
-        # All layers must span the same time interval.
-        # Use the first layer as the reference for comparison.
-        first_layer = layers[0]
-        expected_start, expected_end = first_layer.start, first_layer.end
+        # After alignment, all layers have the same start and end times.
+        start = self.layers[0].start if self.layers else 0.0
+        end = self.layers[0].end if self.layers else 0.0
 
-        for layer in layers[1:]:
-            if layer.start != expected_start:
-                raise ValueError(
-                    f"All layers must have the same start time. current: {layer.start} != {expected_start}"
-                )
-            if layer.end != expected_end:
-                raise ValueError(f"All layers must have the same end time. current: {layer.end} != {expected_end}")
-
-        super().__init__(start=expected_start, end=expected_end, name=name)
+        super().__init__(start=start, end=end, name=name)
 
     def __len__(self) -> int:
         return len(self.layers)
@@ -242,6 +233,7 @@ class MultiSegment(TimeSpan):
     def __iter__(self) -> Iterator[Segment]:
         """Enable iteration over the layers."""
         return iter(self.layers)
+
 
     @classmethod
     def from_json(cls, json_data: list, name: str = "JSON Annotation") -> MultiSegment:
