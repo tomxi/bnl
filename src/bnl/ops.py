@@ -8,109 +8,292 @@ either directly or through the fluent API provided by the `bnl.core` classes.
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .core import BoundaryContour, BoundaryHierarchy, MultiSegment
-
 __all__ = [
-    "salience_by_counting",
-    "default_salience",
-    "default_levels",
-    "default_labeling",
+    "boundary_salience",
+    "SalienceStrategy",
+    "SalByCount",
+    "SalByDepth",
+    "SalByProb",
+    "CleanStrategy",
+    "CleanByAbsorb",
+    "CleanByKDE",
+    "clean_boundaries",
+    "level_by_distinct_salience",
 ]
 
+from abc import ABC, abstractmethod
+from collections import Counter, defaultdict
+from collections.abc import Callable
+from typing import Any
 
-def salience_by_counting(
-    ms: MultiSegment,
-) -> BoundaryHierarchy:
+import numpy as np
+import scipy.signal
+
+# from librosa.util import localmax
+from mir_eval.hierarchy import _round
+from sklearn.neighbors import KernelDensity
+
+from .core import (
+    BoundaryContour,
+    BoundaryHierarchy,
+    LeveledBoundary,
+    MultiSegment,
+    RatedBoundary,
+    TimeSpan,
+)
+
+# region: Different Notions of Boundary Salience
+
+
+def boundary_salience(ms: MultiSegment, strategy: str = "depth") -> BoundaryContour:
+    """Runs boundary salience from a MultiSegment using a specified strategy.
+
+    Args:
+        ms (MultiSegment): The input multi-segment structure.
+        strategy (str, optional): The salience calculation strategy. Defaults to "depth".
+            - 'depth': Salience based on the coarsest layer (returns BoundaryHierarchy).
+            - 'count': Salience based on frequency (returns BoundaryHierarchy).
+            - 'prob': Salience weighted by layer density (returns BoundaryContour).
+
+    Returns:
+        BoundaryContour: The resulting boundary structure. Can be a BoundaryHierarchy if the
+        strategy directly produces leveled boundaries.
     """
-    Calculates the salience of boundaries based on their frequency of occurrence.
+    if strategy not in SalienceStrategy._registry:
+        raise ValueError(f"Unknown salience strategy: {strategy}")
+    return SalienceStrategy._registry[strategy](ms)
 
-    The salience of each unique boundary time is the number of layers in the
-    `MultiSegment` that it appears in.
+
+class SalienceStrategy(ABC):
+    """Abstract base class for salience calculation strategies."""
+
+    _registry: dict[str, SalienceStrategy] = {}
+
+    @classmethod
+    def register(cls, name: str) -> Callable[[type[SalienceStrategy]], type[SalienceStrategy]]:
+        """Registers a strategy in a central registry."""
+
+        def decorator(strategy_cls: type[SalienceStrategy]) -> type[SalienceStrategy]:
+            cls._registry[name] = strategy_cls()
+            return strategy_cls
+
+        return decorator
+
+    @abstractmethod
+    def __call__(self, ms: MultiSegment) -> BoundaryContour:
+        raise NotImplementedError
+
+
+@SalienceStrategy.register("count")
+class SalByCount(SalienceStrategy):
+    """Salience based on frequency of occurrence."""
+
+    def __call__(self, ms: MultiSegment) -> BoundaryHierarchy:
+        """
+        The salience of each unique boundary time is the number of layers in the
+        `MultiSegment` that it appears in.
+        """
+        time_counts: Counter[float] = Counter(
+            b.time for layer in ms.layers for b in layer.boundaries
+        )
+        return BoundaryHierarchy(
+            boundaries=[
+                LeveledBoundary(time=time, level=count) for time, count in time_counts.items()
+            ],
+            name=ms.name or "Salience Hierarchy",
+        )
+
+
+@SalienceStrategy.register("depth")
+class SalByDepth(SalienceStrategy):
+    """Salience based on the coarsest layer of appearance."""
+
+    def __call__(self, ms: MultiSegment) -> BoundaryHierarchy:
+        """
+        Iterate from finest (last) to coarsest (first) layer.
+        The salience is the layer's rank, starting from 1 for the finest layer.
+        This ensures that if a boundary time exists in multiple layers,
+        the one from the coarsest layer (with highest salience) is kept.
+        """
+        boundary_map: dict[float, LeveledBoundary] = {}
+        for salience, layer in enumerate(reversed(ms.layers), start=1):
+            for boundary in layer.boundaries:
+                boundary_map[boundary.time] = LeveledBoundary(time=boundary.time, level=salience)
+        return BoundaryHierarchy(
+            boundaries=list(boundary_map.values()), name=ms.name or "Salience Hierarchy"
+        )
+
+
+@SalienceStrategy.register("prob")
+class SalByProb(SalienceStrategy):
+    """Salience weighted by layer density."""
+
+    def __call__(self, ms: MultiSegment) -> BoundaryContour:
+        """
+        In layers with less boundaries, they are more important.
+        This is because they are intrinsically in a higher level and more salient.
+        """
+        time_saliences: defaultdict[float, float] = defaultdict(float)
+        for layer in ms.layers:
+            if len(layer.boundaries) > 2:
+                # Weight is inversely proportional to the number of effective boundaries.
+                weight = 1.0 / len(layer.boundaries[1:-1])
+                for boundary in layer.boundaries:
+                    time_saliences[boundary.time] += weight
+        return BoundaryContour(
+            name=ms.name or "Salience Contour",
+            boundaries=[RatedBoundary(t, s) for t, s in time_saliences.items()],
+        )
+
+
+# endregion: Different Notions of Boundary Salience
+
+
+# region: Two ways to clean up boundaries closeby in time
+def clean_boundaries(
+    bc: BoundaryContour, strategy: str = "absorb", **kwargs: Any
+) -> BoundaryContour:
     """
-    # Import here to avoid circular imports
-    from .core import BoundaryHierarchy, LeveledBoundary
-
-    # Collect all boundary times and count their frequencies
-    time_counts: Counter[float] = Counter()
-    for layer in ms.layers:
-        for boundary in layer.boundaries:
-            time = boundary.time
-            time_counts[time] += 1
-
-    # Create rated boundaries with frequency-based salience
-    return BoundaryHierarchy(
-        boundaries=[LeveledBoundary(time=time, level=count) for time, count in time_counts.items()],
-        name=ms.name,
-    )
-
-
-def default_salience(ms: MultiSegment) -> BoundaryHierarchy:
+    Clean up boundaries by removing boundaries that are closeby in time.
     """
-    Calculate the salience of boundaries based on the coarsest layer that they appear in.
-    """
-    from .core import BoundaryHierarchy, LeveledBoundary
+    if strategy not in CleanStrategy._registry:
+        raise ValueError(f"Unknown boundary cleaning strategy: {strategy}")
 
-    boundary_map: dict[float, LeveledBoundary] = {}
-
-    # Iterate from finest (last) to coarsest (first) layer.
-    # The salience is the layer's rank, starting from 1 for the finest layer.
-    # This ensures that if a boundary time exists in multiple layers,
-    # the one from the coarsest layer (with highest salience) is kept.
-    for salience, layer in enumerate(reversed(ms.layers), start=1):
-        for boundary in layer.boundaries:
-            boundary_map[boundary.time] = LeveledBoundary(time=boundary.time, level=salience)
-
-    if not boundary_map:
-        return BoundaryHierarchy(boundaries=[], name=ms.name)
-
-    return BoundaryHierarchy(boundaries=list(boundary_map.values()), name=ms.name)
+    # Retrieve the class from the registry and instantiate it with the provided arguments.
+    strategy_class = CleanStrategy._registry[strategy]
+    strategy_instance = strategy_class(**kwargs)
+    return strategy_instance(bc)
 
 
-def default_levels(bc: BoundaryContour) -> BoundaryHierarchy:
+class CleanStrategy(ABC):
+    """Abstract base class for boundary cleaning strategies."""
+
+    _registry: dict[str, type[CleanStrategy]] = {}
+
+    @classmethod
+    def register(cls, name: str) -> Callable[[type[CleanStrategy]], type[CleanStrategy]]:
+        """A class method to register strategies in a central registry."""
+
+        def decorator(strategy_cls: type[CleanStrategy]) -> type[CleanStrategy]:
+            cls._registry[name] = strategy_cls
+            return strategy_cls
+
+        return decorator
+
+    @abstractmethod
+    def __call__(self, bc: BoundaryContour) -> BoundaryContour:
+        """Cleans boundaries in a BoundaryContour."""
+        raise NotImplementedError
+
+
+@CleanStrategy.register("absorb")
+class CleanByAbsorb(CleanStrategy):
+    """Clean boundaries by absorbing less salient ones within a window."""
+
+    def __init__(self, window: float = 1.0) -> None:
+        self.window = window
+
+    def __call__(self, bc: BoundaryContour) -> BoundaryContour:
+        if len(bc.boundaries) <= 2:
+            return bc
+
+        inner_boundaries = sorted(bc.boundaries[1:-1], key=lambda b: b.salience, reverse=True)
+
+        kept_boundaries = [bc.start, bc.end]
+        for new_b in inner_boundaries:
+            is_absorbed = any(
+                abs(new_b.time - kept_b.time) <= self.window for kept_b in kept_boundaries
+            )
+            if not is_absorbed:
+                kept_boundaries.append(new_b)
+
+        boundaries = [RatedBoundary(b.time, b.salience) for b in sorted(kept_boundaries)]
+        return BoundaryContour(name=bc.name or "Cleaned Contour", boundaries=boundaries)
+
+
+@CleanStrategy.register("kde")
+class CleanByKDE(CleanStrategy):
+    """Clean boundaries by finding peaks in a weighted kernel density estimate."""
+
+    def __init__(
+        self,
+        time_bw: float = 1.0,
+    ):
+        self.time_kde = KernelDensity(kernel="gaussian", bandwidth=time_bw)
+        self._ticks: np.ndarray | None = None
+
+    def _build_time_grid(self, span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
+        """
+        Build a grid of times using the same logic as mir_eval to build the ticks
+        """
+        if self._ticks is None:
+            # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
+            n_frames = int(
+                (_round(span.end.time, frame_size) - _round(span.start.time, frame_size))
+                / frame_size
+            )
+            self._ticks = np.arange(n_frames + 1) * frame_size + span.start.time
+        return self._ticks
+
+    def __call__(self, bc: BoundaryContour) -> BoundaryContour:
+        if len(bc.boundaries) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
+            return bc
+
+        inner_boundaries = bc.boundaries[1:-1]
+        times = np.array([b.time for b in inner_boundaries])
+        saliences = np.array([b.salience for b in inner_boundaries])
+
+        self.time_kde.fit(times.reshape(-1, 1), sample_weight=saliences)
+
+        grid_times = self._build_time_grid(bc, frame_size=0.1)
+        log_density = self.time_kde.score_samples(grid_times.reshape(-1, 1))
+
+        # The below used to be a `localmax` call on log_density from librosa.
+        # We need to check this carefully
+        peak_indices = scipy.signal.find_peaks(log_density)[0]
+        peak_times = grid_times.flatten()[peak_indices]
+        peak_saliences = np.exp(log_density[peak_indices])
+        max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 1
+
+        new_inner_boundaries = [
+            RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)
+        ]
+        final_boundaries = [
+            RatedBoundary(bc.start.time, max_salience),
+            *new_inner_boundaries,
+            RatedBoundary(bc.end.time, max_salience),
+        ]
+        return BoundaryContour(name=bc.name or "Cleaned Contour", boundaries=final_boundaries)
+
+
+# endregion: Two ways to clean up boundaries closeby in time
+
+# region: Stratification into levels
+
+
+def level_by_distinct_salience(bc: BoundaryContour) -> BoundaryHierarchy:
     """
     Find all distinct salience values and use their integer rank as level.
     """
-    from .core import BoundaryHierarchy, LeveledBoundary
-
-    if not bc.boundaries:
-        return BoundaryHierarchy(boundaries=[], name=bc.name)
-
     # Create a mapping from each unique salience value to its rank (level)
-    unique_saliences = sorted({b.salience for b in bc.boundaries})
-    salience_to_level = {sal: lvl + 1 for lvl, sal in enumerate(unique_saliences)}
+    unique_saliences = sorted({b.salience for b in bc.boundaries[1:-1]})
+    max_level = len(unique_saliences)
+    sal_level = {sal: lvl for lvl, sal in enumerate(unique_saliences, start=1)}
 
     # Create LeveledBoundary objects for each boundary in the contour
-    leveled_boundaries = [LeveledBoundary(time=b.time, level=salience_to_level[b.salience]) for b in bc.boundaries]
+    inner_boundaries = [
+        LeveledBoundary(time=b.time, level=sal_level[b.salience]) for b in bc.boundaries[1:-1]
+    ]
 
-    return BoundaryHierarchy(boundaries=leveled_boundaries, name=bc.name)
+    leveled_boundaries = [
+        LeveledBoundary(time=bc.boundaries[0].time, level=max_level),
+        *inner_boundaries,
+        LeveledBoundary(time=bc.boundaries[-1].time, level=max_level),
+    ]
+
+    return BoundaryHierarchy(
+        boundaries=leveled_boundaries, name=bc.name or "Distinct Salience Hierarchy"
+    )
 
 
-def default_labeling(bh: BoundaryHierarchy) -> MultiSegment:
-    """
-    Simply label each timespan with its default string representation.
-    """
-
-    from .core import Boundary, MultiSegment, Segment
-
-    # For each level, collect all boundaries that exist at or above that level.
-    # A boundary at level N exists in all layers from N down to 1.
-    boundaries_by_level = defaultdict(set)
-    for b in bh.boundaries:
-        for level in range(1, b.level + 1):
-            boundaries_by_level[level].add(Boundary(time=b.time))
-
-    # Build layers from coarsest (highest level) to finest (lowest level).
-    unique_levels = sorted(boundaries_by_level.keys(), reverse=True)
-
-    layers = []
-    for level in unique_levels:
-        # Sort the boundaries for the current level to form a valid segment.
-        level_boundaries = sorted(list(boundaries_by_level[level]), key=lambda b: b.time)
-        labels = [""] * len(level_boundaries[:-1])
-        layers.append(Segment(boundaries=level_boundaries, labels=labels, name=f"Level {level}"))
-
-    return MultiSegment(layers=layers, name=bh.name)
+# endregion: Stratification into levels

@@ -1,136 +1,219 @@
-"""Visualization tools for bnl."""
+"""Interactive visualization tools for bnl using Plotly."""
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING, Any
 
-import matplotlib.pyplot as plt
-import numpy as np
-from matplotlib.axes import Axes
+import plotly.colors as pc
+import plotly.graph_objects as go
 
 if TYPE_CHECKING:
-    from bnl.core import MultiSegment, Segment, TimeSpan
+    from bnl.core import BoundaryContour, MultiSegment, Segment
+
+
+__all__ = [
+    "create_style_map",
+    "plot_multisegment",
+    "plot_boundary_contour",
+]
 
 
 def create_style_map(
-    labels: set[str],
-    colormap: str = "tab20b",
+    labels: list[str],
+    colorscale: str | list[str] = "D3",
+    patterns: list[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """
-    Creates a default, consistent color map for all labels.
+    """Creates color, pattern, and text style maps for a list of labels."""
+    if isinstance(colorscale, str):
+        colorscale = getattr(pc.qualitative, colorscale)
 
-    Parameters
-    ----------
-    labels : set[str]
-        A set of unique label names.
-    colormap : str, optional
-        The matplotlib colormap to use, by default "tab20b".
+    if not patterns:
+        patterns = ["", ".", "x", "/", "+", "|", "-", "\\"]
+    patterns = patterns * (len(labels) // len(patterns) + 1)
 
-    Returns
-    -------
-    dict[str, dict[str, Any]]
-        A dictionary mapping each label to its style properties.
-    """
-    unique_labels = sorted(list(labels))
-    cmap = plt.get_cmap(colormap)
-    colors = cmap(np.linspace(0, 1, len(unique_labels)))
-    style_map = {}
-
-    for label, color in zip(unique_labels, colors, strict=False):
-        r, g, b, _ = color
-        luminance = 0.299 * r + 0.587 * g + 0.114 * b
-        textcolor = "white" if luminance < 0.5 else "black"
-        style = {"color": color, "textcolor": textcolor}
-        style_map[label] = style
-    return style_map
+    segment_bar_style = {
+        label: dict(
+            color=colorscale[i % len(colorscale)],
+            pattern_shape=patterns[i // len(colorscale)],
+            pattern_solidity=0.25,
+            pattern_fgopacity=0.5,
+            pattern_fgcolor="white",
+            line=dict(width=0.5, color="white"),
+        )
+        for i, label in enumerate(labels)
+    }
+    return segment_bar_style
 
 
-def plot_timespan(
-    span: TimeSpan,
-    ax: Axes,
-    style: dict[str, Any] | None = None,
-    y_pos: float = 0.0,
-    height: float = 1.0,
-    **kwargs: Any,
-) -> Axes:
-    """
-    Plots a time span as a labeled rectangle on a set of axes.
-    """
-    style = style or {}
-    color = style.get("color", "gray")
-    textcolor = style.get("textcolor", "white")
+def _plot_bars_for_label(
+    ms: MultiSegment | list[Segment],
+    segment_bar_style: dict[str, dict[str, Any]],
+) -> list[go.Bar]:
+    """Helper to create bar traces for all labels in a single pass through the data."""
+    from collections import defaultdict
 
-    ax.axvspan(
-        span.start.time,
-        span.end.time,
-        ymin=y_pos,
-        ymax=y_pos + height,
-        facecolor=color,
-        edgecolor="white",
-        linewidth=0.5,
-        **kwargs,
+    # Single pass through all sections, group by label
+    label_data: defaultdict[str, dict[str, list[Any]]] = defaultdict(
+        lambda: {
+            "durations": [],
+            "start_times": [],
+            "y_positions": [],
+            "hover_texts": [],
+            "text_labels": [],
+        }
     )
 
-    center_time = span.start.time + span.duration / 2
-    ax.text(
-        center_time,
-        y_pos + height / 2,
-        span.name,
-        ha="center",
-        va="center",
-        color=textcolor,
-        fontsize=8,
-    )
-    return ax
+    for layer in ms:
+        for section in layer:
+            data = label_data[str(section)]
+            data["durations"].append(section.duration)
+            data["start_times"].append(section.start.time)
+            data["y_positions"].append(str(layer))
+            data["text_labels"].append(str(section))
+            data["hover_texts"].append(
+                f"<b>{section}</b><br>"
+                f"Layer: {layer}<br>"
+                f"Start: {section.start.time:.3f}s<br>"
+                f"End: {section.end.time:.3f}s<br>"
+                f"Duration: {section.duration:.3f}s"
+            )
 
+    # Create traces for each label
+    traces = []
+    for label, data in label_data.items():
+        if label in segment_bar_style:  # Only create traces for labels we have styles for
+            traces.append(
+                go.Bar(
+                    name=label,
+                    y=data["y_positions"],
+                    x=data["durations"],
+                    base=data["start_times"],
+                    orientation="h",
+                    width=1.0,
+                    showlegend=True,
+                    text=data["text_labels"],
+                    textposition="inside",
+                    insidetextanchor="middle",
+                    hovertemplate="%{customdata}<extra></extra>",
+                    customdata=data["hover_texts"],
+                    marker=segment_bar_style[label],
+                )
+            )
+        else:
+            warnings.warn(f"Label {label} not found in segment_bar_style", stacklevel=2)
 
-def plot_segment(
-    segment: Segment,
-    ax: Axes | None = None,
-    style_map: dict[str, dict[str, Any]] | None = None,
-    y_pos: float = 0.0,
-    height: float = 1.0,
-) -> Axes:
-    """
-    Plots a Segment by drawing each of its sections.
-    """
-    if ax is None:
-        _, ax = plt.subplots(figsize=(15, len(segment.sections) * 0.5))
-        ax.set(title=segment.name, yticks=[], xlim=(segment.start.time, segment.end.time), xlabel="Time (s)")
-
-    if style_map is None:
-        style_map = create_style_map(set(segment.labels))
-
-    for section in segment.sections:
-        # using str() to guard sections with empty string as name, so it's not just gray
-        section_style = style_map.get(str(section), {})
-        plot_timespan(section, ax, style=section_style, y_pos=y_pos, height=height)
-    return ax
+    return traces
 
 
 def plot_multisegment(
     ms: MultiSegment,
-    ax: Axes | None = None,
-    style_map: dict[str, dict[str, Any]] | None = None,
-    colormap: str = "tab20b",
-) -> Axes:
+    colorscale: str | list[str] = "D3",
+    hatch: bool = True,
+) -> go.Figure:
+    """Plots all layers of the MultiSegment with interactive features.
+
+    Args:
+        ms (MultiSegment): The MultiSegment to plot.
+        colorscale (str | list[str], optional): Plotly colorscale to use. Can be a
+            qualitative scale name (e.g., "Set3", "Pastel") or a list of colors. Defaults to "D3".
+        hatch (bool, optional): Whether to use hatch patterns for different
+            labels. Defaults to True.
+
+    Returns:
+        Figure: The Plotly figure with the MultiSegment.
     """
-    Plots all layers of the MultiSegment.
+    fig = go.Figure()
+    fig.update_layout(
+        title_text=ms.name,
+        title_x=0.5,
+        xaxis_title="Time (s)",
+        yaxis_title=None,
+        width=650,
+        height=len(ms) * 25 + 70,
+        showlegend=False,
+        barmode="overlay",
+        yaxis=dict(
+            categoryorder="array",
+            categoryarray=[layer.name for layer in reversed(ms)],
+        ),
+        xaxis=dict(range=[ms.start.time, ms.end.time]),
+        margin=dict(l=20, r=20, t=40, b=20),  # make plot bigger
+    )
+
+    ordered_unique_labels = []
+    seen_labels = set()
+    for layer in ms:
+        for section in layer:
+            if section.name not in seen_labels:
+                ordered_unique_labels.append(section.name)
+                seen_labels.add(section.name)
+
+    segment_bar_style = create_style_map(
+        [label for label in ordered_unique_labels if label is not None],
+        colorscale,
+        patterns=None if hatch else [""],
+    )
+
+    # Plot the actual data as bar traces, which will also create the legend
+    traces = _plot_bars_for_label(ms, segment_bar_style)
+    for trace in traces:
+        fig.add_trace(trace)
+
+    return fig
+
+
+def plot_boundary_contour(
+    bc: BoundaryContour,
+    line_color: str = "#666",  # a medium grey that's okay on both white and black backgrounds
+) -> go.Figure:
+    """Plots a BoundaryContour with interactive hover information.
+
+    Args:
+        bc (BoundaryContour): The BoundaryContour to plot.
+        line_color (str, optional): Color of the boundary lines. Defaults to "black".
+
+    Returns:
+        Figure: The Plotly figure with the BoundaryContour.
     """
-    if ax is None:
-        _, ax = plt.subplots(figsize=(15, len(ms.layers) * 0.5))
-        ax.set(title=ms.name, yticks=[], xlim=(ms.start.time, ms.end.time), xlabel="Time (s)")
+    fig = go.Figure()
+    fig.update_layout(
+        title_text=bc.name,
+        title_x=0.5,
+        width=650,
+        height=300,
+        xaxis_title="Time (s)",
+        yaxis_title="Salience",
+        xaxis=dict(range=[bc.start.time, bc.end.time]),
+        showlegend=False,
+        margin=dict(l=20, r=20, t=40, b=20),  # make plot bigger
+    )
 
-    if style_map is None:
-        unique_labels = {label for layer in ms.layers for label in layer.labels}
-        style_map = create_style_map(unique_labels, colormap)
-    num_layers = len(ms.layers)
-    for i, layer in enumerate(ms.layers):
-        y_pos = 1 - (i + 1) / num_layers
-        height = 1 / num_layers
-        plot_segment(layer, ax, style_map=style_map, y_pos=y_pos, height=height)
+    # Always add the baseline
+    fig.add_hline(y=0, line_color=line_color, line_width=1, opacity=0.8)
 
-    ax.set_yticks([1 - (i + 0.5) / num_layers for i in range(num_layers)])
-    ax.set_yticklabels([layer.name for layer in ms.layers])
+    boundaries = bc.boundaries[1:-1]
+    if boundaries:
+        times = [b.time for b in boundaries]
+        saliences = [b.salience for b in boundaries]
 
-    return ax
+        # This is the idiomatic way to draw many disconnected lines (stems) in Plotly.
+        # By creating a single trace with `None` separating the coordinates for each
+        # line, we can draw all stems in a single, efficient batch operation.
+        stem_x = [v for t in times for v in (t, t, None)]
+        stem_y = [v for s in saliences for v in (0, s, None)]
+
+        # Draw all stems in a single, efficient trace
+        fig.add_trace(
+            go.Scatter(
+                x=stem_x,
+                y=stem_y,
+                mode="lines",
+                line=dict(color=line_color, width=1),
+                hovertemplate=(
+                    "<b>Boundary</b><br>Time: %{x:.3f}s<br>Salience: %{y:.3f}<extra></extra>"
+                ),
+            )
+        )
+
+    return fig

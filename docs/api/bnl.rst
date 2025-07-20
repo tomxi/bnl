@@ -1,9 +1,12 @@
 API Reference
 =============
 
-.. toctree::
-   :maxdepth: 3
+.. currentmodule:: bnl
 
+.. autosummary::
+   :toctree: generated
+   
    core
+   ops
    data
    viz

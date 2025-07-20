@@ -1,16 +1,19 @@
+# This file's Python dependencies should be kept in sync with pyproject.toml
+# When adding/removing Python dependencies, update both files.
+
 [build-system]
 requires = ["setuptools>=61.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "bnl"
-version = "0.2.1"
-description = "Boundary and Labeling: Tools for Hierarchical Music Structure Analysis"
+version = "0.0.3"
+description = "Boundaries and Labels: Tools for Hierarchical Music Structure Analysis"
 readme = "README.md"
 authors = [{ name = "Tom Xi", email = "tom.xi@nyu.edu" }]
 license = { text = "MIT" }
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
@@ -26,29 +29,27 @@ classifiers = [
 dependencies = [
     "numpy",
     "pandas",
-    "matplotlib",
-    "librosa",
-    "pyarrow",
-    "seaborn",
+    "plotly",
     "mir_eval",
     "jams",
     "requests",
+    "scipy",
+    "scikit-learn",
 ]
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "pytest-mock"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy", "pytest-mock", "types-requests", "requests-mock"]
 docs = [
     "sphinx",
     "sphinx-rtd-theme",
-    "numpydoc",
     "sphinx-copybutton",
     "myst-parser",
     "sphinx-autobuild",
+    "autoclasstoc",
 ]
+dash = ["dash", "dash-mantine-components", "kaleido", "dash-table", "dash-daq"]
 notebooks = ["jupyter", "ipykernel"]
-apps = ["streamlit"]
-cloud = ["boto3>=1.38.44,<2"]
 
 [project.urls]
 Homepage = "https://github.com/tomxi/bnl"
@@ -62,9 +63,9 @@ include-package-data = true
 where = ["src"]
 
 [tool.ruff]
-line-length = 120
+line-length = 100
 target-version = "py312"
-src = ["src", "apps"]
+src = ["src"]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -74,27 +75,24 @@ line-ending = "lf"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "C90", "N", "UP", "A", "B"]
-ignore = []
+ignore = ["B905"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["bnl"]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["A003"]
-"docs/conf.py" = ["A001"]
-
-[[tool.mypy.overrides]]
-module = "jams"
-ignore_missing_imports = true
 
 [tool.mypy]
 ignore_missing_imports = true
 disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
-markers = [
-    "remote_data: marks tests as requiring remote data access (deselect with '-m \"not remote_data\"')",
+addopts = [
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning:jsonschema.*",
 ]
+
+[tool.coverage.run]
+source = ["src"]

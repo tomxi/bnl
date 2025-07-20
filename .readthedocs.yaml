@@ -14,17 +14,17 @@ build:
       # Install pixi, dependencies, and the project in one block
       # to ensure the PATH is set correctly for all commands.
       - |
-        curl -fsSL https://pixi.sh/install.sh | bash -s -- --yes
-        export PATH="$HOME/.pixi/bin:$PATH"
-        pixi install -e docs --frozen
-        pixi run pip install .
+        curl -LsSf https://astral.sh/uv/install.sh | sh
+        export PATH="$HOME/.cargo/bin:$PATH"
+        uv venv
+        source .venv/bin/activate
+        uv pip install -e .[docs]
     build:
       html:
-        # Run the sphinx-build command within the pixi environment
-        # and output to the directory Read the Docs expects.
         - |
-          export PATH="$HOME/.pixi/bin:$PATH"
-          pixi run sphinx-build -b html docs/ $READTHEDOCS_OUTPUT/html
+          export PATH="$HOME/.cargo/bin:$PATH"
+          source .venv/bin/activate
+          uv run sphinx-build -b html docs/ $READTHEDOCS_OUTPUT/html
 
 # The sphinx key is removed to prevent Read the Docs from running
 # its own build command, which would use the wrong environment. 

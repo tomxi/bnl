@@ -4,17 +4,17 @@ This library provides tools for working with hierarchical text segments.
 
 Submodules
 ----------
-core
-    Core data structures and functionality.
 data
     Data loading and management for musical structure datasets.
 ops
     Operations and transformations on BNL objects.
+viz
+    Visualization tools for BNL objects.
 """
 
 from __future__ import annotations
 
-__version__ = "0.2.1"
+__version__ = "0.0.3"
 
 # --- Import submodules for explicit, namespaced access ---
 from . import core, data, ops, viz
@@ -28,7 +28,6 @@ from .core import (
     MultiSegment,
     RatedBoundary,
     Segment,
-    TimeSpan,
 )
 
 # --- Define the public-facing API of the `bnl` package ---
@@ -38,14 +37,13 @@ __all__ = [
     "RatedBoundary",
     "LeveledBoundary",
     # Containers
-    "TimeSpan",
     "Segment",
     "MultiSegment",
     "BoundaryContour",
     "BoundaryHierarchy",
     # Submodules (toolboxes)
-    "core",
     "data",
     "ops",
     "viz",
+    "core",
 ]

@@ -8,16 +8,16 @@ from bnl import core
 
 
 def test_boundary_init():
-    b = core.Boundary(1.234567)
-    assert b.time == 1.23457  # Rounded to 5 decimal places
-    assert repr(b) == "B(1.23457)"
+    b1 = core.Boundary(1.2345677)
+    b2 = core.Boundary(1.2345679899)
+    assert b1 == b2
+    assert repr(b1) == "B(1.23457)"
 
 
 def test_boundary_comparison():
-    b1 = core.Boundary(1.0)
-    b2 = core.Boundary(2.0)
+    b1 = core.Boundary(1.2345677)
+    b2 = core.Boundary(1.599)
     assert b1 < b2
-    assert b1 != b2
 
 
 def test_rated_boundary_init():
@@ -79,7 +79,7 @@ def test_timespan_init():
 
 def test_timespan_init_default_name():
     ts = core.TimeSpan(core.Boundary(1.0), core.Boundary(2.0))
-    assert ts.name == ""
+    assert ts.name == "[1.00-2.00]"
     assert str(ts) == "[1.00-2.00]"
 
 
@@ -156,7 +156,7 @@ def test_multisegment_from_json():
     mseg = core.MultiSegment.from_json(json_data)
     assert len(mseg.layers) == 2
     assert mseg.name == "JSON Annotation"
-    assert mseg.layers[0].name == "L00"
+    assert mseg.layers[0].name == "L01"
     assert len(mseg.layers[0].boundaries) == 3
     assert len(mseg.layers[1].boundaries) == 5
 
@@ -183,27 +183,6 @@ def test_multisegment_align_layers():
     assert core.MultiSegment.align_layers([]) == []
 
 
-def test_plotting_methods_return_axes():
-    import matplotlib.pyplot as plt
-    from matplotlib.axes import Axes
-
-    fig, ax = plt.subplots()
-
-    ts = core.TimeSpan(core.Boundary(0), core.Boundary(1))
-    ax_ts = ts.plot(ax)
-    assert isinstance(ax_ts, Axes)
-
-    seg = core.Segment.from_itvls([[0, 1]], ["A"])
-    ax_seg = seg.plot(ax)
-    assert isinstance(ax_seg, Axes)
-
-    mseg = core.MultiSegment([seg])
-    ax_mseg = mseg.plot(ax)
-    assert isinstance(ax_mseg, Axes)
-
-    plt.close(fig)
-
-
 # endregion
 
 
@@ -211,10 +190,10 @@ def test_boundary_contour_init():
     boundaries = [core.RatedBoundary(1, 1), core.RatedBoundary(0, 5), core.RatedBoundary(2, 2)]
     contour = core.BoundaryContour("test_contour", boundaries)
     assert contour.name == "test_contour"
-    assert len(contour) == 3
-    assert contour[0].time == 0 and contour[0].salience == 5
-    assert contour[1].time == 1 and contour[1].salience == 1
-    assert contour[2].time == 2 and contour[2].salience == 2
+    assert len(contour) == 1
+    # Check the effective (internal) boundary
+    assert contour[0].time == 1 and contour[0].salience == 1
+    # Check start and end boundaries
     assert contour.start.time == 0
     assert contour.end.time == 2
 
@@ -228,10 +207,10 @@ def test_boundary_hierarchy_init():
     boundaries = [core.LeveledBoundary(1, 1), core.LeveledBoundary(0, 2), core.LeveledBoundary(2, 1)]
     hier = core.BoundaryHierarchy("test_hier", boundaries)
     assert hier.name == "test_hier"
-    assert len(hier) == 3
-    assert hier[0].time == 0 and hier[0].level == 2
-    assert hier[1].time == 1 and hier[1].level == 1
-    assert hier[2].time == 2 and hier[2].level == 1
+    assert len(hier) == 1
+    # Check the effective (internal) boundary
+    assert hier[0].time == 1 and hier[0].level == 1
+    # Check start and end boundaries
     assert hier.start.time == 0
     assert hier.end.time == 2
 
@@ -239,3 +218,26 @@ def test_boundary_hierarchy_init():
 def test_boundary_hierarchy_init_error():
     with pytest.raises(ValueError, match="At least 2 boundaries for a TimeSpan!"):
         core.BoundaryHierarchy("test", [core.LeveledBoundary(0, 1)])
+
+
+def test_boundary_hierarchy_type_validation():
+    """Test that BoundaryHierarchy only accepts LeveledBoundary instances."""
+    # Should raise TypeError when passed RatedBoundary instead of LeveledBoundary
+    with pytest.raises(TypeError, match="All boundaries must be LeveledBoundary instances"):
+        core.BoundaryHierarchy(
+            "test",
+            [
+                core.LeveledBoundary(0, 1),
+                core.RatedBoundary(1, 2.0),  # This should cause TypeError
+            ],
+        )
+
+    # Should raise TypeError when passed regular Boundary
+    with pytest.raises(TypeError, match="All boundaries must be LeveledBoundary instances"):
+        core.BoundaryHierarchy(
+            "test",
+            [
+                core.LeveledBoundary(0, 1),
+                core.Boundary(1),  # This should cause TypeError
+            ],
+        )
