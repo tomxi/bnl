@@ -17,12 +17,12 @@ build:
         curl -LsSf https://astral.sh/uv/install.sh | sh
         export PATH="$HOME/.local/bin:$PATH"
         uv venv
-        .venv/bin/uv pip install -e .[docs]
+        uv pip install --python .venv/bin/python -e .[docs]
     build:
       html:
         - |
           export PATH="$HOME/.local/bin:$PATH"
-          .venv/bin/uv run sphinx-build -b html docs/ $READTHEDOCS_OUTPUT/html
+          uv run --python .venv/bin/python sphinx-build -b html docs/ $READTHEDOCS_OUTPUT/html
 
 # The sphinx key is removed to prevent Read the Docs from running
 # its own build command, which would use the wrong environment. 
