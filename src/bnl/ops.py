@@ -27,11 +27,20 @@ from collections.abc import Callable
 from typing import Any
 
 import numpy as np
-from librosa.util import localmax
+import scipy.signal
+
+# from librosa.util import localmax
 from mir_eval.hierarchy import _round
 from sklearn.neighbors import KernelDensity
 
-from .core import BoundaryContour, BoundaryHierarchy, LeveledBoundary, MultiSegment, RatedBoundary, TimeSpan
+from .core import (
+    BoundaryContour,
+    BoundaryHierarchy,
+    LeveledBoundary,
+    MultiSegment,
+    RatedBoundary,
+    TimeSpan,
+)
 
 # region: Different Notions of Boundary Salience
 
@@ -84,9 +93,13 @@ class SalByCount(SalienceStrategy):
         The salience of each unique boundary time is the number of layers in the
         `MultiSegment` that it appears in.
         """
-        time_counts: Counter[float] = Counter(b.time for layer in ms.layers for b in layer.boundaries)
+        time_counts: Counter[float] = Counter(
+            b.time for layer in ms.layers for b in layer.boundaries
+        )
         return BoundaryHierarchy(
-            boundaries=[LeveledBoundary(time=time, level=count) for time, count in time_counts.items()],
+            boundaries=[
+                LeveledBoundary(time=time, level=count) for time, count in time_counts.items()
+            ],
             name=ms.name or "Salience Hierarchy",
         )
 
@@ -106,7 +119,9 @@ class SalByDepth(SalienceStrategy):
         for salience, layer in enumerate(reversed(ms.layers), start=1):
             for boundary in layer.boundaries:
                 boundary_map[boundary.time] = LeveledBoundary(time=boundary.time, level=salience)
-        return BoundaryHierarchy(boundaries=list(boundary_map.values()), name=ms.name or "Salience Hierarchy")
+        return BoundaryHierarchy(
+            boundaries=list(boundary_map.values()), name=ms.name or "Salience Hierarchy"
+        )
 
 
 @SalienceStrategy.register("prob")
@@ -135,7 +150,9 @@ class SalByProb(SalienceStrategy):
 
 
 # region: Two ways to clean up boundaries closeby in time
-def clean_boundaries(bc: BoundaryContour, strategy: str = "absorb", **kwargs: Any) -> BoundaryContour:
+def clean_boundaries(
+    bc: BoundaryContour, strategy: str = "absorb", **kwargs: Any
+) -> BoundaryContour:
     """
     Clean up boundaries by removing boundaries that are closeby in time.
     """
@@ -184,7 +201,9 @@ class CleanByAbsorb(CleanStrategy):
 
         kept_boundaries = [bc.start, bc.end]
         for new_b in inner_boundaries:
-            is_absorbed = any(abs(new_b.time - kept_b.time) <= self.window for kept_b in kept_boundaries)
+            is_absorbed = any(
+                abs(new_b.time - kept_b.time) <= self.window for kept_b in kept_boundaries
+            )
             if not is_absorbed:
                 kept_boundaries.append(new_b)
 
@@ -209,7 +228,10 @@ class CleanByKDE(CleanStrategy):
         """
         if self._ticks is None:
             # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
-            n_frames = int((_round(span.end.time, frame_size) - _round(span.start.time, frame_size)) / frame_size)
+            n_frames = int(
+                (_round(span.end.time, frame_size) - _round(span.start.time, frame_size))
+                / frame_size
+            )
             self._ticks = np.arange(n_frames + 1) * frame_size + span.start.time
         return self._ticks
 
@@ -226,12 +248,16 @@ class CleanByKDE(CleanStrategy):
         grid_times = self._build_time_grid(bc, frame_size=0.1)
         log_density = self.time_kde.score_samples(grid_times.reshape(-1, 1))
 
-        peak_indices = localmax(log_density)
+        # The below used to be a `localmax` call on log_density from librosa.
+        # We need to check this carefully
+        peak_indices = scipy.signal.find_peaks(log_density)[0]
         peak_times = grid_times.flatten()[peak_indices]
         peak_saliences = np.exp(log_density[peak_indices])
         max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 1
 
-        new_inner_boundaries = [RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)]
+        new_inner_boundaries = [
+            RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)
+        ]
         final_boundaries = [
             RatedBoundary(bc.start.time, max_salience),
             *new_inner_boundaries,
@@ -255,7 +281,9 @@ def level_by_distinct_salience(bc: BoundaryContour) -> BoundaryHierarchy:
     sal_level = {sal: lvl for lvl, sal in enumerate(unique_saliences, start=1)}
 
     # Create LeveledBoundary objects for each boundary in the contour
-    inner_boundaries = [LeveledBoundary(time=b.time, level=sal_level[b.salience]) for b in bc.boundaries[1:-1]]
+    inner_boundaries = [
+        LeveledBoundary(time=b.time, level=sal_level[b.salience]) for b in bc.boundaries[1:-1]
+    ]
 
     leveled_boundaries = [
         LeveledBoundary(time=bc.boundaries[0].time, level=max_level),
@@ -263,7 +291,9 @@ def level_by_distinct_salience(bc: BoundaryContour) -> BoundaryHierarchy:
         LeveledBoundary(time=bc.boundaries[-1].time, level=max_level),
     ]
 
-    return BoundaryHierarchy(boundaries=leveled_boundaries, name=bc.name or "Distinct Salience Hierarchy")
+    return BoundaryHierarchy(
+        boundaries=leveled_boundaries, name=bc.name or "Distinct Salience Hierarchy"
+    )
 
 
 # endregion: Stratification into levels

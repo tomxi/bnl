@@ -55,7 +55,13 @@ def _plot_bars_for_label(
 
     # Single pass through all sections, group by label
     label_data: defaultdict[str, dict[str, list[Any]]] = defaultdict(
-        lambda: {"durations": [], "start_times": [], "y_positions": [], "hover_texts": [], "text_labels": []}
+        lambda: {
+            "durations": [],
+            "start_times": [],
+            "y_positions": [],
+            "hover_texts": [],
+            "text_labels": [],
+        }
     )
 
     for layer in ms:
@@ -204,7 +210,9 @@ def plot_boundary_contour(
                 y=stem_y,
                 mode="lines",
                 line=dict(color=line_color, width=1),
-                hovertemplate=("<b>Boundary</b><br>Time: %{x:.3f}s<br>Salience: %{y:.3f}<extra></extra>"),
+                hovertemplate=(
+                    "<b>Boundary</b><br>Time: %{x:.3f}s<br>Salience: %{y:.3f}<extra></extra>"
+                ),
             )
         )
 

@@ -14,11 +14,13 @@ Concise guidance for AI agents working with this music information retrieval cod
 
 - **Testing:** Maintain tests pragmatically without slowing development; make tests failure driven; test apps/ folder too and add tests from app failures;
 - **Documentation:** Clear docstrings for complex logic and public APIs; Sphinx + RTD ready, google style docstrings; build and consult the docs actively during development, planning, and ideation
-- **Dependencies:** Prefer pixi; minimal external dependencies; keep tomls current and use pixi tasks.
-    - **Pixi Tasks:** Use `pixi run check` for a full validation pipeline (format, lint, types, test). Other tasks like `pixi run format`, `pixi run lint`, `pixi run test`, `pixi run docs-build` are also available. Consult `pixi.toml` for details; keep toml files current and run `pixi install` when toml changes.
+- **Dependencies:** Managed with `uv` and `virtualenv` using `pyproject.toml`.
+    - **Setup:** `uv venv` to create a virtual environment, then `source .venv/bin/activate`.
+    - **Installation:** Install core and optional dependencies (`dev`, `docs`, `dash`, `notebooks`) with `uv pip install -e '.[dev,docs,dash,notebooks]'`.
+    - **Updates:** Re-run the installation command to update dependencies.
+- **Running Commands:** Use `uv run <command>` to execute scripts defined in `pyproject.toml` or any command within the virtual environment without explicit activation (e.g., `uv run python -m pytest`).
+- **Best Practice:** `pyproject.toml` is the single source of truth for all dependencies (core, dev, docs, etc.). `uv` and `virtualenv` provide a fast and isolated environment for development.
 - **Code Style:** Meaningful naming, logical structure, selective type hints.
-- **Data Format:** Prefer feather files; prioritize native core classes over jams/json/mir_eval formats but support them.
-
 
 ## Agent Notes
 

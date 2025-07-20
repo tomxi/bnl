@@ -131,12 +131,14 @@ class Segment(TimeSpan):
     `boundaries`.
     """
 
-    def __init__(self, boundaries: Sequence[Boundary], labels: Sequence[str], name: str = "Segment"):
+    def __init__(
+        self, boundaries: Sequence[Boundary], labels: Sequence[str], name: str = "Segment"
+    ):
         """Initializes the Segment.
 
         Args:
             boundaries (Sequence[Boundary]): A list of at least two boundaries, sorted by time.
-            labels (Sequence[str]): A list of labels for the sections. Must be `len(boundaries) - 1`.
+            labels (Sequence[str]): A list of labels for the sections. Must be `len(boundaries) - 1`
             name (str, optional): Name of the segment. Defaults to "Segment".
         """
         if not boundaries or len(boundaries) < 2:
@@ -177,11 +179,15 @@ class Segment(TimeSpan):
         return cls.from_itvls(itvls, labels, name=name)
 
     @classmethod
-    def from_itvls(cls, itvls: Sequence[Sequence[float]], labels: Sequence[str], name: str = "Segment") -> Segment:
+    def from_itvls(
+        cls, itvls: Sequence[Sequence[float]], labels: Sequence[str], name: str = "Segment"
+    ) -> Segment:
         """
         Data Ingestion from `mir_eval` format of boundaries and labels.
         """
-        boundaries = [Boundary(itvl[0]) for itvl in itvls]  # assume intervals have no overlap or gaps
+        boundaries = [
+            Boundary(itvl[0]) for itvl in itvls
+        ]  # assume intervals have no overlap or gaps
         boundaries.append(Boundary(itvls[-1][1]))  # tag on the end time of the last interval
         return cls(boundaries=boundaries, labels=labels, name=name)
 
@@ -204,25 +210,21 @@ class MultiSegment(TimeSpan):
     The primary input object for analysis, containing multiple Segment layers.
     """
 
+    layers: Sequence[Segment]
+
     def __init__(self, layers: Sequence[Segment], name: str = "Hierarchical Segmentation"):
         """Initializes the MultiSegment.
 
         The `start` and `end` attributes are automatically derived from the first layer.
 
         Args:
-            layers (list[Segment]): A list of Segment layers. All layers must have the same start and end times.
-            name (str, optional): Name of the object. Defaults to "Hierarchical Segmentation".
+            layers (Sequence[Segment]): A list of Segment layers.
+            name (str, optional): Name of the object.
         """
-        if len(layers) <= 0:
+        if not layers:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
-
         self.layers = self.align_layers(layers)
-
-        # After alignment, all layers have the same start and end times.
-        start = self.layers[0].start if self.layers else 0.0
-        end = self.layers[0].end if self.layers else 0.0
-
-        super().__init__(start=start, end=end, name=name)
+        super().__init__(start=self.layers[0].start, end=self.layers[0].end, name=name)
 
     def __len__(self) -> int:
         return len(self.layers)
@@ -234,9 +236,8 @@ class MultiSegment(TimeSpan):
         """Enable iteration over the layers."""
         return iter(self.layers)
 
-
     @classmethod
-    def from_json(cls, json_data: list, name: str = "JSON Annotation") -> MultiSegment:
+    def from_json(cls, json_data: list, name: str | None = None) -> MultiSegment:
         """Data Ingestion from adobe json format.
 
         Args:
@@ -253,14 +254,14 @@ class MultiSegment(TimeSpan):
         for i, layer in enumerate(json_data, start=1):
             itvls, labels = layer
             layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
-        return cls(layers=layers, name=name)
+        return cls(layers=layers, name=name if name is not None else "JSON Annotation")
 
     def plot(self, colorscale: str | list[str] = "D3", hatch: bool = True) -> go.Figure:
         """Plots the MultiSegment on a Plotly figure.
 
         Args:
             colorscale (str | list[str], optional): Plotly colorscale to use. Can be a
-                qualitative scale name (e.g., "Set3", "Pastel") or a list of colors. Defaults to "D3".
+                qualitative scale name (e.g., "Set3", "Pastel") or a list of colors.
             hatch (bool, optional): Whether to use hatch patterns for different
                 labels. Defaults to True.
 
@@ -313,7 +314,9 @@ class MultiSegment(TimeSpan):
             new_boundaries[0] = replace(new_boundaries[0], time=min_start_time)
             new_boundaries[-1] = replace(new_boundaries[-1], time=max_end_time)
 
-            aligned_layers.append(Segment(boundaries=new_boundaries, labels=layer.labels, name=layer.name or ""))
+            aligned_layers.append(
+                Segment(boundaries=new_boundaries, labels=layer.labels, name=layer.name or "")
+            )
 
         return aligned_layers
 
@@ -383,7 +386,7 @@ class BoundaryContour(TimeSpan):
 
     def to_hierarchy(self) -> BoundaryHierarchy:
         """
-        [STUB] Converts the BoundaryContour to a BoundaryHierarchy by setting boundary salience to discrete levels.
+        [STUB] Converts the BoundaryContour to a BoundaryHierarchy by quantizing salience.
         """
         from . import ops
 
@@ -430,7 +433,11 @@ class BoundaryHierarchy(BoundaryContour):
         for level in range(max_level, 0, -1):
             level_boundaries = [Boundary(b.time) for b in self.boundaries if b.level >= level]
             labels = [""] * (len(level_boundaries) - 1)
-            layers.append(Segment(boundaries=level_boundaries, labels=labels, name=f"L{max_level - level + 1:02d}"))
+            layers.append(
+                Segment(
+                    boundaries=level_boundaries, labels=labels, name=f"L{max_level - level + 1:02d}"
+                )
+            )
 
         return MultiSegment(layers=layers, name=self.name or "BoundaryHierarchy")
 
