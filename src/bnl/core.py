@@ -18,6 +18,7 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 import jams
+import numpy as np
 import plotly.graph_objects as go
 
 # region: Point-like Objects
@@ -131,6 +132,9 @@ class Segment(TimeSpan):
     `boundaries`.
     """
 
+    labels: Sequence[str]
+    boundaries: Sequence[Boundary]
+
     def __init__(
         self, boundaries: Sequence[Boundary], labels: Sequence[str], name: str = "Segment"
     ):
@@ -157,9 +161,15 @@ class Segment(TimeSpan):
     def sections(self) -> Sequence[TimeSpan]:
         """A list of all the labeled time spans that compose the segment."""
         return [
-            TimeSpan(start=self.boundaries[i], end=self.boundaries[i + 1], name=self.labels[i])
-            for i in range(len(self.labels))
+            TimeSpan(start=Boundary(itvl[0]), end=Boundary(itvl[1]), name=label)
+            for itvl, label in zip(self.itvls, self.labels)
         ]
+
+    @property
+    def itvls(self) -> np.ndarray:
+        return np.array(
+            [[b.time, e.time] for b, e in zip(self.boundaries[:-1], self.boundaries[1:])]
+        )
 
     def __len__(self) -> int:
         return len(self.labels)
@@ -236,6 +246,14 @@ class MultiSegment(TimeSpan):
         """Enable iteration over the layers."""
         return iter(self.layers)
 
+    @property
+    def itvls(self) -> Sequence[np.ndarray]:
+        return [layer.itvls for layer in self.layers]
+
+    @property
+    def labels(self) -> Sequence[Sequence[str]]:
+        return [layer.labels for layer in self.layers]
+
     @classmethod
     def from_json(cls, json_data: list, name: str | None = None) -> MultiSegment:
         """Data Ingestion from adobe json format.
@@ -288,16 +306,20 @@ class MultiSegment(TimeSpan):
 
         return ops.boundary_salience(self, strategy=strategy)
 
-    @staticmethod
-    def align_layers(layers: Sequence[Segment]) -> Sequence[Segment]:
-        """Adjusts a list of Segment layers to have a common start and end time.
+    def align_layers(
+        self,
+        layers: Sequence[Segment],
+        mode: str = "common",
+    ) -> Sequence[Segment]:
+        """Adjusts a list of Segment layers to have the same start and end as self.
 
+        If self has no start or end, it will be inferred from the layers.
         This is achieved by finding the earliest start time and latest end time
-        among all layers, and then extending each layer to this common span.
-        The first and last sections of each layer are stretched to cover the new span.
+        among all layers, and then extending each layer to this common span by stretching.
 
         Args:
             layers (Sequence[Segment]): The list of Segment layers to align.
+            mode (str, optional): The alignment mode. Can be "union" or "common".
 
         Returns:
             Sequence[Segment]: A new list of aligned Segment objects.
@@ -305,20 +327,32 @@ class MultiSegment(TimeSpan):
         if not layers:
             return []
 
-        min_start_time = min(layer.start.time for layer in layers)
-        max_end_time = max(layer.end.time for layer in layers)
+        if mode == "union":
+            inc_start_time = min(layer.start.time for layer in layers)
+            inc_end_time = max(layer.end.time for layer in layers)
+        elif mode == "common":
+            inc_start_time = max(layer.start.time for layer in layers)
+            inc_end_time = min(layer.end.time for layer in layers)
+        else:
+            raise ValueError(f"Unknown alignment mode: {mode}. Must be 'union' or 'common'.")
+
+        start = getattr(self, "start", Boundary(inc_start_time))
+        end = getattr(self, "end", Boundary(inc_end_time))
 
         aligned_layers = []
         for layer in layers:
             new_boundaries = layer.boundaries.copy()
-            new_boundaries[0] = replace(new_boundaries[0], time=min_start_time)
-            new_boundaries[-1] = replace(new_boundaries[-1], time=max_end_time)
+            new_boundaries[0] = start
+            new_boundaries[-1] = end
 
             aligned_layers.append(
                 Segment(boundaries=new_boundaries, labels=layer.labels, name=layer.name or "")
             )
 
-        return aligned_layers
+        if isinstance(layers, MultiSegment):
+            return MultiSegment(layers=aligned_layers, name=layers.name)
+        else:
+            return aligned_layers
 
 
 class BoundaryContour(TimeSpan):

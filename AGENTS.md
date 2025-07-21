@@ -27,12 +27,9 @@ Concise guidance for AI agents working with this music information retrieval cod
 *(Add development insights, common patterns, useful commands, etc.)*
 
 ### User's tasks:
-- we just commited to plotly, now let's clean the data module
 - we want to peel off the app eventually too, and clean the dependencies.
-- Next steps: make sure we have track.ests and track.refs working for both local and remote tracks
-- Optional: better manifest file? i.e. save the manifestfile in the repo.
 - Solidify the chainable logic and strategy in ops.py. We want to expose the strategies classes too. Two ways for me to use it. If I want to inspect the innards of the strategy I can do that by keeping the object around. The chainable method will wrap around the object and return the final result only.
-- let's the the non-bmeasure eval metrics working on the Dash app.
+- let's get the T-measure eval metrics working on the jupyter notebook.
   
 
 ### User Feedbacks:
