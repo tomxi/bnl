@@ -208,6 +208,9 @@ class Dataset:
         self.manifest["track_id"] = self.manifest["track_id"].astype(str)
         self.manifest.set_index("track_id", inplace=True, drop=False)
 
+        # Only include tracks that have the reference annotation
+        self.manifest = self.manifest[self.manifest.filter(like="has_annotation_reference").astype(bool).values.any(axis=1)]
+
         try:
             self.track_ids = sorted(self.manifest["track_id"].unique(), key=int)
         except ValueError:
