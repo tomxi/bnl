@@ -21,26 +21,29 @@ from . import core, data, ops, viz
 
 # --- Promote the core data structures to the top level ---
 from .core import (
-    Boundary,
-    BoundaryContour,
-    BoundaryHierarchy,
-    LeveledBoundary,
-    MultiSegment,
-    RatedBoundary,
-    Segment,
+    Boundary as B,
+    BoundaryContour as BC,
+    BoundaryHierarchy as BH,
+    LeveledBoundary as LB,
+    MultiSegment as MS,
+    RatedBoundary as RB,
+    Segment as S,
+    TimeSpan as TS,
 )
 
 # --- Define the public-facing API of the `bnl` package ---
 __all__ = [
     # Point
-    "Boundary",
-    "RatedBoundary",
-    "LeveledBoundary",
+    "B",
+    "RB",
+    "LB",
     # Containers
-    "Segment",
-    "MultiSegment",
-    "BoundaryContour",
-    "BoundaryHierarchy",
+    "TS",
+    "S",
+    "MS",
+    # Monotonic Boundaries
+    "BC",
+    "BH",
     # Submodules (toolboxes)
     "data",
     "ops",

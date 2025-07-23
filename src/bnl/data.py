@@ -82,7 +82,9 @@ class Track:
             annotators = list(set(annotators))
         else:
             annotators = []
-        self._refs = {a_id: self.load_annotation("reference", a_id) for a_id in annotators}
+        self._refs = {
+            a_id: self.load_annotation("reference", a_id) for a_id in annotators
+        }
         return self._refs
 
     @property
@@ -93,9 +95,14 @@ class Track:
 
         # Find all available estimated annotations from info
         est_keys = [key for key in self.info if key.startswith("annotation_adobe")]
-        est_ids = [key.replace("annotation_adobe-", "").replace("_path", "") for key in est_keys]
+        est_ids = [
+            key.replace("annotation_adobe-", "").replace("_path", "")
+            for key in est_keys
+        ]
 
-        self._ests = {est_id: self.load_annotation(f"adobe-{est_id}") for est_id in est_ids}
+        self._ests = {
+            est_id: self.load_annotation(f"adobe-{est_id}") for est_id in est_ids
+        }
         return self._ests
 
     @property
@@ -108,11 +115,15 @@ class Track:
             self._jam = jams.load(self._fetch_content(jam_path))
         return self._jam
 
-    def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:
+    def load_annotation(
+        self, annotation_type: str, annotator: str | None = None
+    ) -> MultiSegment:
         """Loads a specific annotation as a `MultiSegment`."""
         annotation_key = f"annotation_{annotation_type}_path"
         if annotation_key not in self.info:
-            raise ValueError(f"Annotation type '{annotation_type}' not available for this track.")
+            raise ValueError(
+                f"Annotation type '{annotation_type}' not available for this track."
+            )
 
         annotation_path = self.info[annotation_key]
 
@@ -123,7 +134,9 @@ class Track:
         else:
             raise NotImplementedError(f"Unsupported file type: {annotation_path}")
 
-    def _load_jams_anno(self, path: str | Path, name: str | None = None) -> MultiSegment:
+    def _load_jams_anno(
+        self, path: str | Path, name: str | None = None
+    ) -> MultiSegment:
         """
         Find the annotator with name `name` in the JAMS file, and load it as a `MultiSegment`.
         If `name` is None, find the first annotator in the JAMS file.
@@ -133,7 +146,9 @@ class Track:
         """
         jam = jams.load(self._fetch_content(path))
         search_name = name if name is not None else ""
-        uppers = jam.search(namespace="segment_salami_function").search(name=search_name)
+        uppers = jam.search(namespace="segment_salami_function").search(
+            name=search_name
+        )
         lowers = jam.search(namespace="segment_salami_lower").search(name=search_name)
 
         if len(uppers) == 0 or len(lowers) == 0:
@@ -195,7 +210,9 @@ class Dataset:
         # Load manifest
         try:
             load_path = (
-                Path(manifest_path).expanduser() if self.data_location == "local" else manifest_path
+                Path(manifest_path).expanduser()
+                if self.data_location == "local"
+                else manifest_path
             )
             self.manifest = (
                 pd.read_csv(io.StringIO(requests.get(str(manifest_path)).text))
@@ -209,7 +226,11 @@ class Dataset:
         self.manifest.set_index("track_id", inplace=True, drop=False)
 
         # Only include tracks that have the reference annotation
-        self.manifest = self.manifest[self.manifest.filter(like="has_annotation_reference").astype(bool).values.any(axis=1)]
+        self.manifest = self.manifest[
+            self.manifest.filter(like="has_annotation_reference")
+            .astype(bool)
+            .values.any(axis=1)
+        ]
 
         try:
             self.track_ids = sorted(self.manifest["track_id"].unique(), key=int)
@@ -243,7 +264,9 @@ class Dataset:
         else:
             return mu_gamma
 
-    def _reconstruct_local_path(self, track_id: str, asset_type: str, asset_subtype: str) -> Path:
+    def _reconstruct_local_path(
+        self, track_id: str, asset_type: str, asset_subtype: str
+    ) -> Path:
         """Reconstruct local file path for an asset."""
         root = cast(Path, self.dataset_root)
 
@@ -262,7 +285,9 @@ class Dataset:
 
         raise ValueError(f"Unknown local asset: {asset_type}/{asset_subtype}")
 
-    def _reconstruct_cloud_url(self, track_id: str, asset_type: str, asset_subtype: str) -> str:
+    def _reconstruct_cloud_url(
+        self, track_id: str, asset_type: str, asset_subtype: str
+    ) -> str:
         """Reconstruct cloud URL for an asset."""
         base = cast(str, self.base_url)
 
@@ -279,7 +304,9 @@ class Dataset:
 
         raise ValueError(f"Unknown cloud asset: {asset_type}/{asset_subtype}")
 
-    def _reconstruct_path(self, track_id: str, asset_type: str, asset_subtype: str) -> Path | str:
+    def _reconstruct_path(
+        self, track_id: str, asset_type: str, asset_subtype: str
+    ) -> Path | str:
         """
         Reconstruct the full path or URL for an asset based on the dataset's
         data_location.

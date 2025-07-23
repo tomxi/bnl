@@ -82,7 +82,9 @@ def _plot_bars_for_label(
     # Create traces for each label
     traces = []
     for label, data in label_data.items():
-        if label in segment_bar_style:  # Only create traces for labels we have styles for
+        if (
+            label in segment_bar_style
+        ):  # Only create traces for labels we have styles for
             traces.append(
                 go.Bar(
                     name=label,

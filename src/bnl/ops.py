@@ -97,7 +97,7 @@ class SalByCount(SalienceStrategy):
             b.time for layer in ms.layers for b in layer.bs
         )
         return BoundaryHierarchy(
-            boundaries=[
+            bs=[
                 LeveledBoundary(time=time, level=count) for time, count in time_counts.items()
             ],
             name=ms.name or "Salience Hierarchy",
@@ -120,7 +120,7 @@ class SalByDepth(SalienceStrategy):
             for boundary in layer.bs:
                 boundary_map[boundary.time] = LeveledBoundary(time=boundary.time, level=salience)
         return BoundaryHierarchy(
-            boundaries=list(boundary_map.values()), name=ms.name or "Salience Hierarchy"
+            bs=list(boundary_map.values()), name=ms.name or "Salience Hierarchy"
         )
 
 
@@ -142,7 +142,7 @@ class SalByProb(SalienceStrategy):
                     time_saliences[boundary.time] += weight
         return BoundaryContour(
             name=ms.name or "Salience Contour",
-            boundaries=[RatedBoundary(t, s) for t, s in time_saliences.items()],
+            bs=[RatedBoundary(t, s) for t, s in time_saliences.items()],
         )
 
 
@@ -208,7 +208,7 @@ class CleanByAbsorb(CleanStrategy):
                 kept_boundaries.append(new_b)
 
         boundaries = [RatedBoundary(b.time, b.salience) for b in sorted(kept_boundaries)]
-        return BoundaryContour(name=bc.name or "Cleaned Contour", boundaries=boundaries)
+        return BoundaryContour(name=bc.name or "Cleaned Contour", bs=boundaries)
 
 
 @CleanStrategy.register("kde")
@@ -263,7 +263,7 @@ class CleanByKDE(CleanStrategy):
             *new_inner_boundaries,
             RatedBoundary(bc.end.time, max_salience),
         ]
-        return BoundaryContour(name=bc.name or "Cleaned Contour", boundaries=final_boundaries)
+        return BoundaryContour(name=bc.name or "Cleaned Contour", bs=final_boundaries)
 
 
 # endregion: Two ways to clean up boundaries closeby in time
@@ -292,7 +292,7 @@ def level_by_distinct_salience(bc: BoundaryContour) -> BoundaryHierarchy:
     ]
 
     return BoundaryHierarchy(
-        boundaries=leveled_boundaries, name=bc.name or "Distinct Salience Hierarchy"
+        bs=leveled_boundaries, name=bc.name or "Distinct Salience Hierarchy"
     )
 
 
