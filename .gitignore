@@ -27,9 +27,6 @@ docs/_build/
 docs/api/generated/
 site/
 
-# Pixi
-.pixi/
-
 # Local development
 *.log
 
