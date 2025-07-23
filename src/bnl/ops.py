@@ -94,7 +94,7 @@ class SalByCount(SalienceStrategy):
         `MultiSegment` that it appears in.
         """
         time_counts: Counter[float] = Counter(
-            b.time for layer in ms.layers for b in layer.boundaries
+            b.time for layer in ms.layers for b in layer.bs
         )
         return BoundaryHierarchy(
             boundaries=[
@@ -117,7 +117,7 @@ class SalByDepth(SalienceStrategy):
         """
         boundary_map: dict[float, LeveledBoundary] = {}
         for salience, layer in enumerate(reversed(ms.layers), start=1):
-            for boundary in layer.boundaries:
+            for boundary in layer.bs:
                 boundary_map[boundary.time] = LeveledBoundary(time=boundary.time, level=salience)
         return BoundaryHierarchy(
             boundaries=list(boundary_map.values()), name=ms.name or "Salience Hierarchy"
@@ -135,10 +135,10 @@ class SalByProb(SalienceStrategy):
         """
         time_saliences: defaultdict[float, float] = defaultdict(float)
         for layer in ms.layers:
-            if len(layer.boundaries) > 2:
+            if len(layer.bs) > 2:
                 # Weight is inversely proportional to the number of effective boundaries.
-                weight = 1.0 / len(layer.boundaries[1:-1])
-                for boundary in layer.boundaries:
+                weight = 1.0 / len(layer.bs[1:-1])
+                for boundary in layer.bs:
                     time_saliences[boundary.time] += weight
         return BoundaryContour(
             name=ms.name or "Salience Contour",
@@ -194,10 +194,10 @@ class CleanByAbsorb(CleanStrategy):
         self.window = window
 
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
-        if len(bc.boundaries) <= 2:
+        if len(bc.bs) <= 2:
             return bc
 
-        inner_boundaries = sorted(bc.boundaries[1:-1], key=lambda b: b.salience, reverse=True)
+        inner_boundaries = sorted(bc.bs[1:-1], key=lambda b: b.salience, reverse=True)
 
         kept_boundaries = [bc.start, bc.end]
         for new_b in inner_boundaries:
@@ -236,10 +236,10 @@ class CleanByKDE(CleanStrategy):
         return self._ticks
 
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
-        if len(bc.boundaries) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
+        if len(bc.bs) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
             return bc
 
-        inner_boundaries = bc.boundaries[1:-1]
+        inner_boundaries = bc.bs[1:-1]
         times = np.array([b.time for b in inner_boundaries])
         saliences = np.array([b.salience for b in inner_boundaries])
 
@@ -276,19 +276,19 @@ def level_by_distinct_salience(bc: BoundaryContour) -> BoundaryHierarchy:
     Find all distinct salience values and use their integer rank as level.
     """
     # Create a mapping from each unique salience value to its rank (level)
-    unique_saliences = sorted({b.salience for b in bc.boundaries[1:-1]})
+    unique_saliences = sorted({b.salience for b in bc.bs[1:-1]})
     max_level = len(unique_saliences)
     sal_level = {sal: lvl for lvl, sal in enumerate(unique_saliences, start=1)}
 
     # Create LeveledBoundary objects for each boundary in the contour
     inner_boundaries = [
-        LeveledBoundary(time=b.time, level=sal_level[b.salience]) for b in bc.boundaries[1:-1]
+        LeveledBoundary(time=b.time, level=sal_level[b.salience]) for b in bc.bs[1:-1]
     ]
 
     leveled_boundaries = [
-        LeveledBoundary(time=bc.boundaries[0].time, level=max_level),
+        LeveledBoundary(time=bc.bs[0].time, level=max_level),
         *inner_boundaries,
-        LeveledBoundary(time=bc.boundaries[-1].time, level=max_level),
+        LeveledBoundary(time=bc.bs[-1].time, level=max_level),
     ]
 
     return BoundaryHierarchy(

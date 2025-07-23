@@ -93,7 +93,7 @@ def test_timespan_init_invalid_duration():
 def test_segment_init():
     boundaries = [core.Boundary(0), core.Boundary(1), core.Boundary(2)]
     labels = ["A", "B"]
-    seg = core.Segment(boundaries, labels, "test_seg")
+    seg = core.Segment.from_bs(boundaries, labels, "test_seg")
     assert seg.name == "test_seg"
     assert seg.start.time == 0
     assert seg.end.time == 2
@@ -105,23 +105,23 @@ def test_segment_init():
 
 def test_segment_init_errors():
     with pytest.raises(ValueError, match="A Segment requires at least two boundaries."):
-        core.Segment([core.Boundary(0)], ["A"])
+        core.Segment.from_bs([core.Boundary(0)], ["A"])
     boundaries = [core.Boundary(0), core.Boundary(1)]
     with pytest.raises(ValueError, match="Number of labels must be one less than"):
-        core.Segment(boundaries, ["A", "B"])
+        core.Segment.from_bs(boundaries, ["A", "B"])
     unsorted_boundaries = [core.Boundary(1), core.Boundary(0)]
     with pytest.raises(ValueError, match="Boundaries must be sorted by time."):
-        core.Segment(unsorted_boundaries, ["A"])
+        core.Segment.from_bs(unsorted_boundaries, ["A"])
 
 
 def test_segment_from_methods():
     itvls = [[0.0, 1.0], [1.0, 2.5]]
     labels = ["A", "B"]
     seg = core.Segment.from_itvls(itvls, labels)
-    assert len(seg.boundaries) == 3
-    assert seg.boundaries[0].time == 0.0
-    assert seg.boundaries[1].time == 1.0
-    assert seg.boundaries[2].time == 2.5
+    assert len(seg.bs) == 3
+    assert seg.bs[0].time == 0.0
+    assert seg.bs[1].time == 1.0
+    assert seg.bs[2].time == 2.5
     assert seg.labels == ["A", "B"]
 
 
@@ -142,10 +142,11 @@ def test_multisegment_init_errors():
     s1 = core.Segment.from_itvls([[0, 2], [2, 4]], ["A", "B"])
     s2_bad_start = core.Segment.from_itvls([[0.1, 1], [1, 4]], ["a", "b"])
     s2_bad_end = core.Segment.from_itvls([[0, 1], [1, 4.1]], ["a", "b"])
-    with pytest.raises(ValueError, match="All layers must have the same start time"):
-        core.MultiSegment([s1, s2_bad_start])
-    with pytest.raises(ValueError, match="All layers must have the same end time"):
-        core.MultiSegment([s1, s2_bad_end])
+    fixed_start = core.MultiSegment([s1, s2_bad_start])
+    fixed_end = core.MultiSegment([s1, s2_bad_end])
+    # The start and end times are fixed to the common start and end of the layers.
+    assert fixed_start.start.time == 0.1
+    assert fixed_end.end.time == 4
 
 
 def test_multisegment_from_json():
@@ -157,30 +158,9 @@ def test_multisegment_from_json():
     assert len(mseg.layers) == 2
     assert mseg.name == "JSON Annotation"
     assert mseg.layers[0].name == "L01"
-    assert len(mseg.layers[0].boundaries) == 3
-    assert len(mseg.layers[1].boundaries) == 5
+    assert len(mseg.layers[0].bs) == 3
+    assert len(mseg.layers[1].bs) == 5
 
-
-def test_multisegment_align_layers():
-    s1 = core.Segment.from_itvls([[0, 5]], ["A"])
-    s2 = core.Segment.from_itvls([[1, 3], [3, 6]], ["b", "c"])
-    s3 = core.Segment.from_itvls([[2, 4]], ["d"])
-
-    aligned_layers = core.MultiSegment.align_layers([s1, s2, s3])
-    assert len(aligned_layers) == 3
-
-    min_start = 0
-    max_end = 6
-
-    for layer in aligned_layers:
-        assert layer.start.time == min_start
-        assert layer.end.time == max_end
-
-    # Test original layers are not modified
-    assert s1.start.time == 0 and s1.end.time == 5
-
-    # Test empty list
-    assert core.MultiSegment.align_layers([]) == []
 
 
 # endregion

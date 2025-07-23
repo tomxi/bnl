@@ -192,7 +192,7 @@ def plot_boundary_contour(
     # Always add the baseline
     fig.add_hline(y=0, line_color=line_color, line_width=1, opacity=0.8)
 
-    boundaries = bc.boundaries[1:-1]
+    boundaries = bc.bs[1:-1]
     if boundaries:
         times = [b.time for b in boundaries]
         saliences = [b.salience for b in boundaries]

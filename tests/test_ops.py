@@ -15,9 +15,9 @@ def test_boundary_salience_by_count():
     # Times: 0, 1, 2, 5
     # Counts: 0 appears 3 times, 1 appears 2 times, 2 appears 1 time, 5 appears 3 times
     expected_levels = {0.0: 3, 1.0: 2, 2.0: 1, 5.0: 3}
-    assert len(hierarchy.boundaries) == len(expected_levels)
+    assert len(hierarchy.bs) == len(expected_levels)
 
-    for b in hierarchy.boundaries:
+    for b in hierarchy.bs:
         assert b.level == expected_levels[b.time]
 
 
@@ -41,8 +41,8 @@ def test_boundary_salience_by_depth():
     # t=2: in s2 -> gets salience 2 from s2
     # t=5: in s3,s2,s1 -> gets salience 3 from s1
     expected_levels = {0.0: 3, 1.0: 3, 2.0: 2, 5.0: 3}
-    assert len(hierarchy.boundaries) == len(expected_levels)
-    for b in hierarchy.boundaries:
+    assert len(hierarchy.bs) == len(expected_levels)
+    for b in hierarchy.bs:
         assert b.level == expected_levels[b.time]
 
 
@@ -82,7 +82,7 @@ def test_level_by_distinct_salience():
     }
 
     # The order is not guaranteed by the function, so we check by time
-    found_boundaries = {b.time: b for b in hierarchy.boundaries}
+    found_boundaries = {b.time: b for b in hierarchy.bs}
     assert len(found_boundaries) == len(expected_levels)
     for time, level in expected_levels.items():
         assert found_boundaries[time].level == level
@@ -109,11 +109,11 @@ def test_boundary_salience_by_prob():
     # t=4: s3(0.33) = 0.33
     # t=5: s1(1) + s2(1) + s3(0.33) = 2.33
     expected_saliences = {0.0: 7 / 3, 1.0: 4 / 3, 2.0: 4 / 3, 4.0: 1 / 3, 5.0: 7 / 3}
-    assert len(contour.boundaries) == len(expected_saliences)
+    assert len(contour.bs) == len(expected_saliences)
 
     # Use pytest.approx for float comparison
     from pytest import approx
 
-    found_saliences = {b.time: b.salience for b in contour.boundaries}
+    found_saliences = {b.time: b.salience for b in contour.bs}
     for time, salience in expected_saliences.items():
         assert found_saliences[time] == approx(salience)
