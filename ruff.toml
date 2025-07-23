@@ -1,4 +1,4 @@
 # ruff.toml
 target-version = "py311" # Or your Python version
 include = ["src/**/*.py"]
-exclude = ["notebooks"]
+exclude = ["notebooks", "tests"]
