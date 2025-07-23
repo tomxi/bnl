@@ -14,7 +14,7 @@ __all__ = [
 ]
 
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 import jams
@@ -104,7 +104,8 @@ class TimeSpan:
 
     start: Boundary
     end: Boundary
-    name: str | None = None  # docstring: Name of the time span, defaults to `[start-end]` if None
+    # docstring: Name of the time span, defaults to `[start-end]` if None
+    name: str | None = None
 
     def __post_init__(self) -> None:
         if self.end.time <= self.start.time:
@@ -136,7 +137,10 @@ class Segment(TimeSpan):
     boundaries: Sequence[Boundary]
 
     def __init__(
-        self, boundaries: Sequence[Boundary], labels: Sequence[str], name: str = "Segment"
+        self,
+        boundaries: Sequence[Boundary],
+        labels: Sequence[str],
+        name: str = "Segment",
     ):
         """Initializes the Segment.
 
@@ -148,7 +152,9 @@ class Segment(TimeSpan):
         if not boundaries or len(boundaries) < 2:
             raise ValueError("A Segment requires at least two boundaries.")
         if len(labels) != len(boundaries) - 1:
-            raise ValueError("Number of labels must be one less than the number of boundaries.")
+            raise ValueError(
+                "Number of labels must be one less than the number of boundaries."
+            )
 
         self.boundaries = list(boundaries)
         if self.boundaries != sorted(self.boundaries):
@@ -168,7 +174,10 @@ class Segment(TimeSpan):
     @property
     def itvls(self) -> np.ndarray:
         return np.array(
-            [[b.time, e.time] for b, e in zip(self.boundaries[:-1], self.boundaries[1:])]
+            [
+                [b.time, e.time]
+                for b, e in zip(self.boundaries[:-1], self.boundaries[1:])
+            ]
         )
 
     def __len__(self) -> int:
@@ -181,7 +190,9 @@ class Segment(TimeSpan):
         return iter(self.sections)
 
     @classmethod
-    def from_jams(cls, segment_annotation: jams.Annotation, name: str = "Segment") -> Segment:
+    def from_jams(
+        cls, segment_annotation: jams.Annotation, name: str = "Segment"
+    ) -> Segment:
         """
         Data Ingestion from jams format.
         """
@@ -190,15 +201,18 @@ class Segment(TimeSpan):
 
     @classmethod
     def from_itvls(
-        cls, itvls: Sequence[Sequence[float]], labels: Sequence[str], name: str = "Segment"
+        cls,
+        itvls: Sequence[Sequence[float]],
+        labels: Sequence[str],
+        name: str = "Segment",
     ) -> Segment:
         """
         Data Ingestion from `mir_eval` format of boundaries and labels.
         """
-        boundaries = [
-            Boundary(itvl[0]) for itvl in itvls
-        ]  # assume intervals have no overlap or gaps
-        boundaries.append(Boundary(itvls[-1][1]))  # tag on the end time of the last interval
+        # assume intervals have no overlap or gaps
+        boundaries = [Boundary(itvl[0]) for itvl in itvls]
+        # tag on the end time of the last interval
+        boundaries.append(Boundary(itvls[-1][1]))
         return cls(boundaries=boundaries, labels=labels, name=name)
 
     def plot(
@@ -214,6 +228,16 @@ class Segment(TimeSpan):
         fig.update_layout(yaxis_visible=False)
         return fig
 
+    def scrub_labels(self) -> Segment:
+        """
+        Scrubs the labels of the Segment by replacing them with empty strings.
+        """
+        return Segment(
+            boundaries=self.boundaries,
+            labels=[""] * len(self.labels),
+            name=self.name,
+        )
+
 
 class MultiSegment(TimeSpan):
     """
@@ -222,7 +246,9 @@ class MultiSegment(TimeSpan):
 
     layers: Sequence[Segment]
 
-    def __init__(self, layers: Sequence[Segment], name: str = "Hierarchical Segmentation"):
+    def __init__(
+        self, layers: Sequence[Segment], name: str = "Hierarchical Segmentation"
+    ):
         """Initializes the MultiSegment.
 
         The `start` and `end` attributes are automatically derived from the first layer.
@@ -290,7 +316,7 @@ class MultiSegment(TimeSpan):
 
         return viz.plot_multisegment(ms=self, colorscale=colorscale, hatch=hatch)
 
-    def to_contour(self, strategy: str = "depth") -> BoundaryContour:
+    def contour(self, strategy: str = "depth") -> BoundaryContour:
         """Calculates boundary salience and converts to a BoundaryContour.
 
         This is a convenience wrapper around `bnl.ops.boundary_salience`.
@@ -305,6 +331,15 @@ class MultiSegment(TimeSpan):
         from . import ops  # Local import to avoid circular dependency at runtime
 
         return ops.boundary_salience(self, strategy=strategy)
+
+    def scrub_labels(self) -> MultiSegment:
+        """
+        Scrubs the labels of the MultiSegment by replacing them with empty strings.
+        """
+        return MultiSegment(
+            layers=[layer.scrub_labels() for layer in self.layers],
+            name=self.name,
+        )
 
     def align_layers(
         self,
@@ -334,7 +369,9 @@ class MultiSegment(TimeSpan):
             inc_start_time = max(layer.start.time for layer in layers)
             inc_end_time = min(layer.end.time for layer in layers)
         else:
-            raise ValueError(f"Unknown alignment mode: {mode}. Must be 'union' or 'common'.")
+            raise ValueError(
+                f"Unknown alignment mode: {mode}. Must be 'union' or 'common'."
+            )
 
         start = getattr(self, "start", Boundary(inc_start_time))
         end = getattr(self, "end", Boundary(inc_end_time))
@@ -346,7 +383,11 @@ class MultiSegment(TimeSpan):
             new_boundaries[-1] = end
 
             aligned_layers.append(
-                Segment(boundaries=new_boundaries, labels=layer.labels, name=layer.name or "")
+                Segment(
+                    boundaries=new_boundaries,
+                    labels=layer.labels,
+                    name=layer.name or "",
+                )
             )
 
         if isinstance(layers, MultiSegment):
@@ -418,13 +459,12 @@ class BoundaryContour(TimeSpan):
 
         return ops.clean_boundaries(self, strategy=strategy, **kwargs)
 
-    def to_hierarchy(self) -> BoundaryHierarchy:
+    def level(self) -> BoundaryHierarchy:
         """
-        [STUB] Converts the BoundaryContour to a BoundaryHierarchy by quantizing salience.
+        Converts the BoundaryContour to a BoundaryHierarchy by quantizing salience.
         """
         from . import ops
 
-        # TODO: Implement this.
         return ops.level_by_distinct_salience(self)
 
 
@@ -453,7 +493,7 @@ class BoundaryHierarchy(BoundaryContour):
         # Call parent constructor which handles sorting and TimeSpan initialization
         super().__init__(name=name, boundaries=boundaries)
 
-    def to_multisegment(self) -> MultiSegment:
+    def to_ms(self) -> MultiSegment:
         """Convert the BoundaryHierarchy to a MultiSegment.
 
         The MultiSegment will have layers from coarsest (highest level) to
@@ -465,11 +505,15 @@ class BoundaryHierarchy(BoundaryContour):
         layers = []
         max_level = max(b.level for b in self.boundaries)
         for level in range(max_level, 0, -1):
-            level_boundaries = [Boundary(b.time) for b in self.boundaries if b.level >= level]
+            level_boundaries = [
+                Boundary(b.time) for b in self.boundaries if b.level >= level
+            ]
             labels = [""] * (len(level_boundaries) - 1)
             layers.append(
                 Segment(
-                    boundaries=level_boundaries, labels=labels, name=f"L{max_level - level + 1:02d}"
+                    boundaries=level_boundaries,
+                    labels=labels,
+                    name=f"L{max_level - level + 1:02d}",
                 )
             )
 
