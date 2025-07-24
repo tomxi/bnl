@@ -3,6 +3,9 @@
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true
     },
+    "ruff.exclude": [
+        "**/notebooks",
+    ],
     "files.exclude": {
         "**/__pycache__": true,
         "**/*.egg-info": true,

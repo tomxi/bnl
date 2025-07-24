@@ -77,7 +77,9 @@ class LeveledBoundary(RatedBoundary):
             ValueError: If `level` is not a positive integer.
         """
         if not isinstance(level, int) or level <= 0:
-            raise ValueError("`level` must be a positive integer.")
+            raise ValueError(
+                f"`level` must be a positive integer, got {level}, with type {type(level)}."
+            )
 
         # Manually set the attributes for this frozen instance.
         object.__setattr__(self, "time", time)
@@ -152,15 +154,11 @@ class Segment(TimeSpan):
         if len(self.labels) != len(self.bs) - 1:
             raise ValueError("Number of labels must be one less than the number of boundaries.")
 
-        # Ensure boundaries is a mutable list and sorted.
-        self.bs = list(self.bs)
-        if self.bs != sorted(self.bs):
-            raise ValueError("Boundaries must be sorted by time.")
-
+        # Ensure boundaries is sorted.
+        self.bs = sorted(self.bs)
         # Derive and set the parent's start and end fields.
-        object.__setattr__(self, "start", self.bs[0])
-        object.__setattr__(self, "end", self.bs[-1])
-
+        self.__setattr__("start", self.bs[0])
+        self.__setattr__("end", self.bs[-1])
         # Call the parent's post-init to validate duration.
         super().__post_init__()
 
@@ -432,14 +430,14 @@ class BoundaryContour(TimeSpan):
     """
 
     bs: Sequence[RatedBoundary] = field(default_factory=list)
-    name: str = "BoundaryContour"
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
+    name: str = "BoundaryContour"
 
     def __post_init__(self):
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A BoundaryContour requires at least two boundaries.")
-        self.bs = sorted(list(set(self.bs)))
+        self.bs = sorted(self.bs)
         object.__setattr__(self, "start", self.bs[0])
         object.__setattr__(self, "end", self.bs[-1])
         super().__post_init__()
@@ -499,11 +497,15 @@ class BoundaryHierarchy(BoundaryContour):
     The structural output of the monotonic casting process.
     """
 
+    bs: Sequence[LeveledBoundary] = field(default_factory=list)
+    start: Boundary = field(init=False)
+    end: Boundary = field(init=False)
+    name: str = "BoundaryHierarchy"
+
     def __post_init__(self):
-        if self.bs:
-            for boundary in self.bs:
-                if not isinstance(boundary, LeveledBoundary):
-                    raise TypeError("All boundaries must be LeveledBoundary instances")
+        for boundary in self.bs:
+            if not isinstance(boundary, LeveledBoundary):
+                raise TypeError("All boundaries must be LeveledBoundary instances")
         # Call parent's post-init after type validation
         super().__post_init__()
 
@@ -529,7 +531,7 @@ class BoundaryHierarchy(BoundaryContour):
                 )
             )
 
-        return MultiSegment(layers=layers, name=self.name or "BoundaryHierarchy")
+        return MultiSegment(layers=layers, name=f"{self.name} Monotonic MS")
 
 
 # endregion

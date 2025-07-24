@@ -93,13 +93,9 @@ class SalByCount(SalienceStrategy):
         The salience of each unique boundary time is the number of layers in the
         `MultiSegment` that it appears in.
         """
-        time_counts: Counter[float] = Counter(
-            b.time for layer in ms.layers for b in layer.bs
-        )
+        time_counts: Counter[float] = Counter(b.time for layer in ms.layers for b in layer.bs)
         return BoundaryHierarchy(
-            bs=[
-                LeveledBoundary(time=time, level=count) for time, count in time_counts.items()
-            ],
+            bs=[LeveledBoundary(time=time, level=count) for time, count in time_counts.items()],
             name=ms.name or "Salience Hierarchy",
         )
 
@@ -277,7 +273,7 @@ def level_by_distinct_salience(bc: BoundaryContour) -> BoundaryHierarchy:
     """
     # Create a mapping from each unique salience value to its rank (level)
     unique_saliences = sorted({b.salience for b in bc.bs[1:-1]})
-    max_level = len(unique_saliences)
+    max_level = len(unique_saliences) if unique_saliences else 1
     sal_level = {sal: lvl for lvl, sal in enumerate(unique_saliences, start=1)}
 
     # Create LeveledBoundary objects for each boundary in the contour
@@ -285,14 +281,13 @@ def level_by_distinct_salience(bc: BoundaryContour) -> BoundaryHierarchy:
         LeveledBoundary(time=b.time, level=sal_level[b.salience]) for b in bc.bs[1:-1]
     ]
 
-    leveled_boundaries = [
-        LeveledBoundary(time=bc.bs[0].time, level=max_level),
-        *inner_boundaries,
-        LeveledBoundary(time=bc.bs[-1].time, level=max_level),
-    ]
-
     return BoundaryHierarchy(
-        bs=leveled_boundaries, name=bc.name or "Distinct Salience Hierarchy"
+        bs=[
+            LeveledBoundary(time=bc.bs[0].time, level=max_level),
+            *inner_boundaries,
+            LeveledBoundary(time=bc.bs[-1].time, level=max_level),
+        ],
+        name=bc.name or "Distinct Salience Hierarchy",
     )
 
 
