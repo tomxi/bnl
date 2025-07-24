@@ -10,8 +10,8 @@
     },
     // Testing configuration
     "python.testing.pytestArgs": [
-        "--cov=src",
-        "--cov-report=xml" // Or your preferred report format
+        "--cov=src/",
+        "--cov-report=xml"
     ],
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,

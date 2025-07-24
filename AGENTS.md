@@ -12,16 +12,10 @@ Concise guidance for AI agents working with this music information retrieval cod
 
 ## Development Guidelines
 
-- **Testing:** Maintain tests pragmatically without slowing development; make tests failure driven; test apps/ folder too and add tests from app failures;
+- **Testing:** Maintain tests pragmatically without slowing development; make tests failure driven;
 - **Documentation:** Clear docstrings for complex logic and public APIs; Sphinx + RTD ready, google style docstrings; build and consult the docs actively during development, planning, and ideation
-- **Dependencies:** Managed with `uv` and `virtualenv` using `pyproject.toml`.
-    - **Setup:** `uv venv` to create a virtual environment, then `source .venv/bin/activate`.
-    - **Installation:** Install core and optional dependencies (`dev`, `docs`, `dash`, `notebooks`) with `uv pip install -e '.[dev,docs,dash,notebooks]'`.
-    - **Updates:** Re-run the installation command to update dependencies.
-- **Running Commands:** Use `uv run <command>` to execute scripts defined in `pyproject.toml` or any command within the virtual environment without explicit activation (e.g., `uv run python -m pytest`).
-- **Best Practice:** `pyproject.toml` is the single source of truth for all dependencies (core, dev, docs, etc.). `uv` and `virtualenv` provide a fast and isolated environment for development.
 - **Code Style:** Meaningful naming, logical structure, selective type hints.
-
+- **Dependencies:** Managed locally with `conda`. use the `py311` conda environment.
 ## Agent Notes
 
 *(Add development insights, common patterns, useful commands, etc.)*
@@ -30,7 +24,6 @@ Concise guidance for AI agents working with this music information retrieval cod
 - we want to peel off the app eventually too, and clean the dependencies.
 - Solidify the chainable logic and strategy in ops.py. We want to expose the strategies classes too. Two ways for me to use it. If I want to inspect the innards of the strategy I can do that by keeping the object around. The chainable method will wrap around the object and return the final result only.
 - let's get the T-measure eval metrics working on the jupyter notebook.
-  
 
 ### User Feedbacks:
 

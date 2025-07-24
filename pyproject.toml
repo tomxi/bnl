@@ -86,7 +86,7 @@ disallow_untyped_defs = true
 
 [tool.pytest.ini_options]
 addopts = [
-    "--cov=src",
+    "--cov=bnl",
     "--cov-report=term-missing",
     "--cov-report=xml",
 ]
@@ -96,3 +96,4 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["src"]
+include = ["src/bnl/*"]

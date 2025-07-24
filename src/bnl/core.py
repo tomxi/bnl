@@ -25,6 +25,7 @@ import plotly.graph_objects as go
 
 # region: Point-like Objects
 
+
 @dataclass(frozen=True, order=True)
 class Boundary:
     """
@@ -94,6 +95,7 @@ class LeveledBoundary(RatedBoundary):
 
 # region: Span-like Objects (Containers)
 
+
 @dataclass
 class TimeSpan:
     """
@@ -148,9 +150,7 @@ class Segment(TimeSpan):
         if not self.labels:
             raise ValueError("Segment requires labels.")
         if len(self.labels) != len(self.bs) - 1:
-            raise ValueError(
-                "Number of labels must be one less than the number of boundaries."
-            )
+            raise ValueError("Number of labels must be one less than the number of boundaries.")
 
         # Ensure boundaries is a mutable list and sorted.
         self.bs = list(self.bs)
@@ -158,8 +158,8 @@ class Segment(TimeSpan):
             raise ValueError("Boundaries must be sorted by time.")
 
         # Derive and set the parent's start and end fields.
-        object.__setattr__(self, 'start', self.bs[0])
-        object.__setattr__(self, 'end', self.bs[-1])
+        object.__setattr__(self, "start", self.bs[0])
+        object.__setattr__(self, "end", self.bs[-1])
 
         # Call the parent's post-init to validate duration.
         super().__post_init__()
@@ -167,7 +167,6 @@ class Segment(TimeSpan):
         # Create cache to avoid repeated computation.
         self._sections = None
         self._itvls = None
-
 
     @property
     def sections(self) -> Sequence[TimeSpan]:
@@ -182,17 +181,14 @@ class Segment(TimeSpan):
     @property
     def itvls(self) -> np.ndarray:
         if self._itvls is None:
-            itvls = [
-                [b.time, e.time]
-                for b, e in zip(self.bs[:-1], self.bs[1:])
-            ]
+            itvls = [[b.time, e.time] for b, e in zip(self.bs[:-1], self.bs[1:])]
             self._itvls = np.array(itvls)
         return self._itvls
 
     @property
     def lam(self) -> np.ndarray:
-        """ Label Agreement Matrix
-        
+        """Label Agreement Matrix
+
         Returns:
             np.ndarray: The label agreement matrix.
         """
@@ -214,9 +210,7 @@ class Segment(TimeSpan):
         return self.name
 
     @classmethod
-    def from_jams(
-        cls, segment_annotation: jams.Annotation, name: str = "Segment"
-    ) -> Segment:
+    def from_jams(cls, segment_annotation: jams.Annotation, name: str = "Segment") -> Segment:
         """
         Data Ingestion from jams format.
         """
@@ -230,8 +224,7 @@ class Segment(TimeSpan):
         labels: Sequence[str],
         name: str = "Segment",
     ) -> Segment:
-        """Data Ingestion from `mir_eval` format of boundaries and labels.
-        """
+        """Data Ingestion from `mir_eval` format of boundaries and labels."""
         # assume intervals have no overlap or gaps
         bs = [Boundary(itvl[0]) for itvl in itvls]
         # tag on the end time of the last interval
@@ -271,9 +264,7 @@ class Segment(TimeSpan):
 
         inner_bs = self.bs[1:-1]
         if span.start.time >= inner_bs[0].time or span.end.time <= inner_bs[-1].time:
-            raise ValueError(
-                f"New span {span} does not contain the inner boundaries."
-            )
+            raise ValueError(f"New span {span} does not contain the inner boundaries.")
 
         new_bs = [span.start] + list(inner_bs) + [span.end]
         return replace(self, bs=new_bs)
@@ -296,12 +287,12 @@ class MultiSegment(TimeSpan):
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
         # align all layers to the same time span
-        unified_span = self.find_span(mode="common")
+        unified_span = self.find_span(mode="union")
         self.layers = [layer.align(unified_span) for layer in self.layers]
 
         # Derive and set the parent's start and end fields.
-        object.__setattr__(self, 'start', unified_span.start)
-        object.__setattr__(self, 'end', unified_span.end)
+        object.__setattr__(self, "start", unified_span.start)
+        object.__setattr__(self, "end", unified_span.end)
 
         # Call the parent's post-init to validate duration.
         super().__post_init__()
@@ -386,11 +377,12 @@ class MultiSegment(TimeSpan):
             inc_start_time = max(layer.start.time for layer in self.layers)
             inc_end_time = min(layer.end.time for layer in self.layers)
         else:
-            raise ValueError(
-                f"Unknown alignment mode: {mode}. Must be 'union' or 'common'."
-            )
-        return TimeSpan(start=Boundary(inc_start_time), end=Boundary(inc_end_time), name=f"{mode} span")
-    
+            raise ValueError(f"Unknown alignment mode: {mode}. Must be 'union' or 'common'.")
+        return TimeSpan(
+            start=Boundary(inc_start_time),
+            end=Boundary(inc_end_time),
+            name=f"{mode} span",
+        )
 
     def align(self, span: TimeSpan) -> MultiSegment:
         """Align with a TimeSpan object."""
@@ -398,7 +390,6 @@ class MultiSegment(TimeSpan):
             layers=[layer.align(span) for layer in self.layers],
             name=self.name,
         )
-
 
     def prune_layers(self, relabel: bool = True) -> MultiSegment:
         """Prunes identical layers from the MultiSegment.
@@ -408,8 +399,8 @@ class MultiSegment(TimeSpan):
         pruned_layers = []
         for layer in self.layers:
             if len(layer) <= 1:
-                continue # skip layers with no inner boundaries
-            
+                continue  # skip layers with no inner boundaries
+
             # using replace to hack a copy
             layer = replace(layer, name=layer.name)
             # The first valid layer is always added.
@@ -429,7 +420,9 @@ class MultiSegment(TimeSpan):
 
         return replace(self, layers=pruned_layers)
 
+
 # endregion: MultiSegment
+
 
 # region: Monotonic Boundary Objects
 @dataclass
@@ -447,8 +440,8 @@ class BoundaryContour(TimeSpan):
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A BoundaryContour requires at least two boundaries.")
         self.bs = sorted(list(set(self.bs)))
-        object.__setattr__(self, 'start', self.bs[0])
-        object.__setattr__(self, 'end', self.bs[-1])
+        object.__setattr__(self, "start", self.bs[0])
+        object.__setattr__(self, "end", self.bs[-1])
         super().__post_init__()
 
     def __len__(self) -> int:
@@ -526,9 +519,7 @@ class BoundaryHierarchy(BoundaryContour):
         layers = []
         max_level = max(b.level for b in self.bs)
         for level in range(max_level, 0, -1):
-            level_boundaries = [
-                Boundary(b.time) for b in self.bs if b.level >= level
-            ]
+            level_boundaries = [Boundary(b.time) for b in self.bs if b.level >= level]
             labels = [""] * (len(level_boundaries) - 1)
             layers.append(
                 Segment(
