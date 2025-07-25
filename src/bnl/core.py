@@ -23,7 +23,7 @@ import jams
 import numpy as np
 import plotly.graph_objects as go
 
-# region: Point-like Objects
+# region: Boundary Objects
 
 
 @dataclass(frozen=True, order=True)
@@ -95,7 +95,8 @@ class LeveledBoundary(RatedBoundary):
 
 # endregion
 
-# region: Span-like Objects (Containers)
+
+# region: Simple Interval Objects
 
 
 @dataclass
@@ -268,6 +269,10 @@ class Segment(TimeSpan):
         return replace(self, bs=new_bs)
 
 
+# endregion: Segment
+
+
+# region: MultiSegment
 @dataclass
 class MultiSegment(TimeSpan):
     """The primary input object for analysis, containing multiple Segment layers."""
@@ -422,7 +427,7 @@ class MultiSegment(TimeSpan):
 # endregion: MultiSegment
 
 
-# region: Monotonic Boundary Objects
+# region: Monotonic Boundary
 @dataclass
 class BoundaryContour(TimeSpan):
     """
