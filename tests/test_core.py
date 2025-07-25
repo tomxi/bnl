@@ -1,5 +1,6 @@
 from dataclasses import FrozenInstanceError
 
+import numpy as np
 import pytest
 
 import bnl
@@ -14,7 +15,8 @@ class TestBoundaries:
         b3 = bnl.B(1.599)
         assert b1 == b2
         assert b1 < b3
-        assert repr(b1) == "B(1.23457)"
+        assert repr(b1) == "B(1.2)"
+        assert repr(b3) == "B(1.6)"
 
     def test_rated_boundary_init(self):
         rb = bnl.RB(time=1.5, salience=10.5)
@@ -89,6 +91,8 @@ class TestSegment:
         assert seg.sections[1].end.time == 2.0
         for sec in seg:
             assert sec.name
+        assert repr(seg) == "S(B(0.0)-B(2.0), test_seg)"
+        assert str(seg) == "test_seg"
 
     def test_segment_init_errors(self):
         with pytest.raises(ValueError, match="A Segment requires at least two boundaries."):
@@ -96,6 +100,8 @@ class TestSegment:
         boundaries = [bnl.B(0), bnl.B(1)]
         with pytest.raises(ValueError, match="Number of labels must be one less than"):
             bnl.S.from_bs(boundaries, ["A", "B"])
+        with pytest.raises(ValueError, match="Segment requires labels."):
+            bnl.S.from_bs(boundaries, [])
 
     def test_segment_from_methods(self):
         itvls = [[0.0, 1.0], [1.0, 2.5]]
@@ -161,6 +167,20 @@ class TestMultiSegment:
         for layer in fixed_end:
             assert layer.end.time == 4.1
 
+    def test_properties(self):
+        itvls1 = [[0, 2], [2, 4]]
+        itvls2 = [[0, 1], [1, 4]]
+        s1 = bnl.S.from_itvls(itvls1, ["A", "B"])
+        s2 = bnl.S.from_itvls(itvls2, ["a", "b"])
+        ms = bnl.MS(layers=[s1, s2], name="TestMS")
+        assert ms.start.time == 0
+        assert ms.end.time == 4
+        assert ms.duration == 4
+        assert ms.name == "TestMS"
+        assert ms.layers == [s1, s2]
+        assert all(np.array_equal(itvl, ms.itvls[i]) for i, itvl in enumerate([itvls1, itvls2]))
+        assert ms.labels == [["A", "B"], ["a", "b"]]
+
     def test_multisegment_from_json(self):
         json_data = [
             [[[0, 2], [2, 4]], ["A", "B"]],
@@ -196,6 +216,35 @@ class TestMultiSegment:
         ms = bnl.MS(layers=[s1, s2, s3], name="TestMS")
         fig = ms.plot()
         assert fig.layout.title.text == "TestMS"
+
+    def test_find_span_and_align(self):
+        s1 = bnl.S.from_bs([0, 2.5], ["A"], name="L01")
+        s2 = bnl.S.from_bs([0, 1, 2], ["a", "b"], name="L02")
+        s3 = bnl.S.from_bs([0, 1.5], ["c"], name="L03")
+        assert bnl.MS.find_span([s1, s2, s3], mode="union").end.time == 2.5
+        assert bnl.MS.find_span([s1, s2, s3], mode="common").end.time == 1.5
+        ms = bnl.MS(layers=[s1, s2, s3], name="TestMS")
+        assert ms.align(bnl.TS(bnl.B(0), bnl.B(2.5))).end == bnl.B(2.5)
+        assert ms.align(bnl.TS(bnl.B(0.5), bnl.B(1.5))).start == bnl.B(0.5)
+        assert ms.align(bnl.TS(bnl.B(0.5), bnl.B(1.5))).end == bnl.B(1.5)
+        with pytest.raises(
+            ValueError, match=r"New span \[1.00-1.50\] does not contain the inner boundaries."
+        ):
+            ms.align(bnl.TS(bnl.B(1), bnl.B(1.5)))
+        with pytest.raises(
+            ValueError, match=r"Unknown alignment mode: invalid. Must be 'union' or 'common'."
+        ):
+            ms.find_span([s1, s2, s3], mode="invalid")
+
+    def test_contour_chain_apis(self):
+        s1 = bnl.S.from_bs([0, 2], ["A"], name="L01")
+        s2 = bnl.S.from_bs([0, 1, 2], ["a", "b"], name="L02")
+        s3 = bnl.S.from_bs([0, 1.5, 2], ["c", "d"], name="L03")
+        ms = bnl.MS(layers=[s1, s2, s3], name="TestStructure")
+        bc = ms.contour()
+        assert bc.name == "TestStructure"
+        assert bc.start.time == 0
+        assert bc.end.time == 2
 
 
 class TestContours:

@@ -39,7 +39,7 @@ class Boundary:
         object.__setattr__(self, "time", rounded_time)
 
     def __repr__(self) -> str:
-        return f"B({self.time})"
+        return f"B({self.time:.1f})"
 
 
 @dataclass(frozen=True, order=True)
@@ -51,7 +51,7 @@ class RatedBoundary(Boundary):
     salience: float
 
     def __repr__(self) -> str:
-        return f"RB({self.time}, {self.salience:.2f})"
+        return f"RB({self.time:.1f}, {self.salience:.2f})"
 
 
 @dataclass(frozen=True, order=True, init=False)
@@ -90,7 +90,7 @@ class LeveledBoundary(RatedBoundary):
         super().__post_init__()
 
     def __repr__(self) -> str:
-        return f"LB({self.time}, {self.level})"
+        return f"LB({self.time:.1f}, {self.level})"
 
 
 # endregion
@@ -290,7 +290,7 @@ class MultiSegment(TimeSpan):
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
         # align all layers to the same time span
-        unified_span = self.find_span(mode="union")
+        unified_span = self.find_span(self.layers, mode="union")
         self.layers = [layer.align(unified_span) for layer in self.layers]
 
         # Derive and set the parent's start and end fields.
@@ -363,8 +363,9 @@ class MultiSegment(TimeSpan):
             name=self.name,
         )
 
+    @staticmethod
     def find_span(
-        self,
+        layers: Sequence[Segment],
         mode: str = "common",
     ) -> TimeSpan:
         """Finds the span of a list of Segment layers.
@@ -374,11 +375,11 @@ class MultiSegment(TimeSpan):
                 Defaults to "common".
         """
         if mode == "union":
-            inc_start_time = min(layer.start.time for layer in self.layers)
-            inc_end_time = max(layer.end.time for layer in self.layers)
+            inc_start_time = min(layer.start.time for layer in layers)
+            inc_end_time = max(layer.end.time for layer in layers)
         elif mode == "common":
-            inc_start_time = max(layer.start.time for layer in self.layers)
-            inc_end_time = min(layer.end.time for layer in self.layers)
+            inc_start_time = max(layer.start.time for layer in layers)
+            inc_end_time = min(layer.end.time for layer in layers)
         else:
             raise ValueError(f"Unknown alignment mode: {mode}. Must be 'union' or 'common'.")
         return TimeSpan(
