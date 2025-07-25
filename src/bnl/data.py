@@ -10,9 +10,9 @@ __all__ = [
 import io
 import json
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import jams
 import pandas as pd
@@ -174,6 +174,8 @@ class Dataset:
     manifest: pd.DataFrame
     R2_BUCKET_PUBLIC_URL: str = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
 
+    data_location: Literal["local", "cloud"] = field(init=False)
+
     def __init__(self, manifest_path: Path | str | None = None):
         if manifest_path is None:
             manifest_path = f"{self.R2_BUCKET_PUBLIC_URL}/manifest_cloud_boolean.csv"
@@ -250,16 +252,13 @@ class Dataset:
         root = cast(Path, self.dataset_root)
 
         if asset_type == "audio":
-            # This path is a placeholder as audio is not the focus of current tests.
-            return root / "audio" / f"{track_id}.{asset_subtype}"
+            return root / "audio" / track_id / f"audio.{asset_subtype}"
         elif asset_type == "annotation":
             if asset_subtype.startswith("ref_") or asset_subtype == "reference":
-                # Reference JAMS annotations are located in the jams/ directory for local datasets
                 return root / "jams" / f"{track_id}.jams"
             elif "adobe" in asset_subtype:
                 # Adobe annotations have a specific subfolder structure.
-                formatted_params = self._format_adobe_params(asset_subtype)
-                subfolder = f"adobe/def_{formatted_params}"
+                subfolder = f"adobe/def_{self._format_adobe_params(asset_subtype)}"
                 return root / subfolder / f"{track_id}.mp3.msdclasscsnmagic.json"
 
         raise ValueError(f"Unknown local asset: {asset_type}/{asset_subtype}")
@@ -268,15 +267,14 @@ class Dataset:
         """Reconstruct cloud URL for an asset."""
         base = cast(str, self.base_url)
 
-        if asset_type == "audio" and asset_subtype == "mp3":
-            return f"{base}/slm-dataset/{track_id}/audio.mp3"
+        if asset_type == "audio":
+            return f"{base}/slm-dataset/{track_id}/audio.{asset_subtype}"
         elif asset_type == "annotation" and (
             asset_subtype.startswith("ref_") or asset_subtype == "reference"
         ):
             return f"{base}/ref-jams/{track_id}.jams"
         elif asset_type == "annotation" and "adobe" in asset_subtype:
-            formatted_params = self._format_adobe_params(asset_subtype)
-            subfolder = f"adobe21-est/def_{formatted_params}"
+            subfolder = f"adobe21-est/def_{self._format_adobe_params(asset_subtype)}"
             return f"{base}/{subfolder}/{track_id}.mp3.msdclasscsnmagic.json"
 
         raise ValueError(f"Unknown cloud asset: {asset_type}/{asset_subtype}")

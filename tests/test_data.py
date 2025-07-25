@@ -1,5 +1,6 @@
 """Tests for the data loading module."""
 
+import os
 from pathlib import Path
 
 import pytest
@@ -113,3 +114,14 @@ def test_dataset_bad_id(ds_fixture, request):
     ds = request.getfixturevalue(ds_fixture)
     with pytest.raises(ValueError, match="Track ID 'non_existent_id' not found in manifest."):
         ds["non_existent_id"]
+
+
+@pytest.mark.parametrize("ds_fixture", ["dataset", "dataset_cloud"])
+def test_dataset_audio_path(ds_fixture, request):
+    ds = request.getfixturevalue(ds_fixture)
+    track = ds[TEST_TID]
+    assert isinstance(track.info.get("audio_mp3_path"), str | Path)
+    if ds.data_location == "cloud":
+        assert track.info.get("audio_mp3_path").startswith("http")
+    else:
+        assert os.path.exists(track.info.get("audio_mp3_path"))
