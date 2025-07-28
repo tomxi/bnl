@@ -146,19 +146,6 @@ class SalByProb(SalienceStrategy):
 
 
 # region: Two ways to clean up boundaries closeby in time
-def clean_boundaries(
-    bc: BoundaryContour, strategy: str = "absorb", **kwargs: Any
-) -> BoundaryContour:
-    """
-    Clean up boundaries by removing boundaries that are closeby in time.
-    """
-    if strategy not in CleanStrategy._registry:
-        raise ValueError(f"Unknown boundary cleaning strategy: {strategy}")
-
-    # Retrieve the class from the registry and instantiate it with the provided arguments.
-    strategy_class = CleanStrategy._registry[strategy]
-    strategy_instance = strategy_class(**kwargs)
-    return strategy_instance(bc)
 
 
 class CleanStrategy(ABC):
@@ -211,10 +198,7 @@ class CleanByAbsorb(CleanStrategy):
 class CleanByKDE(CleanStrategy):
     """Clean boundaries by finding peaks in a weighted kernel density estimate."""
 
-    def __init__(
-        self,
-        time_bw: float = 1.0,
-    ):
+    def __init__(self, time_bw: float = 1.0):
         self.time_kde = KernelDensity(kernel="gaussian", bandwidth=time_bw)
         self._ticks: np.ndarray | None = None
 
@@ -264,31 +248,77 @@ class CleanByKDE(CleanStrategy):
 
 # endregion: Two ways to clean up boundaries closeby in time
 
+
 # region: Stratification into levels
+class LevelStrategy(ABC):
+    """Abstract base class for boundary level quantizing strategies."""
+
+    _registry: dict[str, type[LevelStrategy]] = {}
+
+    @classmethod
+    def register(cls, name: str) -> Callable[[type[LevelStrategy]], type[LevelStrategy]]:
+        """A class method to register strategies in a central registry."""
+
+        def decorator(strategy_cls: type[LevelStrategy]) -> type[LevelStrategy]:
+            cls._registry[name] = strategy_cls
+            return strategy_cls
+
+        return decorator
+
+    @abstractmethod
+    def __call__(self, bc: BoundaryContour) -> BoundaryHierarchy:
+        """Quantize boundaries' levels in a BoundaryContour."""
+        raise NotImplementedError
 
 
-def level_by_distinct_salience(bc: BoundaryContour) -> BoundaryHierarchy:
+@LevelStrategy.register("unique")
+class LevelByUniqueSal(LevelStrategy):
     """
     Find all distinct salience values and use their integer rank as level.
     """
-    # Create a mapping from each unique salience value to its rank (level)
-    unique_saliences = sorted({b.salience for b in bc.bs[1:-1]})
-    max_level = len(unique_saliences) if unique_saliences else 1
-    sal_level = {sal: lvl for lvl, sal in enumerate(unique_saliences, start=1)}
 
-    # Create LeveledBoundary objects for each boundary in the contour
-    inner_boundaries = [
-        LeveledBoundary(time=b.time, level=sal_level[b.salience]) for b in bc.bs[1:-1]
-    ]
+    def __call__(self, bc: BoundaryContour) -> BoundaryHierarchy:
+        # Create a mapping from each unique salience value to its rank (level)
+        unique_saliences = sorted({b.salience for b in bc.bs[1:-1]})
+        max_level = len(unique_saliences) if unique_saliences else 1
+        sal_level = {sal: lvl for lvl, sal in enumerate(unique_saliences, start=1)}
 
-    return BoundaryHierarchy(
-        bs=[
-            LeveledBoundary(time=bc.bs[0].time, level=max_level),
-            *inner_boundaries,
-            LeveledBoundary(time=bc.bs[-1].time, level=max_level),
-        ],
-        name=bc.name or "Distinct Salience Hierarchy",
-    )
+        # Create LeveledBoundary objects for each boundary in the contour
+        inner_boundaries = [
+            LeveledBoundary(time=b.time, level=sal_level[b.salience]) for b in bc.bs[1:-1]
+        ]
+
+        return BoundaryHierarchy(
+            bs=[
+                LeveledBoundary(time=bc.bs[0].time, level=max_level),
+                *inner_boundaries,
+                LeveledBoundary(time=bc.bs[-1].time, level=max_level),
+            ],
+            name=bc.name or "Unique Salience Hierarchy",
+        )
 
 
-# endregion: Stratification into levels
+@LevelStrategy.register("kde")
+class LevelByKDE(LevelStrategy):
+    """
+    Use KDE to find peaks in the salience values and clusters them into levels.
+    """
+
+    def __init__(self, sal_bw: float = 0.05, sal_fs: float = 0.005):
+        self.sal_kde = KernelDensity(kernel="gaussian", bandwidth=sal_bw)
+        self.sal_fs = sal_fs
+        self._ticks: np.ndarray | None = None
+
+    def _build_sal_grid(self, max_salience: float) -> np.ndarray:
+        if self._ticks is None:
+            # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
+            n_frames = int(_round(max_salience, self.sal_fs) / self.sal_fs)
+            self._ticks = np.arange(n_frames + 1) * self.sal_fs
+        return self._ticks
+
+    def __call__(self, bc: BoundaryContour) -> BoundaryHierarchy:
+        if len(bc.bs) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
+            bs = [LeveledBoundary(b.time, 1) for b in bc.bs]
+            return BoundaryHierarchy(bs=bs, name=bc.name or "KDE Hierarchy")
+
+        return bc

@@ -486,15 +486,28 @@ class BoundaryContour(TimeSpan):
         """
         from . import ops
 
-        return ops.clean_boundaries(self, strategy=strategy, **kwargs)
+        if strategy not in ops.CleanStrategy._registry:
+            raise ValueError(f"Unknown boundary cleaning strategy: {strategy}")
 
-    def level(self) -> BoundaryHierarchy:
+        # Retrieve the class from the registry and instantiate it with the provided arguments.
+        strategy_class = ops.CleanStrategy._registry[strategy]
+        self._clean_strategy = strategy_class(**kwargs)
+
+        return self._clean_strategy(self)
+
+    def level(self, strategy: str = "distinct", **kwargs: Any) -> BoundaryHierarchy:
         """
         Converts the BoundaryContour to a BoundaryHierarchy by quantizing salience.
         """
         from . import ops
 
-        return ops.level_by_distinct_salience(self)
+        if strategy not in ops.LevelStrategy._registry:
+            raise ValueError(f"Unknown boundary level strategy: {strategy}")
+
+        strategy_class = ops.LevelStrategy._registry[strategy]
+        self._level_strategy = strategy_class(**kwargs)
+
+        return self._level_strategy(self)
 
 
 @dataclass
