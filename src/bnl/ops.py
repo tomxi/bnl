@@ -17,8 +17,6 @@ __all__ = [
     "CleanStrategy",
     "CleanByAbsorb",
     "CleanByKDE",
-    "clean_boundaries",
-    "level_by_distinct_salience",
 ]
 
 from abc import ABC, abstractmethod
@@ -31,6 +29,7 @@ import scipy.signal
 
 # from librosa.util import localmax
 from mir_eval.hierarchy import _round
+from sklearn.cluster import MeanShift
 from sklearn.neighbors import KernelDensity
 
 from .core import (
@@ -198,8 +197,8 @@ class CleanByAbsorb(CleanStrategy):
 class CleanByKDE(CleanStrategy):
     """Clean boundaries by finding peaks in a weighted kernel density estimate."""
 
-    def __init__(self, time_bw: float = 1.0):
-        self.time_kde = KernelDensity(kernel="gaussian", bandwidth=time_bw)
+    def __init__(self, bw: float = 1.0):
+        self.time_kde = KernelDensity(kernel="gaussian", bandwidth=bw)
         self._ticks: np.ndarray | None = None
 
     def _build_time_grid(self, span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
@@ -298,27 +297,29 @@ class LevelByUniqueSal(LevelStrategy):
         )
 
 
-@LevelStrategy.register("kde")
-class LevelByKDE(LevelStrategy):
+@LevelStrategy.register("mean_shift")
+class LevelByMeanShift(LevelStrategy):
     """
-    Use KDE to find peaks in the salience values and clusters them into levels.
+    Use mean shift clustering to find peaks in the salience values and clusters them into levels.
     """
 
-    def __init__(self, sal_bw: float = 0.05, sal_fs: float = 0.005):
-        self.sal_kde = KernelDensity(kernel="gaussian", bandwidth=sal_bw)
-        self.sal_fs = sal_fs
-        self._ticks: np.ndarray | None = None
-
-    def _build_sal_grid(self, max_salience: float) -> np.ndarray:
-        if self._ticks is None:
-            # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
-            n_frames = int(_round(max_salience, self.sal_fs) / self.sal_fs)
-            self._ticks = np.arange(n_frames + 1) * self.sal_fs
-        return self._ticks
+    def __init__(self, bw: float = 0.05):
+        self.sal_ms = MeanShift(bandwidth=bw)
 
     def __call__(self, bc: BoundaryContour) -> BoundaryHierarchy:
         if len(bc.bs) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
-            bs = [LeveledBoundary(b.time, 1) for b in bc.bs]
-            return BoundaryHierarchy(bs=bs, name=bc.name or "KDE Hierarchy")
+            return bc.level(strategy="unique")
 
-        return bc
+        inner_boundaries = bc.bs[1:-1]
+        saliences = np.array([b.salience for b in inner_boundaries])
+        self.sal_ms.fit(saliences.reshape(-1, 1))
+        quantized_salience = self.sal_ms.cluster_centers_.flatten()[self.sal_ms.labels_]
+        inner_boundaries = [
+            RatedBoundary(time=b.time, salience=s)
+            for b, s in zip(inner_boundaries, quantized_salience)
+        ]
+        quantized_bc = BoundaryContour(bs=[bc.start, *inner_boundaries, bc.end], name=bc.name)
+        return quantized_bc.level(strategy="unique")
+
+
+# endregion: Stratification into levels
