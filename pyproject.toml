@@ -39,7 +39,7 @@ dependencies = [
 requires-python = ">=3.10"
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ruff", "mypy", "pytest-mock", "types-requests", "requests-mock"]
+dev = ["pytest", "pytest-cov", "ruff", "mypy"]
 docs = [
     "sphinx",
     "sphinx-rtd-theme",
@@ -48,7 +48,7 @@ docs = [
     "sphinx-autobuild",
     "autoclasstoc",
 ]
-dash = ["dash", "dash-mantine-components", "kaleido", "dash-table", "dash-daq"]
+dash = ["dash", "dash-mantine-components", "kaleido"]
 notebooks = ["jupyter", "ipykernel"]
 
 [project.urls]
@@ -75,7 +75,7 @@ line-ending = "lf"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "C90", "N", "UP", "A", "B"]
-ignore = ["B905"]
+ignore = ["B905", "N817"] # zip strict flag; importing acronyms
 
 [tool.ruff.lint.isort]
 known-first-party = ["bnl"]

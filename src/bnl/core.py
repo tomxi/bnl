@@ -350,11 +350,17 @@ class MultiSegment(TimeSpan):
 
         return viz.plot_multisegment(ms=self, colorscale=colorscale, hatch=hatch)
 
-    def contour(self, strategy: str = "depth") -> BoundaryContour:
+    def contour(self, strategy: str = "depth", **kwargs: Any) -> BoundaryContour:
         """Calculates boundary salience and converts to a BoundaryContour."""
-        from . import ops  # Local import to avoid circular dependency at runtime
+        from . import ops
 
-        return ops.boundary_salience(self, strategy=strategy)
+        if strategy not in ops.SalienceStrategy._registry:
+            raise ValueError(f"Unknown salience strategy: {strategy}")
+
+        strategy_class = ops.SalienceStrategy._registry[strategy]
+        self._contour_strategy = strategy_class(**kwargs)
+
+        return self._contour_strategy(self)
 
     def scrub_labels(self) -> MultiSegment:
         """Scrubs the labels of the MultiSegment by replacing them with empty strings."""
@@ -495,7 +501,7 @@ class BoundaryContour(TimeSpan):
 
         return self._clean_strategy(self)
 
-    def level(self, strategy: str = "distinct", **kwargs: Any) -> BoundaryHierarchy:
+    def level(self, strategy: str = "unique", **kwargs: Any) -> BoundaryHierarchy:
         """
         Converts the BoundaryContour to a BoundaryHierarchy by quantizing salience.
         """

@@ -1,15 +1,18 @@
 """
 This module provides the core algorithmic operations for transforming
-boundary and hierarchy objects.
 
-The functions in this module are designed to be composed into pipelines,
-either directly or through the fluent API provided by the `bnl.core` classes.
+The core components are:
+- A generic `Strategy` base class that provides a registry pattern.
+- Three specialized abstract strategy classes that inherit from `Strategy`:
+    - `SalienceStrategy`: For calculating boundary importance.
+    - `CleanStrategy`: For refining boundary contours.
+    - `LevelStrategy`: For converting continuous salience into discrete levels.
+- Concrete implementations for each strategy type, which can be extended.
 """
 
 from __future__ import annotations
 
 __all__ = [
-    "boundary_salience",
     "SalienceStrategy",
     "SalByCount",
     "SalByDepth",
@@ -17,6 +20,9 @@ __all__ = [
     "CleanStrategy",
     "CleanByAbsorb",
     "CleanByKDE",
+    "LevelStrategy",
+    "LevelByUniqueSal",
+    "LevelByMeanShift",
 ]
 
 from abc import ABC, abstractmethod
@@ -26,8 +32,6 @@ from typing import Any
 
 import numpy as np
 import scipy.signal
-
-# from librosa.util import localmax
 from mir_eval.hierarchy import _round
 from sklearn.cluster import MeanShift
 from sklearn.neighbors import KernelDensity
@@ -41,42 +45,40 @@ from .core import (
     TimeSpan,
 )
 
-# region: Different Notions of Boundary Salience
+# region: Base Strategy Pattern
 
 
-def boundary_salience(ms: MultiSegment, strategy: str = "depth") -> BoundaryContour:
-    """Runs boundary salience from a MultiSegment using a specified strategy.
+class Strategy(ABC):
+    """Abstract base class for all strategy patterns in BNL."""
 
-    Args:
-        ms (MultiSegment): The input multi-segment structure.
-        strategy (str, optional): The salience calculation strategy. Defaults to "depth".
-            - 'depth': Salience based on the coarsest layer (returns BoundaryHierarchy).
-            - 'count': Salience based on frequency (returns BoundaryHierarchy).
-            - 'prob': Salience weighted by layer density (returns BoundaryContour).
-
-    Returns:
-        BoundaryContour: The resulting boundary structure. Can be a BoundaryHierarchy if the
-        strategy directly produces leveled boundaries.
-    """
-    if strategy not in SalienceStrategy._registry:
-        raise ValueError(f"Unknown salience strategy: {strategy}")
-    return SalienceStrategy._registry[strategy](ms)
-
-
-class SalienceStrategy(ABC):
-    """Abstract base class for salience calculation strategies."""
-
-    _registry: dict[str, SalienceStrategy] = {}
+    # This is a placeholder; each subclass should have its own registry.
+    _registry: dict[str, type[Strategy]] = {}
 
     @classmethod
-    def register(cls, name: str) -> Callable[[type[SalienceStrategy]], type[SalienceStrategy]]:
-        """Registers a strategy in a central registry."""
+    def register(cls, name: str) -> Callable[[type[Strategy]], type[Strategy]]:
+        """A class method to register strategies in a central registry."""
 
-        def decorator(strategy_cls: type[SalienceStrategy]) -> type[SalienceStrategy]:
-            cls._registry[name] = strategy_cls()
+        def decorator(strategy_cls: type[Strategy]) -> type[Strategy]:
+            cls._registry[name] = strategy_cls
             return strategy_cls
 
         return decorator
+
+    @abstractmethod
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        raise NotImplementedError
+
+
+# endregion: Base Strategy Pattern
+
+
+# region: Different Notions of Boundary Salience
+
+
+class SalienceStrategy(Strategy):
+    """Abstract base class for salience calculation strategies."""
+
+    _registry: dict[str, type[SalienceStrategy]] = {}
 
     @abstractmethod
     def __call__(self, ms: MultiSegment) -> BoundaryContour:
@@ -147,20 +149,10 @@ class SalByProb(SalienceStrategy):
 # region: Two ways to clean up boundaries closeby in time
 
 
-class CleanStrategy(ABC):
+class CleanStrategy(Strategy):
     """Abstract base class for boundary cleaning strategies."""
 
     _registry: dict[str, type[CleanStrategy]] = {}
-
-    @classmethod
-    def register(cls, name: str) -> Callable[[type[CleanStrategy]], type[CleanStrategy]]:
-        """A class method to register strategies in a central registry."""
-
-        def decorator(strategy_cls: type[CleanStrategy]) -> type[CleanStrategy]:
-            cls._registry[name] = strategy_cls
-            return strategy_cls
-
-        return decorator
 
     @abstractmethod
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
@@ -249,20 +241,10 @@ class CleanByKDE(CleanStrategy):
 
 
 # region: Stratification into levels
-class LevelStrategy(ABC):
+class LevelStrategy(Strategy):
     """Abstract base class for boundary level quantizing strategies."""
 
     _registry: dict[str, type[LevelStrategy]] = {}
-
-    @classmethod
-    def register(cls, name: str) -> Callable[[type[LevelStrategy]], type[LevelStrategy]]:
-        """A class method to register strategies in a central registry."""
-
-        def decorator(strategy_cls: type[LevelStrategy]) -> type[LevelStrategy]:
-            cls._registry[name] = strategy_cls
-            return strategy_cls
-
-        return decorator
 
     @abstractmethod
     def __call__(self, bc: BoundaryContour) -> BoundaryHierarchy:

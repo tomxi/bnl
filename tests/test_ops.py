@@ -1,5 +1,6 @@
 import pytest
-from bnl import core, ops
+
+from bnl import core
 
 # Test data
 contour = core.BoundaryContour(
@@ -12,16 +13,19 @@ contour = core.BoundaryContour(
     ]
 )
 
+
 def test_clean_boundaries_absorb():
     """Tests the 'absorb' strategy for clean_boundaries."""
-    cleaned = ops.clean_boundaries(contour, strategy="absorb")
+    cleaned = contour.clean(strategy="absorb")
     assert len(cleaned.bs) == 3
     assert cleaned.bs[1].time == 2.0
+
 
 def test_clean_boundaries_invalid_strategy():
     """Tests that an invalid strategy raises a ValueError."""
     with pytest.raises(ValueError):
-        ops.clean_boundaries(contour, strategy="invalid_strategy")
+        contour.clean(strategy="invalid_strategy")
+
 
 def test_level_by_distinct_salience():
     """Tests the level_by_distinct_salience function."""
@@ -33,7 +37,7 @@ def test_level_by_distinct_salience():
             core.RatedBoundary(3, 30.0),
         ]
     )
-    hierarchy = ops.level_by_distinct_salience(contour_for_leveling)
+    hierarchy = contour_for_leveling.level(strategy="unique")
     assert isinstance(hierarchy, core.BoundaryHierarchy)
     assert len(hierarchy.bs) == 4
     # Check levels: 10.0 -> 1, 20.0 -> 2, 30.0 -> 3
@@ -46,7 +50,6 @@ def test_level_by_distinct_salience():
     assert found_levels == expected_levels
 
 
-
 def test_boundary_salience_by_count():
     """Test salience calculation with 'count' strategy."""
     s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])
@@ -54,7 +57,7 @@ def test_boundary_salience_by_count():
     s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])
     ms = core.MultiSegment(layers=[s1, s2, s3], name="test_ms")
 
-    hierarchy = ops.boundary_salience(ms, strategy="count")
+    hierarchy = ms.contour(strategy="count")
     assert isinstance(hierarchy, core.BoundaryHierarchy)
     assert hierarchy.name == "test_ms"
 
@@ -67,23 +70,13 @@ def test_boundary_salience_by_count():
         assert b.level == expected_levels[b.time]
 
 
-def test_boundary_salience_by_prob():
-    """Test salience calculation with 'prob' strategy."""
-    s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])
-    s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])
-    s3 = core.Segment.from_itvls([[0, 1], [1, 2], [2, 4], [4, 5]], ["w", "x", "y", "z"])
-    ms = core.MultiSegment(layers=[s1, s2, s3], name="test_ms")
-
-    contour = ops.boundary_salience(ms, strategy="prob")
-    assert isinstance(contour, core.BoundaryContour)
-    assert len(contour.bs) > 0
-
 def test_boundary_salience_invalid_strategy():
     """Test that an invalid salience strategy raises a ValueError."""
     s1 = core.Segment.from_bs([0, 1], ["A"], name="L1")
     ms = core.MultiSegment(layers=[s1], name="test_ms")
     with pytest.raises(ValueError):
-        ops.boundary_salience(ms, strategy="invalid_strategy")
+        ms.contour(strategy="invalid_strategy")
+
 
 def test_clean_boundaries_kde():
     """Tests the 'kde' strategy for clean_boundaries."""
@@ -97,9 +90,10 @@ def test_clean_boundaries_kde():
             core.RatedBoundary(3, 1.0),
         ]
     )
-    cleaned = ops.clean_boundaries(contour, strategy="kde")
+    cleaned = contour.clean(strategy="kde")
     assert isinstance(cleaned, core.BoundaryContour)
     assert len(cleaned.bs) < len(contour.bs)
+
 
 def test_boundary_salience_by_depth():
     """Test salience calculation with 'depth' strategy."""
@@ -108,7 +102,7 @@ def test_boundary_salience_by_depth():
     s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])  # finest, salience=1
     ms = core.MultiSegment(layers=[s1, s2, s3], name="test_ms")
 
-    hierarchy = ops.boundary_salience(ms, strategy="depth")
+    hierarchy = ms.contour(strategy="depth")
     assert isinstance(hierarchy, core.BoundaryHierarchy)
     assert hierarchy.name == "test_ms"
 
@@ -126,7 +120,6 @@ def test_boundary_salience_by_depth():
         assert b.level == expected_levels[b.time]
 
 
-
 def test_boundary_salience_by_prob():
     """Test salience calculation with 'prob' strategy."""
     # Layer 1: 1 effective boundary, weight = 1/1 = 1
@@ -137,7 +130,7 @@ def test_boundary_salience_by_prob():
     s3 = core.Segment.from_itvls([[0, 1], [1, 2], [2, 4], [4, 5]], ["w", "x", "y", "z"])
     ms = core.MultiSegment(layers=[s1, s2, s3], name="test_ms")
 
-    contour = ops.boundary_salience(ms, strategy="prob")
+    contour = ms.contour(strategy="prob")
     assert isinstance(contour, core.BoundaryContour)
     assert contour.name == "test_ms"
 
