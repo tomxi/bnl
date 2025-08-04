@@ -191,20 +191,16 @@ class CleanByKDE(CleanStrategy):
 
     def __init__(self, bw: float = 1.0):
         self.time_kde = KernelDensity(kernel="gaussian", bandwidth=bw)
-        self._ticks: np.ndarray | None = None
 
     def _build_time_grid(self, span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
         """
         Build a grid of times using the same logic as mir_eval to build the ticks
         """
-        if self._ticks is None:
-            # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
-            n_frames = int(
-                (_round(span.end.time, frame_size) - _round(span.start.time, frame_size))
-                / frame_size
-            )
-            self._ticks = np.arange(n_frames + 1) * frame_size + span.start.time
-        return self._ticks
+        # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
+        n_frames = int(
+            (_round(span.end.time, frame_size) - _round(span.start.time, frame_size)) / frame_size
+        )
+        return np.arange(n_frames + 1) * frame_size + span.start.time
 
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
         if len(bc.bs) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
@@ -219,8 +215,6 @@ class CleanByKDE(CleanStrategy):
         grid_times = self._build_time_grid(bc, frame_size=0.1)
         log_density = self.time_kde.score_samples(grid_times.reshape(-1, 1))
 
-        # The below used to be a `localmax` call on log_density from librosa.
-        # We need to check this carefully
         peak_indices = scipy.signal.find_peaks(log_density)[0]
         peak_times = grid_times.flatten()[peak_indices]
         peak_saliences = np.exp(log_density[peak_indices])
