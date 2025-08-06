@@ -11,6 +11,7 @@ import io
 import json
 from collections.abc import Iterator
 from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -29,12 +30,6 @@ class Track:
     manifest_row: pd.Series
     dataset: Dataset
 
-    def __post_init__(self) -> None:
-        self._info: dict[str, Any] | None = None
-        self._jam: jams.JAMS | None = None
-        self._refs: dict[str, MultiSegment] | None = None
-        self._ests: dict[str, MultiSegment] | None = None
-
     def __repr__(self) -> str:
         has_columns = self.manifest_row.filter(like="has_").astype(bool)
         num_assets = int(has_columns.values.sum()) if len(has_columns) > 0 else 0
@@ -43,11 +38,9 @@ class Track:
             f"source='{self.dataset.data_location}')"
         )
 
-    @property
+    @cached_property
     def info(self) -> dict[str, Any]:
         """Essential track information (cached)."""
-        if self._info is not None:
-            return self._info
 
         info: dict[str, Any] = {"track_id": self.track_id}
 
@@ -64,15 +57,12 @@ class Track:
                     )
                     info[f"{asset_type}_{asset_subtype}_path"] = path_or_url
 
-        self._info = info
-        return self._info
+        return info
 
-    @property
+    @cached_property
     def refs(self) -> dict[str, MultiSegment]:
         """Returns available reference annotations."""
         # Get the jams reference file and find all the annotators
-        if self._refs is not None:
-            return self._refs
         # Add JAMS metadata if reference annotation exists
         if self.jam is not None:
             annotators = [
@@ -82,31 +72,25 @@ class Track:
             annotators = list(set(annotators))
         else:
             annotators = []
-        self._refs = {a_id: self.load_annotation("reference", a_id) for a_id in annotators}
-        return self._refs
+        return {a_id: self.load_annotation("reference", a_id) for a_id in annotators}
 
-    @property
+    @cached_property
     def ests(self) -> dict[str, MultiSegment]:
         """Returns available estimated annotations."""
-        if self._ests is not None:
-            return self._ests
 
         # Find all available estimated annotations from info
         est_keys = [key for key in self.info if key.startswith("annotation_adobe")]
         est_ids = [key.replace("annotation_adobe-", "").replace("_path", "") for key in est_keys]
 
-        self._ests = {est_id: self.load_annotation(f"adobe-{est_id}") for est_id in est_ids}
-        return self._ests
+        return {est_id: self.load_annotation(f"adobe-{est_id}") for est_id in est_ids}
 
-    @property
+    @cached_property
     def jam(self) -> jams.JAMS | None:
         """Returns the reference JAMS object for this track."""
-        if self._jam is not None:
-            return self._jam
         jam_path = self.info.get("annotation_reference_path")
         if jam_path is not None:
-            self._jam = jams.load(self._fetch_content(jam_path))
-        return self._jam
+            return jams.load(self._fetch_content(jam_path))
+        return None
 
     def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:
         """Loads a specific annotation as a `MultiSegment`."""
@@ -140,7 +124,7 @@ class Track:
             raise ValueError(f"No annotator found for {name}")
 
         return MultiSegment(
-            layers=[
+            raw_layers=[
                 Segment.from_jams(uppers[0], name="coarse"),
                 Segment.from_jams(lowers[0], name="fine"),
             ],

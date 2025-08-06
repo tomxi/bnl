@@ -99,7 +99,9 @@ class SalByCount(SalienceStrategy):
         """
         time_counts: Counter[float] = Counter(b.time for layer in ms.layers for b in layer.bs)
         return BoundaryHierarchy(
-            bs=[LeveledBoundary(time=time, level=count) for time, count in time_counts.items()],
+            bs=sorted(
+                [LeveledBoundary(time=time, level=count) for time, count in time_counts.items()]
+            ),
             name=ms.name or "Salience Hierarchy",
         )
 
@@ -120,7 +122,7 @@ class SalByDepth(SalienceStrategy):
             for boundary in layer.bs:
                 boundary_map[boundary.time] = LeveledBoundary(time=boundary.time, level=salience)
         return BoundaryHierarchy(
-            bs=list(boundary_map.values()), name=ms.name or "Salience Hierarchy"
+            bs=sorted(list(boundary_map.values())), name=ms.name or "Salience Hierarchy"
         )
 
 
@@ -142,7 +144,7 @@ class SalByProb(SalienceStrategy):
                     time_saliences[boundary.time] += weight
         return BoundaryContour(
             name=ms.name or "Salience Contour",
-            bs=[RatedBoundary(t, s) for t, s in time_saliences.items()],
+            bs=sorted([RatedBoundary(t, s) for t, s in time_saliences.items()]),
         )
 
 
@@ -231,7 +233,7 @@ class CleanByKDE(CleanStrategy):
             *new_inner_boundaries,
             RatedBoundary(bc.end.time, max_salience),
         ]
-        return BoundaryContour(name=bc.name or "Cleaned Contour", bs=final_boundaries)
+        return BoundaryContour(name=bc.name or "Cleaned Contour", bs=sorted(final_boundaries))
 
 
 # endregion: Two ways to clean up boundaries closeby in time

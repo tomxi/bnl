@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from numbers import Number
 
 __all__ = [
@@ -102,55 +101,45 @@ class LeveledBoundary(RatedBoundary):
 
 
 @dataclass(frozen=True)
-class TimeSpan(ABC):
+class TimeSpan:
     """An abstract base class for objects that represent a span of time.
 
     This class defines the interface for all time-spanned objects, ensuring
     they have `start`, `end`, `duration`, and `name` properties.
     """
 
-    @property
-    @abstractmethod
-    def start(self) -> Boundary:
-        """The start boundary of the time span."""
-        raise NotImplementedError
+    start: Boundary
+    end: Boundary
+    name: str | None = field(default=None)
 
-    @property
-    @abstractmethod
-    def end(self) -> Boundary:
-        """The end boundary of the time span."""
-        raise NotImplementedError
+    def __post_init__(self):
+        self._validate_timespan()
+        if self.name is None:
+            object.__setattr__(self, "name", self._interval_str())
 
     @property
     def duration(self) -> float:
         """Duration in seconds."""
         return self.end.time - self.start.time
 
-    @property
-    @abstractmethod
-    def name(self) -> str:
-        """Name of the time span."""
-        raise NotImplementedError
-
     def _validate_timespan(self):
         """Helper method to validate that the timespan is valid."""
         if self.end.time <= self.start.time:
             raise ValueError("TimeSpan must have a non-zero, positive duration.")
 
-    def _get_default_name(self) -> str:
+    def _interval_str(self) -> str:
         """Helper method to generate a default name from the boundaries."""
         return f"[{self.start.time:.2f}-{self.end.time:.2f}]"
 
     def __repr__(self) -> str:
-        return f"TS({self.start}-{self.end}, {self.name})"
+        return f"TS({self._interval_str()}, {self.name})"
 
     def __str__(self) -> str:
         return self.name
 
 
-@TimeSpan.register
 @dataclass(frozen=True)
-class Segment:
+class Segment(TimeSpan):
     """An ordered sequence of boundaries that partition a span into labeled sections.
 
     Represents one layer of annotation. While it inherits from `TimeSpan`,
@@ -160,11 +149,9 @@ class Segment:
 
     bs: Sequence[Boundary] = field(default_factory=list)
     labels: Sequence[str] = field(default_factory=list)
-    name: str | None = field(default=None, repr=False)
-    _name: str = field(init=False, repr=False)
-
-    start: Boundary = field(init=False, repr=False)
-    end: Boundary = field(init=False, repr=False)
+    name: str | None = field(default="S")
+    start: Boundary = field(init=False)
+    end: Boundary = field(init=False)
 
     def __post_init__(self) -> None:
         """Validates the core assumptions of the Segment."""
@@ -180,10 +167,7 @@ class Segment:
         # Use object.__setattr__ to assign to the init=False fields.
         object.__setattr__(self, "start", self.bs[0])
         object.__setattr__(self, "end", self.bs[-1])
-        final_name = self.name if self.name is not None else self._get_default_name()
-        object.__setattr__(self, "_name", final_name)
-
-        self._validate_timespan()
+        super().__post_init__()
 
     @property
     def duration(self) -> float:
@@ -204,11 +188,6 @@ class Segment:
         return np.array(itvls)
 
     @property
-    def name(self) -> str:  # noqa: F811
-        """Name of the time span."""
-        return self._name
-
-    @property
     def lam(self) -> np.ndarray:
         """Label Agreement Matrix
 
@@ -227,7 +206,7 @@ class Segment:
         return iter(self.sections)
 
     def __repr__(self) -> str:
-        return f"S({self.start}-{self.end}, {self.name})"
+        return f"S({self._interval_str()}, {self.name})"
 
     def __str__(self) -> str:
         return self.name
@@ -271,7 +250,7 @@ class Segment:
         hatch: bool = True,
     ) -> go.Figure:
         """Plots the segment on a plotly figure by warpping it in a MultiSegment."""
-        ms = MultiSegment(layers=[self], name=str(self))
+        ms = MultiSegment(raw_layers=[self], name=str(self))
         fig = ms.plot(colorscale=colorscale, hatch=hatch)
         fig.update_layout(yaxis_visible=False)
         return fig
@@ -297,15 +276,13 @@ class Segment:
 
 
 # region: MultiSegment
-@TimeSpan.register
 @dataclass(frozen=True)
-class MultiSegment:
+class MultiSegment(TimeSpan):
     """The primary input object for analysis, containing multiple Segment layers."""
 
     raw_layers: Sequence[Segment] = field(default_factory=list)
     """A sequence of `Segment` objects representing different layers of annotation."""
-    name: str | None = field(default=None, repr=False)
-    _name: str = field(init=False, repr=False)
+    name: str | None = field(default="MS", repr=False)
 
     start: Boundary = field(init=False, repr=False)
     end: Boundary = field(init=False, repr=False)
@@ -316,40 +293,25 @@ class MultiSegment:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
         # Calculate the unified span and set the start/end boundaries.
-        unified_span = self.find_span(self.raw_layers, mode="common")
+        unified_span = self.find_span(self.raw_layers, mode="union")
         object.__setattr__(self, "start", unified_span.start)
         object.__setattr__(self, "end", unified_span.end)
-
-        final_name = self.name if self.name is not None else "Hierarchical Segmentation"
-        object.__setattr__(self, "_name", final_name)
-
-        self._validate_timespan()
-
-    @property
-    def duration(self) -> float:
-        """Duration in seconds."""
-        return self.end.time - self.start.time
-
-    @property
-    def name(self) -> str:  # noqa: F811
-        """Name of the time span."""
-        return self._name
+        super().__post_init__()
 
     @cached_property
     def layers(self) -> Sequence[Segment]:
         """Returns the layers aligned to a unified time span."""
-        unified_span = self.find_span(self.raw_layers, mode="common")
+        unified_span = TimeSpan(self.start, self.end)
         return [layer.align(unified_span) for layer in self.raw_layers]
 
     def __len__(self) -> int:
         return len(self.raw_layers)
 
     def __getitem__(self, key: int) -> Segment:
-        return self.layers()[key]
+        return self.layers[key]
 
     def __iter__(self) -> Iterator[Segment]:
-        """Enable iteration over the layers."""
-        return iter(self.layers())
+        return iter(self.layers)
 
     @property
     def itvls(self) -> Sequence[np.ndarray]:
@@ -399,16 +361,12 @@ class MultiSegment:
             raise ValueError(f"Unknown salience strategy: {strategy}")
 
         strategy_class = ops.SalienceStrategy._registry[strategy]
-        self._contour_strategy = strategy_class(**kwargs)
-
-        return self._contour_strategy(self)
+        contour_strategy = strategy_class(**kwargs)
+        return contour_strategy(self)
 
     def scrub_labels(self) -> MultiSegment:
         """Scrubs the labels of the MultiSegment by replacing them with empty strings."""
-        return MultiSegment(
-            raw_layers=[layer.scrub_labels() for layer in self],
-            name=self.name,
-        )
+        return MultiSegment(raw_layers=[layer.scrub_labels() for layer in self], name=self.name)
 
     @staticmethod
     def find_span(
@@ -437,10 +395,7 @@ class MultiSegment:
 
     def align(self, span: TimeSpan) -> MultiSegment:
         """Align with a TimeSpan object."""
-        return MultiSegment(
-            raw_layers=[layer.align(span) for layer in self],
-            name=self.name,
-        )
+        return MultiSegment(raw_layers=[layer.align(span) for layer in self], name=self.name)
 
     def prune_layers(self, relabel: bool = True) -> MultiSegment:
         """Prunes identical layers from the MultiSegment.
@@ -471,36 +426,44 @@ class MultiSegment:
 
         return replace(self, raw_layers=final_layers)
 
-    def squeeze_layers(self) -> MultiSegment:
+    def squeeze_layers(self, times: int = 1, relabel: bool = True) -> MultiSegment:
         """Remove the least informative layer from the MultiSegment according to vmeasure.
 
         Returns a new MultiSegment with the most redundant layer removed.
         """
         from mir_eval.segment import vmeasure
 
-        if len(self) <= 1:
+        if times <= 0 or len(self) <= 1:
             return self
-
-        # get rid of the level that adds the least information
-        # look at vmeasure between all consecutive levels,
-        # get the one with the lowest vmeasure with the next level
-        v_f1 = [
-            vmeasure(lv1.itvls, lv1.labels, lv2.itvls, lv2.labels)[2]
-            for lv1, lv2 in zip(self, self[1:])
-        ]
-        idx_to_pop = np.argmax(v_f1)
-        new_layers = [layer for i, layer in enumerate(self) if i != idx_to_pop]
-
-        return replace(self, raw_layers=new_layers)
+        elif times == 1:
+            # base case:
+            # get rid of the level that adds the least information
+            # look at vmeasure between all consecutive levels,
+            # get the one with the highest vmeasure with the next level
+            v_f1 = [
+                vmeasure(lv1.itvls, lv1.labels, lv2.itvls, lv2.labels)[2]
+                for lv1, lv2 in zip(self, self[1:])
+            ]
+            idx_to_pop = np.argmax(v_f1)
+            new_layers = [layer for i, layer in enumerate(self) if i != idx_to_pop]
+            if relabel:
+                new_layers = [
+                    replace(layer, name=f"L{i:02d}") for i, layer in enumerate(new_layers, start=1)
+                ]
+            return replace(self, raw_layers=new_layers)
+        else:
+            # Recurse
+            return self.squeeze_layers(times - 1, relabel=relabel).squeeze_layers(
+                times=1, relabel=relabel
+            )
 
 
 # endregion: MultiSegment
 
 
 # region: Monotonic Boundary
-@TimeSpan.register
 @dataclass(frozen=True)
-class BoundaryContour:
+class BoundaryContour(TimeSpan):
     """
     An intermediate, purely structural representation of boundary salience over time.
     """
@@ -508,29 +471,18 @@ class BoundaryContour:
     bs: Sequence[RatedBoundary] = field(default_factory=list)
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
-    name: str | None = field(default=None, repr=False)
-    _name: str = field(init=False, repr=False)
+    name: str | None = field(default="BC")
 
     def __post_init__(self):
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A BoundaryContour requires at least two boundaries.")
-
-        sorted_bs = sorted(self.bs)
-        object.__setattr__(self, "bs", sorted_bs)
+        if any(self.bs[i] > self.bs[i + 1] for i in range(len(self.bs) - 1)):
+            raise ValueError(f"Boundaries must be sorted. {self.bs}")
 
         # Use object.__setattr__ to assign to the init=False fields.
-        object.__setattr__(self, "start", sorted_bs[0])
-        object.__setattr__(self, "end", sorted_bs[-1])
-
-        final_name = self.name if self.name is not None else "BoundaryContour"
-        object.__setattr__(self, "_name", final_name)
-
-        self._validate_timespan()
-
-    @property
-    def name(self) -> str:  # noqa: F811
-        """Name of the time span."""
-        return self._name
+        object.__setattr__(self, "start", self.bs[0])
+        object.__setattr__(self, "end", self.bs[-1])
+        super().__post_init__()
 
     @property
     def duration(self) -> float:
@@ -599,9 +551,8 @@ class BoundaryContour:
         return level_strategy(self)
 
 
-@TimeSpan.register
 @dataclass(frozen=True)
-class BoundaryHierarchy:
+class BoundaryHierarchy(BoundaryContour):
     """
     The structural output of the monotonic casting process.
     """
@@ -609,38 +560,17 @@ class BoundaryHierarchy:
     bs: Sequence[LeveledBoundary] = field(default_factory=list)
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
-    name: str | None = field(default=None, repr=False)
-    _name: str = field(init=False, repr=False)
+    name: str | None = field(default="BH")
 
     def __post_init__(self):
-        if not self.bs or len(self.bs) < 2:
-            raise ValueError("A BoundaryHierarchy requires at least two boundaries.")
-
         for boundary in self.bs:
             if not isinstance(boundary, LeveledBoundary):
                 raise TypeError("All boundaries must be LeveledBoundary instances")
 
-        sorted_bs = sorted(self.bs)
-        object.__setattr__(self, "bs", sorted_bs)
-
         # Use object.__setattr__ to assign to the init=False fields.
-        object.__setattr__(self, "start", sorted_bs[0])
-        object.__setattr__(self, "end", sorted_bs[-1])
-
-        final_name = self.name if self.name is not None else "BoundaryHierarchy"
-        object.__setattr__(self, "_name", final_name)
-
-        self._validate_timespan()
-
-    @property
-    def name(self) -> str:  # noqa: F811
-        """Name of the time span."""
-        return self._name
-
-    @property
-    def duration(self) -> float:
-        """Duration in seconds."""
-        return self.end.time - self.start.time
+        object.__setattr__(self, "start", self.bs[0])
+        object.__setattr__(self, "end", self.bs[-1])
+        super().__post_init__()
 
     def to_ms(self) -> MultiSegment:
         """Convert the BoundaryHierarchy to a MultiSegment.
@@ -664,7 +594,7 @@ class BoundaryHierarchy:
                 )
             )
 
-        return MultiSegment(layers=layers, name=f"{self.name} Monotonic MS")
+        return MultiSegment(raw_layers=layers, name=f"{self.name} Monotonic MS")
 
 
 # endregion

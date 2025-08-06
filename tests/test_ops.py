@@ -55,7 +55,7 @@ def test_boundary_salience_by_count():
     s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])
     s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])
     s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])
-    ms = core.MultiSegment(layers=[s1, s2, s3], name="test_ms")
+    ms = core.MultiSegment(raw_layers=[s1, s2, s3], name="test_ms")
 
     hierarchy = ms.contour(strategy="count")
     assert isinstance(hierarchy, core.BoundaryHierarchy)
@@ -73,7 +73,7 @@ def test_boundary_salience_by_count():
 def test_boundary_salience_invalid_strategy():
     """Test that an invalid salience strategy raises a ValueError."""
     s1 = core.Segment.from_bs([0, 1], ["A"], name="L1")
-    ms = core.MultiSegment(layers=[s1], name="test_ms")
+    ms = core.MultiSegment(raw_layers=[s1], name="test_ms")
     with pytest.raises(ValueError):
         ms.contour(strategy="invalid_strategy")
 
@@ -100,7 +100,7 @@ def test_boundary_salience_by_depth():
     s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])  # coarsest, salience=3
     s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])  # medium, salience=2
     s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])  # finest, salience=1
-    ms = core.MultiSegment(layers=[s1, s2, s3], name="test_ms")
+    ms = core.MultiSegment(raw_layers=[s1, s2, s3], name="test_ms")
 
     hierarchy = ms.contour(strategy="depth")
     assert isinstance(hierarchy, core.BoundaryHierarchy)
@@ -128,7 +128,7 @@ def test_boundary_salience_by_prob():
     s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])
     # Layer 3: 3 eff bdr, weight = 1/3 = 0.33
     s3 = core.Segment.from_itvls([[0, 1], [1, 2], [2, 4], [4, 5]], ["w", "x", "y", "z"])
-    ms = core.MultiSegment(layers=[s1, s2, s3], name="test_ms")
+    ms = core.MultiSegment(raw_layers=[s1, s2, s3], name="test_ms")
 
     contour = ms.contour(strategy="prob")
     assert isinstance(contour, core.BoundaryContour)
