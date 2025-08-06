@@ -2,11 +2,14 @@
 This module provides the core algorithmic operations for transforming
 
 The core components are:
+
 - A generic `Strategy` base class that provides a registry pattern.
 - Three specialized abstract strategy classes that inherit from `Strategy`:
-    - `SalienceStrategy`: For calculating boundary importance.
-    - `CleanStrategy`: For refining boundary contours.
-    - `LevelStrategy`: For converting continuous salience into discrete levels.
+
+  - `SalienceStrategy`: For calculating boundary importance.
+  - `CleanStrategy`: For refining boundary contours.
+  - `LevelStrategy`: For converting continuous salience into discrete levels.
+
 - Concrete implementations for each strategy type, which can be extended.
 """
 
