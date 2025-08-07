@@ -1,15 +1,16 @@
 import pytest
 
-from bnl import core
+import bnl
+from bnl import ops
 
 # Test data
-contour = core.BoundaryContour(
+contour = bnl.BC(
     bs=[
-        core.RatedBoundary(0, 1.0),
-        core.RatedBoundary(1, 0.5),
-        core.RatedBoundary(2, 1.0),
-        core.RatedBoundary(4, 1.0),  # gap here
-        core.RatedBoundary(5, 1.0),
+        bnl.RB(0, 1.0),
+        bnl.RB(1, 0.5),
+        bnl.RB(2, 1.0),
+        bnl.RB(4, 1.0),  # gap here
+        bnl.RB(5, 1.0),
     ]
 )
 
@@ -29,16 +30,11 @@ def test_clean_boundaries_invalid_strategy():
 
 def test_level_by_distinct_salience():
     """Tests the level_by_distinct_salience function."""
-    contour_for_leveling = core.BoundaryContour(
-        bs=[
-            core.RatedBoundary(0, 10.0),
-            core.RatedBoundary(1, 20.0),
-            core.RatedBoundary(2, 10.0),
-            core.RatedBoundary(3, 30.0),
-        ]
+    contour_for_leveling = bnl.BC(
+        bs=[bnl.RB(0, 10.0), bnl.RB(1, 20.0), bnl.RB(2, 10.0), bnl.RB(3, 30.0)]
     )
     hierarchy = contour_for_leveling.level(strategy="unique")
-    assert isinstance(hierarchy, core.BoundaryHierarchy)
+    assert isinstance(hierarchy, bnl.BH)
     assert len(hierarchy.bs) == 4
     # Check levels: 10.0 -> 1, 20.0 -> 2, 30.0 -> 3
     # Expected levels: 10.0 -> level 1, 20.0 -> level 2, 30.0 -> level 3
@@ -52,13 +48,13 @@ def test_level_by_distinct_salience():
 
 def test_boundary_salience_by_count():
     """Test salience calculation with 'count' strategy."""
-    s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])
-    s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])
-    s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])
-    ms = core.MultiSegment(raw_layers=[s1, s2, s3], name="test_ms")
+    s1 = bnl.S.from_itvls([[0, 1], [1, 5]], ["A", "B"])
+    s2 = bnl.S.from_itvls([[0, 2], [2, 5]], ["a", "b"])
+    s3 = bnl.S.from_itvls([[0, 1], [1, 5]], ["x", "y"])
+    ms = bnl.MS(raw_layers=[s1, s2, s3], name="test_ms")
 
     hierarchy = ms.contour(strategy="count")
-    assert isinstance(hierarchy, core.BoundaryHierarchy)
+    assert isinstance(hierarchy, bnl.BH)
     assert hierarchy.name == "test_ms"
 
     # Times: 0, 1, 2, 5
@@ -72,38 +68,38 @@ def test_boundary_salience_by_count():
 
 def test_boundary_salience_invalid_strategy():
     """Test that an invalid salience strategy raises a ValueError."""
-    s1 = core.Segment.from_bs([0, 1], ["A"], name="L1")
-    ms = core.MultiSegment(raw_layers=[s1], name="test_ms")
+    s1 = bnl.S.from_bs([0, 1], ["A"], name="L1")
+    ms = bnl.MS(raw_layers=[s1], name="test_ms")
     with pytest.raises(ValueError):
         ms.contour(strategy="invalid_strategy")
 
 
 def test_clean_boundaries_kde():
     """Tests the 'kde' strategy for clean_boundaries."""
-    contour = core.BoundaryContour(
+    contour = bnl.BC(
         bs=[
-            core.RatedBoundary(0, 1.0),
-            core.RatedBoundary(1, 0.5),
-            core.RatedBoundary(1.1, 0.5),
-            core.RatedBoundary(2, 0.8),
-            core.RatedBoundary(2.2, 0.8),
-            core.RatedBoundary(3, 1.0),
+            bnl.RB(0, 1.0),
+            bnl.RB(1, 0.5),
+            bnl.RB(1.1, 0.5),
+            bnl.RB(2, 0.8),
+            bnl.RB(2.2, 0.8),
+            bnl.RB(3, 1.0),
         ]
     )
     cleaned = contour.clean(strategy="kde")
-    assert isinstance(cleaned, core.BoundaryContour)
+    assert isinstance(cleaned, bnl.BC)
     assert len(cleaned.bs) < len(contour.bs)
 
 
 def test_boundary_salience_by_depth():
     """Test salience calculation with 'depth' strategy."""
-    s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])  # coarsest, salience=3
-    s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])  # medium, salience=2
-    s3 = core.Segment.from_itvls([[0, 1], [1, 5]], ["x", "y"])  # finest, salience=1
-    ms = core.MultiSegment(raw_layers=[s1, s2, s3], name="test_ms")
+    s1 = bnl.S.from_itvls([[0, 1], [1, 5]], ["A", "B"])  # coarsest, salience=3
+    s2 = bnl.S.from_itvls([[0, 2], [2, 5]], ["a", "b"])  # medium, salience=2
+    s3 = bnl.S.from_itvls([[0, 1], [1, 5]], ["x", "y"])  # finest, salience=1
+    ms = bnl.MS(raw_layers=[s1, s2, s3], name="test_ms")
 
     hierarchy = ms.contour(strategy="depth")
-    assert isinstance(hierarchy, core.BoundaryHierarchy)
+    assert isinstance(hierarchy, bnl.BH)
     assert hierarchy.name == "test_ms"
 
     # Boundaries at t=0, 1, 5 are in s1 (salience=3).
@@ -123,15 +119,15 @@ def test_boundary_salience_by_depth():
 def test_boundary_salience_by_prob():
     """Test salience calculation with 'prob' strategy."""
     # Layer 1: 1 effective boundary, weight = 1/1 = 1
-    s1 = core.Segment.from_itvls([[0, 1], [1, 5]], ["A", "B"])
+    s1 = bnl.S.from_itvls([[0, 1], [1, 5]], ["A", "B"])
     # Layer 2: 1 eff bdr, weight = 1/1 = 1
-    s2 = core.Segment.from_itvls([[0, 2], [2, 5]], ["a", "b"])
+    s2 = bnl.S.from_itvls([[0, 2], [2, 5]], ["a", "b"])
     # Layer 3: 3 eff bdr, weight = 1/3 = 0.33
-    s3 = core.Segment.from_itvls([[0, 1], [1, 2], [2, 4], [4, 5]], ["w", "x", "y", "z"])
-    ms = core.MultiSegment(raw_layers=[s1, s2, s3], name="test_ms")
+    s3 = bnl.S.from_itvls([[0, 1], [1, 2], [2, 4], [4, 5]], ["w", "x", "y", "z"])
+    ms = bnl.MS(raw_layers=[s1, s2, s3], name="test_ms")
 
     contour = ms.contour(strategy="prob")
-    assert isinstance(contour, core.BoundaryContour)
+    assert isinstance(contour, bnl.BC)
     assert contour.name == "test_ms"
 
     # Boundaries:
@@ -149,3 +145,32 @@ def test_boundary_salience_by_prob():
     found_saliences = {b.time: b.salience for b in contour.bs}
     for time, salience in expected_saliences.items():
         assert found_saliences[time] == approx(salience)
+
+
+def test_clean_trivial_boundaries():
+    bc2 = bnl.BC(bs=[bnl.RB(0, 1.0), bnl.RB(2, 1.0)])
+    bc3 = bnl.BC(bs=[bnl.RB(0, 1.0), bnl.RB(2, 1.0), bnl.RB(4, 1.0)])
+    for strat in ops.CleanStrategy._registry:
+        cleaned2 = bc2.clean(strategy=strat)
+        cleaned3 = bc3.clean(strategy=strat)
+        assert len(cleaned2.bs) == 2
+        assert len(cleaned3.bs) == 3
+
+
+def test_level_mean_shift():
+    bc = bnl.BC(
+        bs=[bnl.RB(0, 1.3), bnl.RB(1, 0.5), bnl.RB(2, 1.52), bnl.RB(4, 0.3), bnl.RB(5, 1.6)]
+    )
+    hierarchy = bc.level(strategy="mean_shift")
+    assert isinstance(hierarchy, bnl.BH)
+    distinct_levels = set(b.level for b in hierarchy.bs)
+    assert len(distinct_levels) < len(hierarchy.bs)
+
+
+def test_mean_shift_trival():
+    bc = bnl.BC(bs=[bnl.RB(0, 1.0), bnl.RB(2, 2.0), bnl.RB(4, 3.0)])
+    hierarchy = bc.level(strategy="mean_shift")
+    assert isinstance(hierarchy, bnl.BH)
+    assert len(hierarchy.bs) == 3
+    distinct_levels = set(b.level for b in hierarchy.bs)
+    assert len(distinct_levels) == 1

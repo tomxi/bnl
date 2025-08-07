@@ -69,7 +69,7 @@ class Strategy(ABC):
 
     @abstractmethod
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 # endregion: Base Strategy Pattern
@@ -85,7 +85,7 @@ class SalienceStrategy(Strategy):
 
     @abstractmethod
     def __call__(self, ms: MultiSegment) -> BoundaryContour:
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 @SalienceStrategy.register("count")
@@ -162,7 +162,7 @@ class CleanStrategy(Strategy):
     @abstractmethod
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
         """Cleans boundaries in a BoundaryContour."""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 @CleanStrategy.register("absorb")
@@ -248,7 +248,7 @@ class LevelStrategy(Strategy):
     @abstractmethod
     def __call__(self, bc: BoundaryContour) -> BoundaryHierarchy:
         """Quantize boundaries' levels in a BoundaryContour."""
-        raise NotImplementedError
+        raise NotImplementedError  # pragma: no cover
 
 
 @LevelStrategy.register("unique")

@@ -246,6 +246,20 @@ class TestMultiSegment:
         assert bc.start.time == 0
         assert bc.end.time == 2
 
+    def test_squeeze_layers(self):
+        s1 = bnl.S.from_bs([0, 2], ["A"])
+        s2 = bnl.S.from_bs([0, 1, 2], ["a", "b"])
+        s3 = bnl.S.from_bs([0, 1.5, 2], ["c", "d"])
+        ms = bnl.MS(raw_layers=[s1, s2, s3])
+        sq = ms.squeeze_layers(relabel=False)
+        assert sq == bnl.MS(raw_layers=[s1, s3])
+        sq2 = ms.squeeze_layers(2)
+        sq3 = ms.squeeze_layers(3)
+        sq4 = ms.squeeze_layers(4)
+        assert len(sq2) == 1
+        assert len(sq3) == 1
+        assert len(sq4) == 1
+
 
 class TestContours:
     """Tests for contour-like objects (BoundaryContour, BoundaryHierarchy)."""
