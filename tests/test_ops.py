@@ -167,7 +167,7 @@ def test_level_mean_shift():
     assert len(distinct_levels) < len(hierarchy.bs)
 
 
-def test_mean_shift_trival():
+def test_mean_shift_trivial():
     bc = bnl.BC(bs=[bnl.RB(0, 1.0), bnl.RB(2, 2.0), bnl.RB(4, 3.0)])
     hierarchy = bc.level(strategy="mean_shift")
     assert isinstance(hierarchy, bnl.BH)
