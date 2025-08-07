@@ -10,9 +10,10 @@ __all__ = [
 import io
 import json
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from functools import cached_property
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import jams
 import pandas as pd
@@ -29,12 +30,6 @@ class Track:
     manifest_row: pd.Series
     dataset: Dataset
 
-    def __post_init__(self) -> None:
-        self._info: dict[str, Any] | None = None
-        self._jam: jams.JAMS | None = None
-        self._refs: dict[str, MultiSegment] | None = None
-        self._ests: dict[str, MultiSegment] | None = None
-
     def __repr__(self) -> str:
         has_columns = self.manifest_row.filter(like="has_").astype(bool)
         num_assets = int(has_columns.values.sum()) if len(has_columns) > 0 else 0
@@ -43,11 +38,9 @@ class Track:
             f"source='{self.dataset.data_location}')"
         )
 
-    @property
+    @cached_property
     def info(self) -> dict[str, Any]:
         """Essential track information (cached)."""
-        if self._info is not None:
-            return self._info
 
         info: dict[str, Any] = {"track_id": self.track_id}
 
@@ -64,15 +57,12 @@ class Track:
                     )
                     info[f"{asset_type}_{asset_subtype}_path"] = path_or_url
 
-        self._info = info
-        return self._info
+        return info
 
-    @property
+    @cached_property
     def refs(self) -> dict[str, MultiSegment]:
         """Returns available reference annotations."""
         # Get the jams reference file and find all the annotators
-        if self._refs is not None:
-            return self._refs
         # Add JAMS metadata if reference annotation exists
         if self.jam is not None:
             annotators = [
@@ -82,48 +72,31 @@ class Track:
             annotators = list(set(annotators))
         else:
             annotators = []
-        self._refs = {
-            a_id: self.load_annotation("reference", a_id) for a_id in annotators
-        }
-        return self._refs
+        return {a_id: self.load_annotation("reference", a_id) for a_id in annotators}
 
-    @property
+    @cached_property
     def ests(self) -> dict[str, MultiSegment]:
         """Returns available estimated annotations."""
-        if self._ests is not None:
-            return self._ests
 
         # Find all available estimated annotations from info
         est_keys = [key for key in self.info if key.startswith("annotation_adobe")]
-        est_ids = [
-            key.replace("annotation_adobe-", "").replace("_path", "")
-            for key in est_keys
-        ]
+        est_ids = [key.replace("annotation_adobe-", "").replace("_path", "") for key in est_keys]
 
-        self._ests = {
-            est_id: self.load_annotation(f"adobe-{est_id}") for est_id in est_ids
-        }
-        return self._ests
+        return {est_id: self.load_annotation(f"adobe-{est_id}") for est_id in est_ids}
 
-    @property
+    @cached_property
     def jam(self) -> jams.JAMS | None:
         """Returns the reference JAMS object for this track."""
-        if self._jam is not None:
-            return self._jam
         jam_path = self.info.get("annotation_reference_path")
         if jam_path is not None:
-            self._jam = jams.load(self._fetch_content(jam_path))
-        return self._jam
+            return jams.load(self._fetch_content(jam_path))
+        return None
 
-    def load_annotation(
-        self, annotation_type: str, annotator: str | None = None
-    ) -> MultiSegment:
+    def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:
         """Loads a specific annotation as a `MultiSegment`."""
         annotation_key = f"annotation_{annotation_type}_path"
         if annotation_key not in self.info:
-            raise ValueError(
-                f"Annotation type '{annotation_type}' not available for this track."
-            )
+            raise ValueError(f"Annotation type '{annotation_type}' not available for this track.")
 
         annotation_path = self.info[annotation_key]
 
@@ -134,9 +107,7 @@ class Track:
         else:
             raise NotImplementedError(f"Unsupported file type: {annotation_path}")
 
-    def _load_jams_anno(
-        self, path: str | Path, name: str | None = None
-    ) -> MultiSegment:
+    def _load_jams_anno(self, path: str | Path, name: str | None = None) -> MultiSegment:
         """
         Find the annotator with name `name` in the JAMS file, and load it as a `MultiSegment`.
         If `name` is None, find the first annotator in the JAMS file.
@@ -146,16 +117,14 @@ class Track:
         """
         jam = jams.load(self._fetch_content(path))
         search_name = name if name is not None else ""
-        uppers = jam.search(namespace="segment_salami_function").search(
-            name=search_name
-        )
+        uppers = jam.search(namespace="segment_salami_function").search(name=search_name)
         lowers = jam.search(namespace="segment_salami_lower").search(name=search_name)
 
         if len(uppers) == 0 or len(lowers) == 0:
             raise ValueError(f"No annotator found for {name}")
 
         return MultiSegment(
-            layers=[
+            raw_layers=[
                 Segment.from_jams(uppers[0], name="coarse"),
                 Segment.from_jams(lowers[0], name="fine"),
             ],
@@ -189,6 +158,8 @@ class Dataset:
     manifest: pd.DataFrame
     R2_BUCKET_PUBLIC_URL: str = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
 
+    data_location: Literal["local", "cloud"] = field(init=False)
+
     def __init__(self, manifest_path: Path | str | None = None):
         if manifest_path is None:
             manifest_path = f"{self.R2_BUCKET_PUBLIC_URL}/manifest_cloud_boolean.csv"
@@ -210,9 +181,7 @@ class Dataset:
         # Load manifest
         try:
             load_path = (
-                Path(manifest_path).expanduser()
-                if self.data_location == "local"
-                else manifest_path
+                Path(manifest_path).expanduser() if self.data_location == "local" else manifest_path
             )
             self.manifest = (
                 pd.read_csv(io.StringIO(requests.get(str(manifest_path)).text))
@@ -227,9 +196,7 @@ class Dataset:
 
         # Only include tracks that have the reference annotation
         self.manifest = self.manifest[
-            self.manifest.filter(like="has_annotation_reference")
-            .astype(bool)
-            .values.any(axis=1)
+            self.manifest.filter(like="has_annotation_reference").astype(bool).values.any(axis=1)
         ]
 
         try:
@@ -264,49 +231,39 @@ class Dataset:
         else:
             return mu_gamma
 
-    def _reconstruct_local_path(
-        self, track_id: str, asset_type: str, asset_subtype: str
-    ) -> Path:
+    def _reconstruct_local_path(self, track_id: str, asset_type: str, asset_subtype: str) -> Path:
         """Reconstruct local file path for an asset."""
         root = cast(Path, self.dataset_root)
 
         if asset_type == "audio":
-            # This path is a placeholder as audio is not the focus of current tests.
-            return root / "audio" / f"{track_id}.{asset_subtype}"
+            return root / "audio" / track_id / f"audio.{asset_subtype}"
         elif asset_type == "annotation":
             if asset_subtype.startswith("ref_") or asset_subtype == "reference":
-                # Reference JAMS annotations are located in the jams/ directory for local datasets
                 return root / "jams" / f"{track_id}.jams"
             elif "adobe" in asset_subtype:
                 # Adobe annotations have a specific subfolder structure.
-                formatted_params = self._format_adobe_params(asset_subtype)
-                subfolder = f"adobe/def_{formatted_params}"
+                subfolder = f"adobe/def_{self._format_adobe_params(asset_subtype)}"
                 return root / subfolder / f"{track_id}.mp3.msdclasscsnmagic.json"
 
         raise ValueError(f"Unknown local asset: {asset_type}/{asset_subtype}")
 
-    def _reconstruct_cloud_url(
-        self, track_id: str, asset_type: str, asset_subtype: str
-    ) -> str:
+    def _reconstruct_cloud_url(self, track_id: str, asset_type: str, asset_subtype: str) -> str:
         """Reconstruct cloud URL for an asset."""
         base = cast(str, self.base_url)
 
-        if asset_type == "audio" and asset_subtype == "mp3":
-            return f"{base}/slm-dataset/{track_id}/audio.mp3"
+        if asset_type == "audio":
+            return f"{base}/slm-dataset/{track_id}/audio.{asset_subtype}"
         elif asset_type == "annotation" and (
             asset_subtype.startswith("ref_") or asset_subtype == "reference"
         ):
             return f"{base}/ref-jams/{track_id}.jams"
         elif asset_type == "annotation" and "adobe" in asset_subtype:
-            formatted_params = self._format_adobe_params(asset_subtype)
-            subfolder = f"adobe21-est/def_{formatted_params}"
+            subfolder = f"adobe21-est/def_{self._format_adobe_params(asset_subtype)}"
             return f"{base}/{subfolder}/{track_id}.mp3.msdclasscsnmagic.json"
 
         raise ValueError(f"Unknown cloud asset: {asset_type}/{asset_subtype}")
 
-    def _reconstruct_path(
-        self, track_id: str, asset_type: str, asset_subtype: str
-    ) -> Path | str:
+    def _reconstruct_path(self, track_id: str, asset_type: str, asset_subtype: str) -> Path | str:
         """
         Reconstruct the full path or URL for an asset based on the dataset's
         data_location.

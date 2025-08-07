@@ -3,16 +3,8 @@
         "editor.defaultFormatter": "charliermarsh.ruff",
         "editor.formatOnSave": true
     },
-    "files.exclude": {
-        "**/__pycache__": true,
-        "**/*.egg-info": true,
-        "**/.pytest_cache": true
-    },
     // Testing configuration
-    "python.testing.pytestArgs": [
-        "--cov=src/",
-        "--cov-report=xml"
-    ],
+    "python.testing.cwd": "${workspaceFolder}", 
     "python.testing.unittestEnabled": false,
     "python.testing.pytestEnabled": true,
     "python.testing.autoTestDiscoverOnSaveEnabled": true,

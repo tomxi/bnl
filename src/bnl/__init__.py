@@ -17,7 +17,7 @@ from __future__ import annotations
 __version__ = "0.0.3"
 
 # --- Import submodules for explicit, namespaced access ---
-from . import core, data, ops, viz
+from . import core, data, ops, viz  # noqa: I001
 
 # --- Promote the core data structures to the top level ---
 from .core import (
@@ -30,6 +30,7 @@ from .core import (
     Segment as S,
     TimeSpan as TS,
 )
+
 
 # --- Define the public-facing API of the `bnl` package ---
 __all__ = [

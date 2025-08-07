@@ -17,13 +17,14 @@ __all__ = [
 
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field, replace
+from functools import cached_property
 from typing import Any
 
 import jams
 import numpy as np
 import plotly.graph_objects as go
 
-# region: Point-like Objects
+# region: Boundary Objects
 
 
 @dataclass(frozen=True, order=True)
@@ -39,7 +40,7 @@ class Boundary:
         object.__setattr__(self, "time", rounded_time)
 
     def __repr__(self) -> str:
-        return f"B({self.time})"
+        return f"B({self.time:.1f})"
 
 
 @dataclass(frozen=True, order=True)
@@ -51,7 +52,7 @@ class RatedBoundary(Boundary):
     salience: float
 
     def __repr__(self) -> str:
-        return f"RB({self.time}, {self.salience:.2f})"
+        return f"RB({self.time:.1f}, {self.salience:.2f})"
 
 
 @dataclass(frozen=True, order=True, init=False)
@@ -77,7 +78,9 @@ class LeveledBoundary(RatedBoundary):
             ValueError: If `level` is not a positive integer.
         """
         if not isinstance(level, int) or level <= 0:
-            raise ValueError("`level` must be a positive integer.")
+            raise ValueError(
+                f"`level` must be a positive integer, got {level}, with type {type(level)}."
+            )
 
         # Manually set the attributes for this frozen instance.
         object.__setattr__(self, "time", time)
@@ -88,45 +91,54 @@ class LeveledBoundary(RatedBoundary):
         super().__post_init__()
 
     def __repr__(self) -> str:
-        return f"LB({self.time}, {self.level})"
+        return f"LB({self.time:.1f}, {self.level})"
 
 
 # endregion
 
-# region: Span-like Objects (Containers)
+
+# region: TimeSpan and Segment
 
 
-@dataclass
+@dataclass(frozen=True)
 class TimeSpan:
-    """
-    Represents a generic time interval.
+    """An abstract base class for objects that represent a span of time.
 
-    Must have a non-zero, positive duration. Allows empty string for name as default.
+    This class defines the interface for all time-spanned objects, ensuring
+    they have `start`, `end`, `duration`, and `name` properties.
     """
 
     start: Boundary
     end: Boundary
-    # docstring: Name of the time span, defaults to `[start-end]` if None
-    name: str | None = None
+    name: str | None = field(default=None)
 
-    def __post_init__(self) -> None:
-        if self.end.time <= self.start.time:
-            raise ValueError("TimeSpan must have a non-zero, positive duration.")
+    def __post_init__(self):
+        self._validate_timespan()
         if self.name is None:
-            self.name = f"[{self.start.time:.2f}-{self.end.time:.2f}]"
+            object.__setattr__(self, "name", self._interval_str())
 
     @property
     def duration(self) -> float:
+        """Duration in seconds."""
         return self.end.time - self.start.time
 
+    def _validate_timespan(self):
+        """Helper method to validate that the timespan is valid."""
+        if self.end.time <= self.start.time:
+            raise ValueError("TimeSpan must have a non-zero, positive duration.")
+
+    def _interval_str(self) -> str:
+        """Helper method to generate a default name from the boundaries."""
+        return f"[{self.start.time:.2f}-{self.end.time:.2f}]"
+
     def __repr__(self) -> str:
-        return f"TS({self.start}-{self.end}, {self.name})"
+        return f"TS({self._interval_str()}, {self.name})"
 
     def __str__(self) -> str:
         return self.name
 
 
-@dataclass
+@dataclass(frozen=True)
 class Segment(TimeSpan):
     """An ordered sequence of boundaries that partition a span into labeled sections.
 
@@ -137,53 +149,43 @@ class Segment(TimeSpan):
 
     bs: Sequence[Boundary] = field(default_factory=list)
     labels: Sequence[str] = field(default_factory=list)
-    name: str = "Segment"
-
-    # Exclude parent fields from the __init__ signature, they are derived.
+    name: str | None = field(default="S")
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
     def __post_init__(self) -> None:
-        """Validates and initializes the derived fields of the Segment."""
+        """Validates the core assumptions of the Segment."""
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A Segment requires at least two boundaries.")
         if not self.labels:
             raise ValueError("Segment requires labels.")
         if len(self.labels) != len(self.bs) - 1:
             raise ValueError("Number of labels must be one less than the number of boundaries.")
+        if any(self.bs[i] > self.bs[i + 1] for i in range(len(self.bs) - 1)):
+            raise ValueError("Boundaries must be sorted.")
 
-        # Ensure boundaries is a mutable list and sorted.
-        self.bs = list(self.bs)
-        if self.bs != sorted(self.bs):
-            raise ValueError("Boundaries must be sorted by time.")
-
-        # Derive and set the parent's start and end fields.
+        # Use object.__setattr__ to assign to the init=False fields.
         object.__setattr__(self, "start", self.bs[0])
         object.__setattr__(self, "end", self.bs[-1])
-
-        # Call the parent's post-init to validate duration.
         super().__post_init__()
 
-        # Create cache to avoid repeated computation.
-        self._sections = None
-        self._itvls = None
-
     @property
+    def duration(self) -> float:
+        """Duration in seconds."""
+        return self.end.time - self.start.time
+
+    @cached_property
     def sections(self) -> Sequence[TimeSpan]:
         """A list of all the labeled time spans that compose the segment."""
-        if self._sections is None:
-            self._sections = [
-                TimeSpan(start=Boundary(itvl[0]), end=Boundary(itvl[1]), name=label)
-                for itvl, label in zip(self.itvls, self.labels)
-            ]
-        return self._sections
+        return [
+            TimeSpan(name=label, start=Boundary(itvl[0]), end=Boundary(itvl[1]))
+            for itvl, label in zip(self.itvls, self.labels)
+        ]
 
-    @property
+    @cached_property
     def itvls(self) -> np.ndarray:
-        if self._itvls is None:
-            itvls = [[b.time, e.time] for b, e in zip(self.bs[:-1], self.bs[1:])]
-            self._itvls = np.array(itvls)
-        return self._itvls
+        itvls = [[b.time, e.time] for b, e in zip(self.bs[:-1], self.bs[1:])]
+        return np.array(itvls)
 
     @property
     def lam(self) -> np.ndarray:
@@ -204,7 +206,7 @@ class Segment(TimeSpan):
         return iter(self.sections)
 
     def __repr__(self) -> str:
-        return f"S({self.start}-{self.end}, {self.name})"
+        return f"S({self._interval_str()}, {self.name})"
 
     def __str__(self) -> str:
         return self.name
@@ -248,7 +250,7 @@ class Segment(TimeSpan):
         hatch: bool = True,
     ) -> go.Figure:
         """Plots the segment on a plotly figure by warpping it in a MultiSegment."""
-        ms = MultiSegment(layers=[self], name=str(self))
+        ms = MultiSegment(raw_layers=[self], name=str(self))
         fig = ms.plot(colorscale=colorscale, hatch=hatch)
         fig.update_layout(yaxis_visible=False)
         return fig
@@ -270,52 +272,56 @@ class Segment(TimeSpan):
         return replace(self, bs=new_bs)
 
 
-@dataclass
+# endregion: Segment
+
+
+# region: MultiSegment
+@dataclass(frozen=True)
 class MultiSegment(TimeSpan):
     """The primary input object for analysis, containing multiple Segment layers."""
 
-    layers: Sequence[Segment] = field(default_factory=list)
-    name: str = "Hierarchical Segmentation"
+    raw_layers: Sequence[Segment] = field(default_factory=list)
+    """A sequence of `Segment` objects representing different layers of annotation."""
+    name: str | None = field(default="MS", repr=False)
 
-    # Exclude parent fields from the __init__ signature, they are derived.
-    start: Boundary = field(init=False)
-    end: Boundary = field(init=False)
+    start: Boundary = field(init=False, repr=False)
+    end: Boundary = field(init=False, repr=False)
 
     def __post_init__(self):
-        """Validates and initializes the derived fields of the MultiSegment."""
-        if not self.layers:
+        """Validates the core assumptions of the MultiSegment."""
+        if not self.raw_layers:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
-        # align all layers to the same time span
-        unified_span = self.find_span(mode="union")
-        self.layers = [layer.align(unified_span) for layer in self.layers]
-
-        # Derive and set the parent's start and end fields.
+        # Calculate the unified span and set the start/end boundaries.
+        unified_span = self.find_span(self.raw_layers, mode="union")
         object.__setattr__(self, "start", unified_span.start)
         object.__setattr__(self, "end", unified_span.end)
-
-        # Call the parent's post-init to validate duration.
         super().__post_init__()
 
+    @cached_property
+    def layers(self) -> Sequence[Segment]:
+        """Returns the layers aligned to a unified time span."""
+        unified_span = TimeSpan(self.start, self.end)
+        return [layer.align(unified_span) for layer in self.raw_layers]
+
     def __len__(self) -> int:
-        return len(self.layers)
+        return len(self.raw_layers)
 
     def __getitem__(self, key: int) -> Segment:
         return self.layers[key]
 
     def __iter__(self) -> Iterator[Segment]:
-        """Enable iteration over the layers."""
         return iter(self.layers)
 
     @property
     def itvls(self) -> Sequence[np.ndarray]:
-        """Returns a list of all the intervals in the MultiSegment."""
-        return [layer.itvls for layer in self.layers]
+        """Returns a list of all the intervals for each layer in the MultiSegment."""
+        return [layer.itvls for layer in self]
 
     @property
     def labels(self) -> Sequence[Sequence[str]]:
-        """Returns a list of all the labels in the MultiSegment."""
-        return [layer.labels for layer in self.layers]
+        """Returns a list of all the labels for each layer in the MultiSegment."""
+        return [layer.labels for layer in self]
 
     @classmethod
     def from_json(cls, json_data: list, name: str | None = None) -> MultiSegment:
@@ -332,7 +338,7 @@ class MultiSegment(TimeSpan):
         for i, layer in enumerate(json_data, start=1):
             itvls, labels = layer
             layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
-        return cls(layers=layers, name=name if name is not None else "JSON Annotation")
+        return cls(raw_layers=layers, name=name if name is not None else "JSON Annotation")
 
     def plot(self, colorscale: str | list[str] = "D3", hatch: bool = True) -> go.Figure:
         """Plots the MultiSegment on a Plotly figure.
@@ -347,21 +353,24 @@ class MultiSegment(TimeSpan):
 
         return viz.plot_multisegment(ms=self, colorscale=colorscale, hatch=hatch)
 
-    def contour(self, strategy: str = "depth") -> BoundaryContour:
+    def contour(self, strategy: str = "depth", **kwargs: Any) -> BoundaryContour:
         """Calculates boundary salience and converts to a BoundaryContour."""
-        from . import ops  # Local import to avoid circular dependency at runtime
+        from . import ops
 
-        return ops.boundary_salience(self, strategy=strategy)
+        if strategy not in ops.SalienceStrategy._registry:
+            raise ValueError(f"Unknown salience strategy: {strategy}")
+
+        strategy_class = ops.SalienceStrategy._registry[strategy]
+        contour_strategy = strategy_class(**kwargs)
+        return contour_strategy(self)
 
     def scrub_labels(self) -> MultiSegment:
         """Scrubs the labels of the MultiSegment by replacing them with empty strings."""
-        return MultiSegment(
-            layers=[layer.scrub_labels() for layer in self.layers],
-            name=self.name,
-        )
+        return MultiSegment(raw_layers=[layer.scrub_labels() for layer in self], name=self.name)
 
+    @staticmethod
     def find_span(
-        self,
+        layers: Sequence[Segment],
         mode: str = "common",
     ) -> TimeSpan:
         """Finds the span of a list of Segment layers.
@@ -371,11 +380,11 @@ class MultiSegment(TimeSpan):
                 Defaults to "common".
         """
         if mode == "union":
-            inc_start_time = min(layer.start.time for layer in self.layers)
-            inc_end_time = max(layer.end.time for layer in self.layers)
+            inc_start_time = min(layer.start.time for layer in layers)
+            inc_end_time = max(layer.end.time for layer in layers)
         elif mode == "common":
-            inc_start_time = max(layer.start.time for layer in self.layers)
-            inc_end_time = min(layer.end.time for layer in self.layers)
+            inc_start_time = max(layer.start.time for layer in layers)
+            inc_end_time = min(layer.end.time for layer in layers)
         else:
             raise ValueError(f"Unknown alignment mode: {mode}. Must be 'union' or 'common'.")
         return TimeSpan(
@@ -386,10 +395,7 @@ class MultiSegment(TimeSpan):
 
     def align(self, span: TimeSpan) -> MultiSegment:
         """Align with a TimeSpan object."""
-        return MultiSegment(
-            layers=[layer.align(span) for layer in self.layers],
-            name=self.name,
-        )
+        return MultiSegment(raw_layers=[layer.align(span) for layer in self], name=self.name)
 
     def prune_layers(self, relabel: bool = True) -> MultiSegment:
         """Prunes identical layers from the MultiSegment.
@@ -397,12 +403,10 @@ class MultiSegment(TimeSpan):
         This also gets rid of layers with no inner boundaries.
         """
         pruned_layers = []
-        for layer in self.layers:
+        for layer in self:
             if len(layer) <= 1:
                 continue  # skip layers with no inner boundaries
 
-            # using replace to hack a copy
-            layer = replace(layer, name=layer.name)
             # The first valid layer is always added.
             if not pruned_layers:
                 pruned_layers.append(layer)
@@ -414,35 +418,76 @@ class MultiSegment(TimeSpan):
             if not (same_boundaries and same_labeling):
                 pruned_layers.append(layer)
 
+        final_layers = pruned_layers
         if relabel:
-            for i, layer in enumerate(pruned_layers, start=1):
-                layer.name = f"L{i:02d}"
+            final_layers = [
+                replace(layer, name=f"L{i:02d}") for i, layer in enumerate(pruned_layers, start=1)
+            ]
 
-        return replace(self, layers=pruned_layers)
+        return replace(self, raw_layers=final_layers)
+
+    def squeeze_layers(self, times: int = 1, relabel: bool = True) -> MultiSegment:
+        """Remove the least informative layer from the MultiSegment according to vmeasure.
+
+        Returns a new MultiSegment with the most redundant layer removed.
+        """
+        from mir_eval.segment import vmeasure
+
+        if times <= 0 or len(self) <= 1:
+            return self
+        elif times == 1:
+            # base case:
+            # get rid of the level that adds the least information
+            # look at vmeasure between all consecutive levels,
+            # get the one with the highest vmeasure with the next level
+            v_f1 = [
+                vmeasure(lv1.itvls, lv1.labels, lv2.itvls, lv2.labels)[2]
+                for lv1, lv2 in zip(self, self[1:])
+            ]
+            idx_to_pop = np.argmax(v_f1)
+            new_layers = [layer for i, layer in enumerate(self) if i != idx_to_pop]
+            if relabel:
+                new_layers = [
+                    replace(layer, name=f"L{i:02d}") for i, layer in enumerate(new_layers, start=1)
+                ]
+            return replace(self, raw_layers=new_layers)
+        else:
+            # Recurse
+            return self.squeeze_layers(times - 1, relabel=relabel).squeeze_layers(
+                times=1, relabel=relabel
+            )
 
 
 # endregion: MultiSegment
 
 
-# region: Monotonic Boundary Objects
-@dataclass
+# region: Monotonic Boundary
+@dataclass(frozen=True)
 class BoundaryContour(TimeSpan):
     """
     An intermediate, purely structural representation of boundary salience over time.
     """
 
     bs: Sequence[RatedBoundary] = field(default_factory=list)
-    name: str = "BoundaryContour"
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
+    name: str | None = field(default="BC")
 
     def __post_init__(self):
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A BoundaryContour requires at least two boundaries.")
-        self.bs = sorted(list(set(self.bs)))
+        if any(self.bs[i] > self.bs[i + 1] for i in range(len(self.bs) - 1)):
+            raise ValueError(f"Boundaries must be sorted. {self.bs}")
+
+        # Use object.__setattr__ to assign to the init=False fields.
         object.__setattr__(self, "start", self.bs[0])
         object.__setattr__(self, "end", self.bs[-1])
         super().__post_init__()
+
+    @property
+    def duration(self) -> float:
+        """Duration in seconds."""
+        return self.end.time - self.start.time
 
     def __len__(self) -> int:
         return len(self.bs) - 2
@@ -482,29 +527,49 @@ class BoundaryContour(TimeSpan):
         """
         from . import ops
 
-        return ops.clean_boundaries(self, strategy=strategy, **kwargs)
+        if strategy not in ops.CleanStrategy._registry:
+            raise ValueError(f"Unknown boundary cleaning strategy: {strategy}")
 
-    def level(self) -> BoundaryHierarchy:
+        # Retrieve the class from the registry and instantiate it with the provided arguments.
+        strategy_class = ops.CleanStrategy._registry[strategy]
+        clean_strategy = strategy_class(**kwargs)
+
+        return clean_strategy(self)
+
+    def level(self, strategy: str = "unique", **kwargs: Any) -> BoundaryHierarchy:
         """
         Converts the BoundaryContour to a BoundaryHierarchy by quantizing salience.
         """
         from . import ops
 
-        return ops.level_by_distinct_salience(self)
+        if strategy not in ops.LevelStrategy._registry:
+            raise ValueError(f"Unknown boundary level strategy: {strategy}")
+
+        strategy_class = ops.LevelStrategy._registry[strategy]
+        level_strategy = strategy_class(**kwargs)
+
+        return level_strategy(self)
 
 
-@dataclass
+@dataclass(frozen=True)
 class BoundaryHierarchy(BoundaryContour):
     """
     The structural output of the monotonic casting process.
     """
 
+    bs: Sequence[LeveledBoundary] = field(default_factory=list)
+    start: Boundary = field(init=False)
+    end: Boundary = field(init=False)
+    name: str | None = field(default="BH")
+
     def __post_init__(self):
-        if self.bs:
-            for boundary in self.bs:
-                if not isinstance(boundary, LeveledBoundary):
-                    raise TypeError("All boundaries must be LeveledBoundary instances")
-        # Call parent's post-init after type validation
+        for boundary in self.bs:
+            if not isinstance(boundary, LeveledBoundary):
+                raise TypeError("All boundaries must be LeveledBoundary instances")
+
+        # Use object.__setattr__ to assign to the init=False fields.
+        object.__setattr__(self, "start", self.bs[0])
+        object.__setattr__(self, "end", self.bs[-1])
         super().__post_init__()
 
     def to_ms(self) -> MultiSegment:
@@ -529,7 +594,7 @@ class BoundaryHierarchy(BoundaryContour):
                 )
             )
 
-        return MultiSegment(layers=layers, name=self.name or "BoundaryHierarchy")
+        return MultiSegment(raw_layers=layers, name=f"{self.name} Monotonic MS")
 
 
 # endregion
