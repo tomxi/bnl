@@ -66,7 +66,8 @@ where = ["src"]
 line-length = 100
 target-version = "py312"
 src = ["src"]
-exclude = ["**/notebooks"]
+exclude = ["**/notebooks", "**/*.ipynb"]
+force-exclude = true
 
 [tool.ruff.format]
 quote-style = "double"
