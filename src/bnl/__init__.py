@@ -31,6 +31,9 @@ from .core import (
     TimeSpan as TS,
 )
 
+# Surface data loading conveniences at the top level as well
+from .data import Dataset, Track
+
 
 # --- Define the public-facing API of the `bnl` package ---
 __all__ = [
@@ -45,6 +48,9 @@ __all__ = [
     # Monotonic Boundaries
     "BC",
     "BH",
+    # Data access
+    "Dataset",
+    "Track",
     # Submodules (toolboxes)
     "data",
     "ops",

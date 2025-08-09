@@ -46,6 +46,11 @@ def test_level_by_distinct_salience():
     assert found_levels == expected_levels
 
 
+def test_bad_level_strategy():
+    with pytest.raises(ValueError, match="Unknown boundary level strategy: bad_strategy"):
+        bnl.BC(bs=[bnl.RB(0, 1.0), bnl.RB(1, 0.5), bnl.RB(2, 1.0)]).level(strategy="bad_strategy")
+
+
 def test_boundary_salience_by_count():
     """Test salience calculation with 'count' strategy."""
     s1 = bnl.S.from_itvls([[0, 1], [1, 5]], ["A", "B"])

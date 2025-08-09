@@ -19,7 +19,7 @@ The library provides a flexible pipeline for transforming raw, potentially non-m
 ```python
 import bnl
 
-slm_ds = bnl.data.Dataset(manifest_path="~/data/salami/metadata.csv")
+slm_ds = bnl.Dataset(manifest_path="~/data/salami/metadata.csv")
 track = slm_ds[8]
 
 ref = list(track.refs.values())[0]
@@ -28,6 +28,13 @@ est = list(track.ests.values())[0]
 ref.plot().show()
 est.plot().show()
 ```
+### Configuration (optional)
+
+You can customize data sources and HTTP behavior via environment variables:
+
+- `BNL_R2_BUCKET_PUBLIC_URL`: override the default public bucket base URL.
+- `BNL_HTTP_TIMEOUT`: request timeout in seconds (default: 10).
+
 ## Development
 
 ```bash

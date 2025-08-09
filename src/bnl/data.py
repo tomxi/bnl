@@ -9,6 +9,7 @@ __all__ = [
 
 import io
 import json
+import os
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -93,7 +94,20 @@ class Track:
         return None
 
     def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:
-        """Loads a specific annotation as a `MultiSegment`."""
+        """Loads a specific annotation as a MultiSegment.
+
+        Parameters:
+            annotation_type (str): One of:
+                - 'reference' to load the reference JAMS. Optionally pass
+                  `annotator` to select a specific annotator by name.
+                - 'adobe-<id>' to load an Adobe JSON (e.g., 'adobe-mu1gamma1').
+            annotator (str | None): Name of the annotator in the JAMS file to select.
+
+        Raises:
+            ValueError: If the requested annotation is unavailable for this track.
+            NotImplementedError: If the file type is unsupported (.jams and .json are supported).
+
+        """
         annotation_key = f"annotation_{annotation_type}_path"
         if annotation_key not in self.info:
             raise ValueError(f"Annotation type '{annotation_type}' not available for this track.")
@@ -141,7 +155,11 @@ class Track:
     def _fetch_content(path: str | Path) -> io.StringIO:
         """Fetches file content into a memory buffer. works for local files and urls."""
         if isinstance(path, str) and path.startswith("http"):
-            response = requests.get(str(path))
+            response = requests.get(
+                str(path),
+                timeout=float(os.getenv("BNL_HTTP_TIMEOUT", "10")),
+                headers={"User-Agent": "bnl"},
+            )
             response.raise_for_status()
             return io.StringIO(response.text)
         elif Path(path).exists():
@@ -156,7 +174,12 @@ class Dataset:
 
     track_ids: list[str]
     manifest: pd.DataFrame
-    R2_BUCKET_PUBLIC_URL: str = "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev"
+    # Allow overriding the public bucket via environment for easy configuration in
+    # local development without code changes.
+    R2_BUCKET_PUBLIC_URL: str = os.getenv(
+        "BNL_R2_BUCKET_PUBLIC_URL",
+        "https://pub-05e404c031184ec4bbf69b0c2321b98e.r2.dev",
+    )
 
     data_location: Literal["local", "cloud"] = field(init=False)
 
@@ -183,11 +206,17 @@ class Dataset:
             load_path = (
                 Path(manifest_path).expanduser() if self.data_location == "local" else manifest_path
             )
-            self.manifest = (
-                pd.read_csv(io.StringIO(requests.get(str(manifest_path)).text))
-                if self.data_location == "cloud"
-                else pd.read_csv(load_path)
-            )
+            if self.data_location == "cloud":
+                # Minimal robustness: use a short timeout and a simple User-Agent.
+                response = requests.get(
+                    str(manifest_path),
+                    timeout=float(os.getenv("BNL_HTTP_TIMEOUT", "10")),
+                    headers={"User-Agent": "bnl"},
+                )
+                response.raise_for_status()
+                self.manifest = pd.read_csv(io.StringIO(response.text))
+            else:
+                self.manifest = pd.read_csv(load_path)
         except FileNotFoundError as e:
             raise FileNotFoundError(f"Manifest not found: {manifest_path}") from e
 

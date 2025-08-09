@@ -57,7 +57,7 @@ class TestTimeSpan:
     def test_timespan_init(self):
         start = bnl.B(1.0)
         end = bnl.B(5.0)
-        ts = bnl.TS(start, end, "test")
+        ts = bnl.TS(start, end, name="test")
         assert ts.start == start
         assert ts.end == end
         assert ts.name == "test"
@@ -93,6 +93,7 @@ class TestSegment:
             assert sec.name
         assert repr(seg) == "S([0.00-2.00], test_seg)"
         assert str(seg) == "test_seg"
+        assert seg.duration == 2.0
 
     def test_segment_init_errors(self):
         with pytest.raises(ValueError, match="A Segment requires at least two boundaries."):
@@ -102,6 +103,8 @@ class TestSegment:
             bnl.S.from_bs(boundaries, ["A", "B"])
         with pytest.raises(ValueError, match="Segment requires labels."):
             bnl.S.from_bs(boundaries, [])
+        with pytest.raises(ValueError, match="Boundaries must be sorted"):
+            bnl.S.from_bs([bnl.B(1), bnl.B(0)], ["A"])
 
     def test_segment_from_methods(self):
         itvls = [[0.0, 1.0], [1.0, 2.5]]
@@ -155,7 +158,7 @@ class TestMultiSegment:
     def test_multisegment_init_errors(self):
         with pytest.raises(ValueError, match="MultiSegment must contain at least one"):
             bnl.MS(raw_layers=[])
-        s1 = bnl.S.from_itvls([[0, 2], [2, 4]], ["A", "B"])
+        s1 = bnl.S.from_bs([0, 2, 4], ["A", "B"])
         s2_bad_start = bnl.S.from_itvls([[0.1, 1], [1, 4]], ["a", "b"])
         s2_bad_end = bnl.S.from_itvls([[0, 1], [1, 4.1]], ["a", "b"])
         fixed_start = bnl.MS(raw_layers=[s1, s2_bad_start])
@@ -177,7 +180,7 @@ class TestMultiSegment:
         assert ms.end.time == 4
         assert ms.duration == 4
         assert ms.name == "TestMS"
-        assert ms.raw_layers == [s1, s2]
+        assert ms.layers == [s1, s2]
         assert all(np.array_equal(itvl, ms.itvls[i]) for i, itvl in enumerate([itvls1, itvls2]))
         assert ms.labels == [["A", "B"], ["a", "b"]]
 
@@ -186,28 +189,29 @@ class TestMultiSegment:
             [[[0, 2], [2, 4]], ["A", "B"]],
             [[[0, 1], [1, 2], [2, 3], [3, 4]], ["a", "b", "c", "d"]],
         ]
-        mseg = bnl.MS.from_json(json_data)
-        assert len(mseg.raw_layers) == 2
-        assert mseg.name == "JSON Annotation"
-        assert mseg.raw_layers[0].name == "L01"
-        assert len(mseg.raw_layers[0].bs) == 3
-        assert len(mseg.raw_layers[1].bs) == 5
+        ms = bnl.MS.from_json(json_data)
+        assert len(ms) == 2
+        assert ms.name == "JSON Annotation"
+        assert ms[0].name == "L01"
+        assert len(ms[0].bs) == 3
+        assert len(ms[1].bs) == 5
 
     def test_multisegment_prune_layers(self):
+        s0 = bnl.S.from_bs([0, 2], ["A"], name="L00")
         s1 = bnl.S.from_bs([0, 1, 2], ["a", "b"], name="L01")
         s2 = bnl.S.from_bs([0, 1, 2], ["a", "b"], name="L02")
         s3 = bnl.S.from_bs([0, 1.5, 2], ["c", "d"], name="L03")
-        ms = bnl.MS(raw_layers=[s1, s2, s3], name="TestMS")
+        ms = bnl.MS(raw_layers=[s0, s0, s1, s2, s3], name="TestMS")
         pruned_ms = ms.prune_layers(relabel=True)
-        assert len(pruned_ms.raw_layers) == 2
-        assert pruned_ms.raw_layers[0].name == "L01"
-        assert pruned_ms.layers[1].name == "L02"
-        assert pruned_ms.layers[0].bs == s1.bs
-        assert pruned_ms.layers[1].bs == s3.bs
+        assert len(pruned_ms) == 2
+        assert pruned_ms[0].name == "L01"
+        assert pruned_ms[1].name == "L02"
+        assert pruned_ms[0].bs == s1.bs
+        assert pruned_ms[1].bs == s3.bs
         pruned_ms_no_relabel = ms.prune_layers(relabel=False)
-        assert len(pruned_ms_no_relabel.layers) == 2
-        assert pruned_ms_no_relabel.layers[0].name == "L01"
-        assert pruned_ms_no_relabel.layers[1].name == "L03"
+        assert len(pruned_ms_no_relabel) == 2
+        assert pruned_ms_no_relabel[0].name == "L01"
+        assert pruned_ms_no_relabel[1].name == "L03"
 
     def test_ms_plot_api(self):
         s1 = bnl.S.from_bs([0, 2], ["A"], name="L01")
@@ -259,6 +263,13 @@ class TestMultiSegment:
         assert len(sq2) == 1
         assert len(sq3) == 1
         assert len(sq4) == 1
+
+    def test_scrub_labels(self):
+        s1 = bnl.S.from_bs([0, 2], ["A"])
+        s2 = bnl.S.from_bs([0, 1, 2], ["a", "b"])
+        ms = bnl.MS(raw_layers=[s1, s2])
+        scrubbed_ms = ms.scrub_labels()
+        assert scrubbed_ms == bnl.MS(raw_layers=[s1.scrub_labels(), s2.scrub_labels()])
 
 
 class TestContours:

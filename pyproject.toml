@@ -97,5 +97,4 @@ filterwarnings = [
 
 [tool.coverage.run]
 source = ["src"]
-include = ["src/bnl/*"]
-exclude = ["tests/*", "notebooks/*"]
+omit = ["tests/*", "notebooks/*"]

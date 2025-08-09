@@ -50,3 +50,11 @@ def test_create_style_map():
     assert "A" in style_map
     assert "color" in style_map["A"]
     assert "pattern_shape" in style_map["A"]
+
+
+def test_bad_bar_style():
+    seg = bnl.S.from_bs([0, 1, 2, 3], ["A", "B", ""])
+    ms = bnl.MS([seg])
+    style_map = bnl.viz.create_style_map(["A", "C", "", None, 0])
+    with pytest.warns(UserWarning, match="Label B not found in segment_bar_style"):
+        bnl.viz._plot_bars_for_label(ms, style_map)

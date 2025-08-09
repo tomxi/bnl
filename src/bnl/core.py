@@ -110,7 +110,7 @@ class TimeSpan:
 
     start: Boundary
     end: Boundary
-    name: str | None = field(default=None)
+    name: str | None = field(default=None, kw_only=True)
 
     def __post_init__(self):
         self._validate_timespan()
@@ -149,7 +149,7 @@ class Segment(TimeSpan):
 
     bs: Sequence[Boundary] = field(default_factory=list)
     labels: Sequence[str] = field(default_factory=list)
-    name: str | None = field(default="S")
+    name: str | None = field(default="S", kw_only=True)
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
@@ -162,17 +162,12 @@ class Segment(TimeSpan):
         if len(self.labels) != len(self.bs) - 1:
             raise ValueError("Number of labels must be one less than the number of boundaries.")
         if any(self.bs[i] > self.bs[i + 1] for i in range(len(self.bs) - 1)):
-            raise ValueError("Boundaries must be sorted.")
+            raise ValueError(f"Boundaries must be sorted. {self.bs}")
 
         # Use object.__setattr__ to assign to the init=False fields.
         object.__setattr__(self, "start", self.bs[0])
         object.__setattr__(self, "end", self.bs[-1])
         super().__post_init__()
-
-    @property
-    def duration(self) -> float:
-        """Duration in seconds."""
-        return self.end.time - self.start.time
 
     @cached_property
     def sections(self) -> Sequence[TimeSpan]:
@@ -282,10 +277,10 @@ class MultiSegment(TimeSpan):
 
     raw_layers: Sequence[Segment] = field(default_factory=list)
     """A sequence of `Segment` objects representing different layers of annotation."""
-    name: str | None = field(default="MS", repr=False)
-
-    start: Boundary = field(init=False, repr=False)
-    end: Boundary = field(init=False, repr=False)
+    name: str | None = field(default="MS", kw_only=True)
+    """The name of the MultiSegment."""
+    start: Boundary = field(init=False)
+    end: Boundary = field(init=False)
 
     def __post_init__(self):
         """Validates the core assumptions of the MultiSegment."""
@@ -469,9 +464,9 @@ class BoundaryContour(TimeSpan):
     """
 
     bs: Sequence[RatedBoundary] = field(default_factory=list)
+    name: str | None = field(default="BC", kw_only=True)
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
-    name: str | None = field(default="BC")
 
     def __post_init__(self):
         if not self.bs or len(self.bs) < 2:
@@ -483,11 +478,6 @@ class BoundaryContour(TimeSpan):
         object.__setattr__(self, "start", self.bs[0])
         object.__setattr__(self, "end", self.bs[-1])
         super().__post_init__()
-
-    @property
-    def duration(self) -> float:
-        """Duration in seconds."""
-        return self.end.time - self.start.time
 
     def __len__(self) -> int:
         return len(self.bs) - 2
@@ -558,9 +548,9 @@ class BoundaryHierarchy(BoundaryContour):
     """
 
     bs: Sequence[LeveledBoundary] = field(default_factory=list)
+    name: str | None = field(default="BH", kw_only=True)
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
-    name: str | None = field(default="BH")
 
     def __post_init__(self):
         for boundary in self.bs:
