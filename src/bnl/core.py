@@ -147,9 +147,8 @@ class Segment(TimeSpan):
     `boundaries`.
     """
 
-    bs: Sequence[Boundary] = field(default_factory=list)
+    bs: Sequence[Boundary]
     labels: Sequence[str] = field(default_factory=list)
-    name: str | None = field(default="S", kw_only=True)
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
@@ -158,7 +157,7 @@ class Segment(TimeSpan):
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A Segment requires at least two boundaries.")
         if not self.labels:
-            raise ValueError("Segment requires labels.")
+            object.__setattr__(self, "labels", [None] * (len(self.bs) - 1))
         if len(self.labels) != len(self.bs) - 1:
             raise ValueError("Number of labels must be one less than the number of boundaries.")
         if any(self.bs[i] > self.bs[i + 1] for i in range(len(self.bs) - 1)):
@@ -232,7 +231,7 @@ class Segment(TimeSpan):
     def from_bs(
         cls,
         bs: Sequence[Boundary | Number],
-        labels: Sequence[str],
+        labels: Sequence[str] = [],
         name: str = "Segment",
     ) -> Segment:
         """Creates a Segment from a sequence of boundaries and labels."""
@@ -277,8 +276,6 @@ class MultiSegment(TimeSpan):
 
     raw_layers: Sequence[Segment] = field(default_factory=list)
     """A sequence of `Segment` objects representing different layers of annotation."""
-    name: str | None = field(default="MS", kw_only=True)
-    """The name of the MultiSegment."""
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
@@ -463,8 +460,7 @@ class BoundaryContour(TimeSpan):
     An intermediate, purely structural representation of boundary salience over time.
     """
 
-    bs: Sequence[RatedBoundary] = field(default_factory=list)
-    name: str | None = field(default="BC", kw_only=True)
+    bs: Sequence[RatedBoundary]
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
@@ -547,8 +543,7 @@ class BoundaryHierarchy(BoundaryContour):
     The structural output of the monotonic casting process.
     """
 
-    bs: Sequence[LeveledBoundary] = field(default_factory=list)
-    name: str | None = field(default="BH", kw_only=True)
+    bs: Sequence[LeveledBoundary]
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
