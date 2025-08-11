@@ -156,10 +156,13 @@ class Segment(TimeSpan):
         """Validates the core assumptions of the Segment."""
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A Segment requires at least two boundaries.")
-        if not self.labels:
+        if len(self.labels) == 0:
             object.__setattr__(self, "labels", [None] * (len(self.bs) - 1))
         if len(self.labels) != len(self.bs) - 1:
-            raise ValueError("Number of labels must be one less than the number of boundaries.")
+            raise ValueError(
+                f"Number of labels ({len(self.labels)}) must be one less than "
+                f"the number of boundaries ({len(self.bs)})"
+            )
         if any(self.bs[i] > self.bs[i + 1] for i in range(len(self.bs) - 1)):
             raise ValueError(f"Boundaries must be sorted. {self.bs}")
 
@@ -232,7 +235,7 @@ class Segment(TimeSpan):
         cls,
         bs: Sequence[Boundary | Number],
         labels: Sequence[str] = [],
-        name: str = "Segment",
+        name: str | None = "S",
     ) -> Segment:
         """Creates a Segment from a sequence of boundaries and labels."""
         bs = [Boundary(b) if isinstance(b, Number) else b for b in bs]
@@ -284,6 +287,16 @@ class MultiSegment(TimeSpan):
         if not self.raw_layers:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
+        # make sure all layer's name are distinct, if not, add suffix that increments.
+        names = [layer.name for layer in self.raw_layers]
+        if len(names) != len(set(names)):
+            new_raw_layers = []
+            for i, layer in enumerate(self.raw_layers):
+                if layer.name in names[:i]:
+                    layer = replace(layer, name=f"{layer.name}_{i}")
+                new_raw_layers.append(layer)
+            object.__setattr__(self, "raw_layers", new_raw_layers)
+
         # Calculate the unified span and set the start/end boundaries.
         unified_span = self.find_span(self.raw_layers, mode="union")
         object.__setattr__(self, "start", unified_span.start)
@@ -331,6 +344,15 @@ class MultiSegment(TimeSpan):
             itvls, labels = layer
             layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
         return cls(raw_layers=layers, name=name if name is not None else "JSON Annotation")
+
+    @classmethod
+    def from_itvls(
+        cls, itvls: Sequence[Sequence[float]], labels: Sequence[str], name: str | None = None
+    ) -> MultiSegment:
+        layers = []
+        for i in range(len(itvls)):
+            layers.append(Segment.from_itvls(itvls[i], labels[i], name=f"L{i+1:02d}"))
+        return cls(raw_layers=layers, name=name)
 
     def plot(self, colorscale: str | list[str] = "D3", hatch: bool = True) -> go.Figure:
         """Plots the MultiSegment on a Plotly figure.
