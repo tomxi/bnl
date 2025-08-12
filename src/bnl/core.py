@@ -149,7 +149,7 @@ class Segment(TimeSpan):
     """
 
     bs: Sequence[Boundary]
-    labels: Sequence[str] = field(default_factory=list)
+    raw_labs: Sequence[str | None] = field(default_factory=list)
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
@@ -157,11 +157,11 @@ class Segment(TimeSpan):
         """Validates the core assumptions of the Segment."""
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A Segment requires at least two boundaries.")
-        if len(self.labels) == 0:
-            object.__setattr__(self, "labels", [None] * (len(self.bs) - 1))
-        if len(self.labels) != len(self.bs) - 1:
+        if len(self.raw_labs) == 0:
+            object.__setattr__(self, "raw_labs", [None] * (len(self.bs) - 1))
+        if len(self.raw_labs) != len(self.bs) - 1:
             raise ValueError(
-                f"Number of labels ({len(self.labels)}) must be one less than "
+                f"Number of labels ({len(self.raw_labs)}) must be one less than "
                 f"the number of boundaries ({len(self.bs)})"
             )
         if any(self.bs[i] > self.bs[i + 1] for i in range(len(self.bs) - 1)):
@@ -177,8 +177,12 @@ class Segment(TimeSpan):
         """A list of all the labeled time spans that compose the segment."""
         return [
             TimeSpan(name=label, start=Boundary(itvl[0]), end=Boundary(itvl[1]))
-            for itvl, label in zip(self.itvls, self.labels)
+            for itvl, label in zip(self.itvls, self.raw_labs)
         ]
+
+    @cached_property
+    def labels(self) -> Sequence[str]:
+        return [s.name for s in self.sections]
 
     @cached_property
     def itvls(self) -> np.ndarray:
@@ -229,7 +233,7 @@ class Segment(TimeSpan):
         bs = [Boundary(itvl[0]) for itvl in itvls]
         # tag on the end time of the last interval
         bs.append(Boundary(itvls[-1][1]))
-        return cls(bs=bs, labels=labels, name=name)
+        return cls(bs, labels, name=name)
 
     @classmethod
     def from_bs(
@@ -242,7 +246,7 @@ class Segment(TimeSpan):
         bs = [Boundary(b) if isinstance(b, Number) else b for b in bs]
         if labels is None:
             labels = []
-        return cls(bs=bs, labels=labels, name=name)
+        return cls(bs, labels, name=name)
 
     def plot(
         self,
@@ -257,7 +261,7 @@ class Segment(TimeSpan):
 
     def scrub_labels(self, replace_with: str | None = "") -> Segment:
         """Scrubs the labels of the Segment by replacing them with empty strings."""
-        return replace(self, labels=[replace_with] * len(self.labels))
+        return replace(self, raw_labs=[replace_with] * len(self.raw_labs))
 
     def align(self, span: TimeSpan) -> Segment:
         """Align with a TimeSpan object."""
@@ -308,9 +312,9 @@ class MultiSegment(TimeSpan):
         processed_layers = []
         for layer in aligned_layers:
             count = seen_names_count[layer.name]
+            seen_names_count[layer.name] += 1
             if count:
                 layer = replace(layer, name=f"{layer.name}_{count}")
-            seen_names_count[layer.name] += 1
             processed_layers.append(layer)
 
         return processed_layers
@@ -383,9 +387,11 @@ class MultiSegment(TimeSpan):
         contour_strategy = strategy_class(**kwargs)
         return contour_strategy(self)
 
-    def scrub_labels(self) -> MultiSegment:
+    def scrub_labels(self, replace_with: str | None = "") -> MultiSegment:
         """Scrubs the labels of the MultiSegment by replacing them with empty strings."""
-        return MultiSegment(raw_layers=[layer.scrub_labels() for layer in self], name=self.name)
+        return MultiSegment(
+            raw_layers=[layer.scrub_labels(replace_with) for layer in self], name=self.name
+        )
 
     @staticmethod
     def find_span(
@@ -597,16 +603,16 @@ class BoundaryHierarchy(BoundaryContour):
         max_level = max(b.level for b in self.bs)
         for level in range(max_level, 0, -1):
             level_boundaries = [Boundary(b.time) for b in self.bs if b.level >= level]
-            labels = [""] * (len(level_boundaries) - 1)
+            labels = [None] * (len(level_boundaries) - 1)
             layers.append(
                 Segment(
                     bs=level_boundaries,
-                    labels=labels,
+                    raw_labs=labels,
                     name=f"L{max_level - level + 1:02d}",
                 )
             )
 
-        return MultiSegment(raw_layers=layers, name=f"{self.name} Monotonic MS")
+        return MultiSegment(layers, name=f"{self.name} Monotonic MS")
 
 
 # endregion
