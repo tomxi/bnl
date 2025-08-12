@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from numbers import Number
 
 __all__ = [
@@ -147,9 +148,8 @@ class Segment(TimeSpan):
     `boundaries`.
     """
 
-    bs: Sequence[Boundary] = field(default_factory=list)
+    bs: Sequence[Boundary]
     labels: Sequence[str] = field(default_factory=list)
-    name: str | None = field(default="S", kw_only=True)
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
@@ -157,10 +157,13 @@ class Segment(TimeSpan):
         """Validates the core assumptions of the Segment."""
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A Segment requires at least two boundaries.")
-        if not self.labels:
-            raise ValueError("Segment requires labels.")
+        if len(self.labels) == 0:
+            object.__setattr__(self, "labels", [None] * (len(self.bs) - 1))
         if len(self.labels) != len(self.bs) - 1:
-            raise ValueError("Number of labels must be one less than the number of boundaries.")
+            raise ValueError(
+                f"Number of labels ({len(self.labels)}) must be one less than "
+                f"the number of boundaries ({len(self.bs)})"
+            )
         if any(self.bs[i] > self.bs[i + 1] for i in range(len(self.bs) - 1)):
             raise ValueError(f"Boundaries must be sorted. {self.bs}")
 
@@ -207,7 +210,7 @@ class Segment(TimeSpan):
         return self.name
 
     @classmethod
-    def from_jams(cls, segment_annotation: jams.Annotation, name: str = "Segment") -> Segment:
+    def from_jams(cls, segment_annotation: jams.Annotation, name: str | None = None) -> Segment:
         """
         Data Ingestion from jams format.
         """
@@ -219,7 +222,7 @@ class Segment(TimeSpan):
         cls,
         itvls: Sequence[Sequence[float]],
         labels: Sequence[str],
-        name: str = "Segment",
+        name: str | None = None,
     ) -> Segment:
         """Data Ingestion from `mir_eval` format of boundaries and labels."""
         # assume intervals have no overlap or gaps
@@ -232,11 +235,13 @@ class Segment(TimeSpan):
     def from_bs(
         cls,
         bs: Sequence[Boundary | Number],
-        labels: Sequence[str],
-        name: str = "Segment",
+        labels: Sequence[str] | None = None,
+        name: str | None = None,
     ) -> Segment:
         """Creates a Segment from a sequence of boundaries and labels."""
         bs = [Boundary(b) if isinstance(b, Number) else b for b in bs]
+        if labels is None:
+            labels = []
         return cls(bs=bs, labels=labels, name=name)
 
     def plot(
@@ -277,8 +282,6 @@ class MultiSegment(TimeSpan):
 
     raw_layers: Sequence[Segment] = field(default_factory=list)
     """A sequence of `Segment` objects representing different layers of annotation."""
-    name: str | None = field(default="MS", kw_only=True)
-    """The name of the MultiSegment."""
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
@@ -296,8 +299,21 @@ class MultiSegment(TimeSpan):
     @cached_property
     def layers(self) -> Sequence[Segment]:
         """Returns the layers aligned to a unified time span."""
+        # put all raw_layers on a unified time span
         unified_span = TimeSpan(self.start, self.end)
-        return [layer.align(unified_span) for layer in self.raw_layers]
+        aligned_layers = [layer.align(unified_span) for layer in self.raw_layers]
+
+        # make sure all layer's name are distinct, if not, add suffix based on occurrence count.
+        seen_names_count = Counter()
+        processed_layers = []
+        for layer in aligned_layers:
+            count = seen_names_count[layer.name]
+            if count:
+                layer = replace(layer, name=f"{layer.name}_{count}")
+            seen_names_count[layer.name] += 1
+            processed_layers.append(layer)
+
+        return processed_layers
 
     def __len__(self) -> int:
         return len(self.raw_layers)
@@ -327,13 +343,21 @@ class MultiSegment(TimeSpan):
                 (intervals, labels). `intervals` is a list of [start, end] times,
                 and `labels` is a list of strings.
             name (str, optional): Name for the created MultiSegment.
-                Defaults to "JSON Annotation".
         """
         layers = []
         for i, layer in enumerate(json_data, start=1):
             itvls, labels = layer
             layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
-        return cls(raw_layers=layers, name=name if name is not None else "JSON Annotation")
+        return cls(raw_layers=layers, name=name)
+
+    @classmethod
+    def from_itvls(
+        cls, itvls: Sequence[Sequence[float]], labels: Sequence[str], name: str | None = None
+    ) -> MultiSegment:
+        layers = []
+        for i in range(len(itvls)):
+            layers.append(Segment.from_itvls(itvls[i], labels[i], name=f"L{i + 1:02d}"))
+        return cls(raw_layers=layers, name=name)
 
     def plot(self, colorscale: str | list[str] = "D3", hatch: bool = True) -> go.Figure:
         """Plots the MultiSegment on a Plotly figure.
@@ -463,8 +487,7 @@ class BoundaryContour(TimeSpan):
     An intermediate, purely structural representation of boundary salience over time.
     """
 
-    bs: Sequence[RatedBoundary] = field(default_factory=list)
-    name: str | None = field(default="BC", kw_only=True)
+    bs: Sequence[RatedBoundary]
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 
@@ -547,8 +570,7 @@ class BoundaryHierarchy(BoundaryContour):
     The structural output of the monotonic casting process.
     """
 
-    bs: Sequence[LeveledBoundary] = field(default_factory=list)
-    name: str | None = field(default="BH", kw_only=True)
+    bs: Sequence[LeveledBoundary]
     start: Boundary = field(init=False)
     end: Boundary = field(init=False)
 

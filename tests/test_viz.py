@@ -12,20 +12,13 @@ def sample_multisegment() -> bnl.MS:
     """Returns a sample MultiSegment for testing."""
     s1 = bnl.S.from_bs([0, 1, 2, 3], ["A", "B", ""], name="L1")
     s2 = bnl.S.from_bs([0, 1.5, 3], ["C", ""], name="L2")
-    return bnl.MS(raw_layers=[s1, s2], name="Sample MS")
+    return bnl.MS([s1, s2], name="Sample MS")
 
 
 @pytest.fixture
 def sample_boundary_contour() -> bnl.BC:
     """Returns a sample BoundaryContour for testing."""
-    return bnl.BC(
-        bs=[
-            bnl.RB(0, 1.0),
-            bnl.RB(1, 0.5),
-            bnl.RB(2, 0.8),
-            bnl.RB(3, 1.0),
-        ]
-    )
+    return bnl.BC([bnl.RB(0, 1.0), bnl.RB(1, 0.5), bnl.RB(2, 0.8), bnl.RB(3, 1.0)])
 
 
 def test_plot_multisegment(sample_multisegment: bnl.MS):
@@ -39,7 +32,7 @@ def test_plot_boundary_contour(sample_boundary_contour: bnl.BC):
     """Test that plot_boundary_contour runs and returns a Figure."""
     fig = viz.plot_boundary_contour(sample_boundary_contour)
     assert isinstance(fig, go.Figure)
-    assert "BC" in fig.layout.title.text
+    assert str(sample_boundary_contour) in fig.layout.title.text
 
 
 def test_create_style_map():
