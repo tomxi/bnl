@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from numbers import Number
 
 __all__ = [
@@ -209,7 +210,7 @@ class Segment(TimeSpan):
         return self.name
 
     @classmethod
-    def from_jams(cls, segment_annotation: jams.Annotation, name: str = "Segment") -> Segment:
+    def from_jams(cls, segment_annotation: jams.Annotation, name: str | None = None) -> Segment:
         """
         Data Ingestion from jams format.
         """
@@ -221,7 +222,7 @@ class Segment(TimeSpan):
         cls,
         itvls: Sequence[Sequence[float]],
         labels: Sequence[str],
-        name: str = "Segment",
+        name: str | None = None,
     ) -> Segment:
         """Data Ingestion from `mir_eval` format of boundaries and labels."""
         # assume intervals have no overlap or gaps
@@ -234,11 +235,13 @@ class Segment(TimeSpan):
     def from_bs(
         cls,
         bs: Sequence[Boundary | Number],
-        labels: Sequence[str] = [],
-        name: str | None = "S",
+        labels: Sequence[str] | None = None,
+        name: str | None = None,
     ) -> Segment:
         """Creates a Segment from a sequence of boundaries and labels."""
         bs = [Boundary(b) if isinstance(b, Number) else b for b in bs]
+        if labels is None:
+            labels = []
         return cls(bs=bs, labels=labels, name=name)
 
     def plot(
@@ -287,16 +290,6 @@ class MultiSegment(TimeSpan):
         if not self.raw_layers:
             raise ValueError("MultiSegment must contain at least one Segment layer.")
 
-        # make sure all layer's name are distinct, if not, add suffix that increments.
-        names = [layer.name for layer in self.raw_layers]
-        if len(names) != len(set(names)):
-            new_raw_layers = []
-            for i, layer in enumerate(self.raw_layers):
-                if layer.name in names[:i]:
-                    layer = replace(layer, name=f"{layer.name}_{i}")
-                new_raw_layers.append(layer)
-            object.__setattr__(self, "raw_layers", new_raw_layers)
-
         # Calculate the unified span and set the start/end boundaries.
         unified_span = self.find_span(self.raw_layers, mode="union")
         object.__setattr__(self, "start", unified_span.start)
@@ -306,8 +299,21 @@ class MultiSegment(TimeSpan):
     @cached_property
     def layers(self) -> Sequence[Segment]:
         """Returns the layers aligned to a unified time span."""
+        # put all raw_layers on a unified time span
         unified_span = TimeSpan(self.start, self.end)
-        return [layer.align(unified_span) for layer in self.raw_layers]
+        aligned_layers = [layer.align(unified_span) for layer in self.raw_layers]
+
+        # make sure all layer's name are distinct, if not, add suffix based on occurrence count.
+        seen_names_count = Counter()
+        processed_layers = []
+        for layer in aligned_layers:
+            count = seen_names_count[layer.name]
+            if count:
+                layer = replace(layer, name=f"{layer.name}_{count}")
+            seen_names_count[layer.name] += 1
+            processed_layers.append(layer)
+
+        return processed_layers
 
     def __len__(self) -> int:
         return len(self.raw_layers)
@@ -337,13 +343,12 @@ class MultiSegment(TimeSpan):
                 (intervals, labels). `intervals` is a list of [start, end] times,
                 and `labels` is a list of strings.
             name (str, optional): Name for the created MultiSegment.
-                Defaults to "JSON Annotation".
         """
         layers = []
         for i, layer in enumerate(json_data, start=1):
             itvls, labels = layer
             layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
-        return cls(raw_layers=layers, name=name if name is not None else "JSON Annotation")
+        return cls(raw_layers=layers, name=name)
 
     @classmethod
     def from_itvls(
@@ -351,7 +356,7 @@ class MultiSegment(TimeSpan):
     ) -> MultiSegment:
         layers = []
         for i in range(len(itvls)):
-            layers.append(Segment.from_itvls(itvls[i], labels[i], name=f"L{i+1:02d}"))
+            layers.append(Segment.from_itvls(itvls[i], labels[i], name=f"L{i + 1:02d}"))
         return cls(raw_layers=layers, name=name)
 
     def plot(self, colorscale: str | list[str] = "D3", hatch: bool = True) -> go.Figure:
