@@ -5,8 +5,11 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING, Any
 
+import pandas as pd
 import plotly.colors as pc
+import plotly.express as px
 import plotly.graph_objects as go
+import seaborn as sns
 
 if TYPE_CHECKING:
     from bnl.core import BoundaryContour, MultiSegment, Segment
@@ -217,3 +220,41 @@ def plot_boundary_contour(
         )
 
     return fig
+
+
+def px_metrics_bar(metrics, title="Metrics", w=300, h=225):
+    # metrics: dict or OrderedDict of name -> float
+    df = pd.Series(metrics, dtype=float).rename_axis("metric").reset_index(name="score")
+    fig = px.bar(df, x="metric", y="score", title=title, text="score", range_y=[0, 1.2])
+    fig.update_traces(texttemplate="%{text:.3f}", textposition="outside")
+    fig.update_layout(xaxis_tickangle=-45, width=w, height=h, margin=dict(l=10, r=10, t=50, b=10))
+    return fig
+
+
+def bmeasure_df(df):
+    # Faceted barplot
+    sns.set_theme(style="whitegrid")
+    g = sns.catplot(
+        data=df,
+        x="metric",
+        y="score",
+        col="window",
+        row="prf",
+        kind="bar",
+        sharey=True,
+        height=2,
+        aspect=1,
+    )
+
+    # Titles, labels, limits
+    g.set_axis_labels("Metric", "Score")
+    g.set_titles(row_template="{row_name}", col_template="Window: {col_name}")
+    for ax in g.axes.flat:
+        ax.set_ylim(0, 1.1)
+
+        # Add value labels on bars
+        for cont in ax.containers:
+            ax.bar_label(cont, fmt="%.3f", label_type="edge", fontsize=10)
+
+    g.tight_layout()
+    return g

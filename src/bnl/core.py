@@ -482,6 +482,14 @@ class MultiSegment(TimeSpan):
                 times=1, relabel=relabel
             )
 
+    def meet(self) -> tuple[np.ndarray, np.ndarray]:
+        import frameless_eval as fle
+        import mir_eval
+
+        grid, labels, _ = fle.utils.make_common_itvls(self.itvls, self.labels, [], [])
+        boundaries = mir_eval.util.intervals_to_boundaries(grid)
+        return boundaries, fle.utils.meet(labels)
+
 
 # endregion: MultiSegment
 
@@ -500,7 +508,7 @@ class BoundaryContour(TimeSpan):
     def __post_init__(self):
         if not self.bs or len(self.bs) < 2:
             raise ValueError("A BoundaryContour requires at least two boundaries.")
-        if any(self.bs[i] > self.bs[i + 1] for i in range(len(self.bs) - 1)):
+        if any(self.bs[i].time > self.bs[i + 1].time for i in range(len(self.bs) - 1)):
             raise ValueError(f"Boundaries must be sorted. {self.bs}")
 
         # Use object.__setattr__ to assign to the init=False fields.
@@ -590,7 +598,7 @@ class BoundaryHierarchy(BoundaryContour):
         object.__setattr__(self, "end", self.bs[-1])
         super().__post_init__()
 
-    def to_ms(self) -> MultiSegment:
+    def to_ms(self, name: str | None = None) -> MultiSegment:
         """Convert the BoundaryHierarchy to a MultiSegment.
 
         The MultiSegment will have layers from coarsest (highest level) to
@@ -612,7 +620,7 @@ class BoundaryHierarchy(BoundaryContour):
                 )
             )
 
-        return MultiSegment(layers, name=f"{self.name} Monotonic MS")
+        return MultiSegment(layers, name=name or f"{self.name} Monotonic MS")
 
 
 # endregion
