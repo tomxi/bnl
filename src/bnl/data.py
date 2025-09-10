@@ -117,7 +117,7 @@ class Track:
         if str(annotation_path).lower().endswith(".jams"):
             return self._load_jams_anno(annotation_path, name=annotator)
         elif str(annotation_path).lower().endswith(".json"):
-            return self._load_json(annotation_path, name=annotation_type)
+            return self._load_json(annotation_path, name=f"{self.track_id}-{annotation_type}")
         else:
             raise NotImplementedError(f"Unsupported file type: {annotation_path}")
 
@@ -142,13 +142,13 @@ class Track:
                 Segment.from_jams(uppers[0], name="coarse"),
                 Segment.from_jams(lowers[0], name="fine"),
             ],
-            name=f"annotator-{uppers[0].annotation_metadata.annotator.name}",
+            name=f"{self.track_id}-annotator-{uppers[0].annotation_metadata.annotator.name}",
         )
 
     def _load_json(self, path: str | Path, name: str | None = None) -> MultiSegment:
         """Loads a JSON annotation as a MultiSegment."""
         json_data = json.load(self._fetch_content(path))
-        ms_name = "JSON Annotation" if name is None else name
+        ms_name = f"{self.track_id} JSON Annotation" if name is None else name
         return MultiSegment.from_json(json_data, name=ms_name)
 
     @staticmethod

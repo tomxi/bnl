@@ -169,7 +169,7 @@ class CleanStrategy(Strategy):
 class CleanByAbsorb(CleanStrategy):
     """Clean boundaries by absorbing less salient ones within a window."""
 
-    def __init__(self, window: float = 1.0) -> None:
+    def __init__(self, window: float = 1.5) -> None:
         self.window = window
 
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
@@ -194,7 +194,7 @@ class CleanByAbsorb(CleanStrategy):
 class CleanByKDE(CleanStrategy):
     """Clean boundaries by finding peaks in a weighted kernel density estimate."""
 
-    def __init__(self, bw: float = 1.0):
+    def __init__(self, bw: float = 0.5):
         self.time_kde = KernelDensity(kernel="gaussian", bandwidth=bw)
 
     def _build_time_grid(self, span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
@@ -234,6 +234,12 @@ class CleanByKDE(CleanStrategy):
             RatedBoundary(bc.end.time, max_salience),
         ]
         return BoundaryContour(name=bc.name or "Cleaned Contour", bs=sorted(final_boundaries))
+
+
+@CleanStrategy.register("none")
+class CleanNone(CleanStrategy):
+    def __call__(self, bc: BoundaryContour) -> BoundaryContour:
+        return bc
 
 
 # endregion: Two ways to clean up boundaries closeby in time
@@ -284,7 +290,7 @@ class LevelByMeanShift(LevelStrategy):
     Use mean shift clustering to find peaks in the salience values and clusters them into levels.
     """
 
-    def __init__(self, bw: float = 0.05):
+    def __init__(self, bw: float = 0.15):
         self.sal_ms = MeanShift(bandwidth=bw)
 
     def __call__(self, bc: BoundaryContour) -> BoundaryHierarchy:
@@ -293,7 +299,8 @@ class LevelByMeanShift(LevelStrategy):
 
         inner_boundaries = bc.bs[1:-1]
         saliences = np.array([b.salience for b in inner_boundaries])
-        self.sal_ms.fit(saliences.reshape(-1, 1))
+        normalized_saliences = saliences / saliences.max()
+        self.sal_ms.fit(normalized_saliences.reshape(-1, 1))
         quantized_salience = self.sal_ms.cluster_centers_.flatten()[self.sal_ms.labels_]
         inner_boundaries = [
             RatedBoundary(time=b.time, salience=s)
