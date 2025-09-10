@@ -169,7 +169,7 @@ class CleanStrategy(Strategy):
 class CleanByAbsorb(CleanStrategy):
     """Clean boundaries by absorbing less salient ones within a window."""
 
-    def __init__(self, window: float = 2.0) -> None:
+    def __init__(self, window: float = 1.5) -> None:
         self.window = window
 
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
@@ -194,7 +194,7 @@ class CleanByAbsorb(CleanStrategy):
 class CleanByKDE(CleanStrategy):
     """Clean boundaries by finding peaks in a weighted kernel density estimate."""
 
-    def __init__(self, bw: float = 1.0):
+    def __init__(self, bw: float = 0.5):
         self.time_kde = KernelDensity(kernel="gaussian", bandwidth=bw)
 
     def _build_time_grid(self, span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
