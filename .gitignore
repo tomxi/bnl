@@ -35,4 +35,4 @@ site/
 build/
 
 # Per Track Results
-notebooks/monocasting_results*/
+notebooks/
