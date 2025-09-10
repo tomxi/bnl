@@ -233,7 +233,7 @@ class Segment(TimeSpan):
         bs = [Boundary(itvl[0]) for itvl in itvls]
         # tag on the end time of the last interval
         bs.append(Boundary(itvls[-1][1]))
-        return cls(bs, labels, name=name)
+        return cls(bs=bs, raw_labs=labels, name=name)
 
     @classmethod
     def from_bs(
@@ -246,7 +246,7 @@ class Segment(TimeSpan):
         bs = [Boundary(b) if isinstance(b, Number) else b for b in bs]
         if labels is None:
             labels = []
-        return cls(bs, labels, name=name)
+        return cls(bs=bs, raw_labs=labels, name=name)
 
     def plot(
         self,
@@ -620,7 +620,7 @@ class BoundaryHierarchy(BoundaryContour):
                 )
             )
 
-        return MultiSegment(layers, name=name or f"{self.name} Monotonic MS")
+        return MultiSegment(raw_layers=layers, name=name or f"{self.name} Monotonic MS")
 
 
 # endregion
