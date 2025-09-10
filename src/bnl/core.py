@@ -190,13 +190,23 @@ class Segment(TimeSpan):
         return np.array(itvls)
 
     @property
-    def lam(self) -> np.ndarray:
-        """Label Agreement Matrix
+    def btimes(self) -> np.ndarray:
+        return np.array([b.time for b in self.bs])
 
-        Returns:
-            np.ndarray: The label agreement matrix.
-        """
+    @property
+    def lam(self) -> np.ndarray:
+        """Label Agreement Matrix"""
         return np.equal.outer(self.labels, self.labels)
+
+    @property
+    def lam_pdf(self) -> np.ndarray:
+        """Label Agreement Matrix as probability density.
+        np.sum(s.lam_pdf * lam_area_grid) == 1
+        """
+        sec_dur = [sec.duration for sec in self.sections]
+        lam_area_grid = np.outer(sec_dur, sec_dur)
+        lam_area = np.sum(self.lam * lam_area_grid)
+        return self.lam / lam_area
 
     def __len__(self) -> int:
         return len(self.sections)
@@ -483,12 +493,17 @@ class MultiSegment(TimeSpan):
             )
 
     def meet(self) -> tuple[np.ndarray, np.ndarray]:
-        import frameless_eval as fle
-        import mir_eval
+        return self.lam(strategy="depth", mono=False)
 
-        grid, labels, _ = fle.utils.make_common_itvls(self.itvls, self.labels, [], [])
-        boundaries = mir_eval.util.intervals_to_boundaries(grid)
-        return boundaries, fle.utils.meet(labels)
+    def lam(self, strategy: str = "depth", **kwargs: Any) -> tuple[np.ndarray, np.ndarray]:
+        from . import ops
+
+        if strategy not in ops.LabelAgreementStrategy._registry:
+            raise ValueError(f"Unknown label agreement strategy: {strategy}")
+
+        strategy_class = ops.LabelAgreementStrategy._registry[strategy]
+        lam_strategy = strategy_class(**kwargs)
+        return lam_strategy(self)
 
 
 # endregion: MultiSegment

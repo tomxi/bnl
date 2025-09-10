@@ -10,6 +10,7 @@ __all__ = [
 import io
 import json
 import os
+import random
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import cached_property
@@ -74,6 +75,11 @@ class Track:
         else:
             annotators = []
         return {a_id: self.load_annotation("reference", a_id) for a_id in annotators}
+
+    @property
+    def ref(self) -> MultiSegment:
+        """Returns the first reference annotation."""
+        return self.refs[list(self.refs)[0]]
 
     @cached_property
     def ests(self) -> dict[str, MultiSegment]:
@@ -246,6 +252,10 @@ class Dataset:
     def __iter__(self) -> Iterator[Track]:
         for track_id in self.track_ids:
             yield self[track_id]
+
+    def lucky(self) -> Track:
+        """Return a random track."""
+        return self[random.choice(self.track_ids)]
 
     @staticmethod
     def _format_adobe_params(asset_subtype: str) -> str:

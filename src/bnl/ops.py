@@ -26,6 +26,10 @@ __all__ = [
     "LevelStrategy",
     "LevelByUniqueSal",
     "LevelByMeanShift",
+    "LabelAgreementStrategy",
+    "LamByDepth",
+    "LamByProb",
+    "LamByCount",
 ]
 
 from abc import ABC, abstractmethod
@@ -33,6 +37,8 @@ from collections import Counter, defaultdict
 from collections.abc import Callable
 from typing import Any
 
+import frameless_eval as fle
+import mir_eval
 import numpy as np
 import scipy.signal
 from mir_eval.hierarchy import _round
@@ -76,8 +82,6 @@ class Strategy(ABC):
 
 
 # region: Different Notions of Boundary Salience
-
-
 class SalienceStrategy(Strategy):
     """Abstract base class for salience calculation strategies."""
 
@@ -311,3 +315,78 @@ class LevelByMeanShift(LevelStrategy):
 
 
 # endregion: Stratification into levels
+
+
+# region: Label Agreement Strategies
+class LabelAgreementStrategy(Strategy):
+    """Abstract base class for label agreement strategies."""
+
+    _registry: dict[str, type[LabelAgreementStrategy]] = {}
+
+    @abstractmethod
+    def __call__(self, ms: MultiSegment) -> tuple[np.ndarray, np.ndarray]:
+        """Combining label agreement maps of a hierarchy.
+        returns (boundaries (1D array), label_agreement_map (2D array))
+        """
+        raise NotImplementedError  # pragma: no cover
+
+
+@LabelAgreementStrategy.register("depth")
+class LamByDepth(LabelAgreementStrategy):
+    """Combining label agreement maps of a hierarchy using depth.
+
+    mono: if True, force monotonicity by making sure it is showing
+          the shallowest level where labels stop meeting.
+          default: False is the conventional meet matrix: deepest level where labels meet.
+    """
+
+    def __init__(self, mono: bool = False):
+        self.mono = mono
+
+    def __call__(self, ms: MultiSegment) -> tuple[np.ndarray, np.ndarray]:
+        grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])
+        boundaries = mir_eval.util.intervals_to_boundaries(grid)
+        return boundaries, fle.utils.meet(labels, mono=self.mono)
+
+
+@LabelAgreementStrategy.register("count")
+class LamByCount(LabelAgreementStrategy):
+    """Combining label agreement maps of a hierarchy using count."""
+
+    def __call__(self, ms: MultiSegment) -> tuple[np.ndarray, np.ndarray]:
+        grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])
+        labels = np.asarray(labels)
+        # Using broadcasting to compute the outer comparison for each level.
+        meet_per_level = np.equal(labels[:, :, None], labels[:, None, :])
+        meet_lvl_count = np.sum(meet_per_level, axis=0)
+        boundaries = mir_eval.util.intervals_to_boundaries(grid)
+        return boundaries, meet_lvl_count
+
+
+@LabelAgreementStrategy.register("prob")
+class LamByProb(LabelAgreementStrategy):
+    """Combining label agreement maps of a hierarchy using lam prob density."""
+
+    def __call__(self, ms: MultiSegment) -> tuple[np.ndarray, np.ndarray]:
+        grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])
+        labels = np.asarray(labels)
+        sec_dur = grid[:, 1] - grid[:, 0]
+        grid_area = np.outer(sec_dur, sec_dur)
+        # Using broadcasting to compute the outer comparison for each level.
+        # First dim is depth, 2nd and 3rd dim are segment indices
+        meet_per_level = np.equal(labels[:, :, None], labels[:, None, :])
+
+        # add a dim to grid_area to scale meet mats by segment duration ^ 2
+        meet_area_per_level = meet_per_level * grid_area[None, :, :]
+        total_meet_area_per_level = np.sum(meet_area_per_level, axis=(1, 2))
+        # numbers will get very small, so use portions as opposed to raw meet area in seconds^2
+        # This way the numbers will be comparable for tracks of different lengths
+        meet_portion_per_level = total_meet_area_per_level / np.sum(grid_area)
+        level_lam_pdfs = meet_per_level / meet_portion_per_level[:, None, None]
+
+        # Boundaries too
+        boundaries = mir_eval.util.intervals_to_boundaries(grid)
+        return boundaries, np.mean(level_lam_pdfs, axis=0)
+
+
+# endregion: Label Agreement Strategies
