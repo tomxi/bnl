@@ -29,6 +29,9 @@ from .core import (
     RatedBoundary as RB,
     Segment as S,
     TimeSpan as TS,
+    LabelAgreementMap as LAM,
+    SegmentAgreementProb as SAP,
+    SegmentAffinityMatrix as SAM,
 )
 
 # Surface data loading conveniences at the top level as well
@@ -48,6 +51,10 @@ __all__ = [
     # Monotonic Boundaries
     "BC",
     "BH",
+    # Label Agreement
+    "LAM",
+    "SAP",
+    "SAM",
     # Data access
     "Dataset",
     "Track",

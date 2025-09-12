@@ -16,16 +16,20 @@ The core components are:
 from __future__ import annotations
 
 __all__ = [
+    # boundary salience a.k.a boundary prominence
     "SalienceStrategy",
     "SalByCount",
     "SalByDepth",
     "SalByProb",
+    # boundary cleaning
     "CleanStrategy",
     "CleanByAbsorb",
     "CleanByKDE",
+    # boundary level assignment / quantization
     "LevelStrategy",
     "LevelByUniqueSal",
     "LevelByMeanShift",
+    # label agreement map building
     "LabelAgreementStrategy",
     "LamByDepth",
     "LamByProb",
@@ -48,6 +52,7 @@ from sklearn.neighbors import KernelDensity
 from .core import (
     BoundaryContour,
     BoundaryHierarchy,
+    LabelAgreementMap,
     LeveledBoundary,
     MultiSegment,
     RatedBoundary,
@@ -324,7 +329,7 @@ class LabelAgreementStrategy(Strategy):
     _registry: dict[str, type[LabelAgreementStrategy]] = {}
 
     @abstractmethod
-    def __call__(self, ms: MultiSegment) -> tuple[np.ndarray, np.ndarray]:
+    def __call__(self, ms: MultiSegment) -> LabelAgreementMap:
         """Combining label agreement maps of a hierarchy.
         returns (boundaries (1D array), label_agreement_map (2D array))
         """
@@ -343,35 +348,35 @@ class LamByDepth(LabelAgreementStrategy):
     def __init__(self, mono: bool = False):
         self.mono = mono
 
-    def __call__(self, ms: MultiSegment) -> tuple[np.ndarray, np.ndarray]:
+    def __call__(self, ms: MultiSegment) -> LabelAgreementMap:
         grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])
         boundaries = mir_eval.util.intervals_to_boundaries(grid)
-        return boundaries, fle.utils.meet(labels, mono=self.mono)
+        return LabelAgreementMap(bs=boundaries, mat=fle.utils.meet(labels, mono=self.mono))
 
 
 @LabelAgreementStrategy.register("count")
 class LamByCount(LabelAgreementStrategy):
     """Combining label agreement maps of a hierarchy using count."""
 
-    def __call__(self, ms: MultiSegment) -> tuple[np.ndarray, np.ndarray]:
+    def __call__(self, ms: MultiSegment) -> LabelAgreementMap:
         grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])
         labels = np.asarray(labels)
         # Using broadcasting to compute the outer comparison for each level.
         meet_per_level = np.equal(labels[:, :, None], labels[:, None, :])
         meet_lvl_count = np.sum(meet_per_level, axis=0)
         boundaries = mir_eval.util.intervals_to_boundaries(grid)
-        return boundaries, meet_lvl_count
+        return LabelAgreementMap(bs=boundaries, mat=meet_lvl_count)
 
 
 @LabelAgreementStrategy.register("prob")
 class LamByProb(LabelAgreementStrategy):
     """Combining label agreement maps of a hierarchy using lam prob density."""
 
-    def __call__(self, ms: MultiSegment) -> tuple[np.ndarray, np.ndarray]:
+    def __call__(self, ms: MultiSegment) -> LabelAgreementMap:
         grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])
         labels = np.asarray(labels)
-        sec_dur = grid[:, 1] - grid[:, 0]
-        grid_area = np.outer(sec_dur, sec_dur)
+        seg_dur = grid[:, 1] - grid[:, 0]
+        grid_area = np.outer(seg_dur, seg_dur)
         # Using broadcasting to compute the outer comparison for each level.
         # First dim is depth, 2nd and 3rd dim are segment indices
         meet_per_level = np.equal(labels[:, :, None], labels[:, None, :])
@@ -386,7 +391,7 @@ class LamByProb(LabelAgreementStrategy):
 
         # Boundaries too
         boundaries = mir_eval.util.intervals_to_boundaries(grid)
-        return boundaries, np.mean(level_lam_pdfs, axis=0)
+        return LabelAgreementMap(bs=boundaries, mat=np.mean(level_lam_pdfs, axis=0))
 
 
 # endregion: Label Agreement Strategies

@@ -15,7 +15,7 @@ __all__ = [
     "BoundaryContour",
     "BoundaryHierarchy",
 ]
-
+from abc import ABC
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
@@ -194,19 +194,17 @@ class Segment(TimeSpan):
         return np.array([b.time for b in self.bs])
 
     @property
-    def lam(self) -> np.ndarray:
+    def lam(self) -> LabelAgreementMap:
         """Label Agreement Matrix"""
-        return np.equal.outer(self.labels, self.labels)
+        return LabelAgreementMap(bs=self.btimes, mat=np.equal.outer(self.labels, self.labels))
 
     @property
-    def lam_pdf(self) -> np.ndarray:
+    def lam_pdf(self) -> LabelAgreementMap:
         """Label Agreement Matrix as probability density.
         np.sum(s.lam_pdf * lam_area_grid) == 1
         """
-        sec_dur = [sec.duration for sec in self.sections]
-        lam_area_grid = np.outer(sec_dur, sec_dur)
-        lam_area = np.sum(self.lam * lam_area_grid)
-        return self.lam / lam_area
+        lam_area = np.sum(self.lam.mat * self.lam.area_portion)
+        return LabelAgreementMap(bs=self.btimes, mat=self.lam.mat / lam_area)
 
     def __len__(self) -> int:
         return len(self.sections)
@@ -449,7 +447,7 @@ class MultiSegment(TimeSpan):
 
             # Subsequent layers are added only if they differ from the previous one.
             same_boundaries = np.array_equal(layer.bs, pruned_layers[-1].bs)
-            same_labeling = np.array_equal(layer.lam, pruned_layers[-1].lam)
+            same_labeling = np.array_equal(layer.lam.mat, pruned_layers[-1].lam.mat)
             if not (same_boundaries and same_labeling):
                 pruned_layers.append(layer)
 
@@ -492,10 +490,10 @@ class MultiSegment(TimeSpan):
                 times=1, relabel=relabel
             )
 
-    def meet(self) -> tuple[np.ndarray, np.ndarray]:
+    def meet(self) -> LabelAgreementMap:
         return self.lam(strategy="depth", mono=False)
 
-    def lam(self, strategy: str = "depth", **kwargs: Any) -> tuple[np.ndarray, np.ndarray]:
+    def lam(self, strategy: str = "depth", **kwargs: Any) -> LabelAgreementMap:
         from . import ops
 
         if strategy not in ops.LabelAgreementStrategy._registry:
@@ -639,3 +637,254 @@ class BoundaryHierarchy(BoundaryContour):
 
 
 # endregion
+
+
+# region: Label Agreement
+@dataclass(frozen=True)
+class AgreementMatrix(ABC):
+    """Base class for agreement matrices."""
+
+    bs: np.ndarray  # 1D array of boundary times (len = n_segs + 1)
+    mat: np.ndarray  # 2D array of agreement (shape = n_segs, n_segs)
+
+    def plot(self, ax=None, colorbar=True, **kwargs):
+        from . import viz
+
+        ax = viz.agreement_mat_mpl(self, ax=ax, **kwargs)
+        if colorbar:
+            ax.figure.colorbar(ax.collections[0], ax=ax)
+        return ax
+
+    @cached_property
+    def area_portion(self):
+        track_dur = self.bs[-1] - self.bs[0]
+        seg_portion = np.diff(self.bs) / track_dur
+        return np.outer(seg_portion, seg_portion)
+
+
+@dataclass(frozen=True)
+class LabelAgreementMap(AgreementMatrix):
+    """Label Agreement Map for segments. entries are PDFs"""
+
+    def decode(
+        self,
+        ms: MultiSegment,
+        aff_mode: str = "area",
+    ) -> MultiSegment:
+        new_layers = []
+        current_k = 1
+        for layer in ms:
+            aff = self.to_sap(layer.btimes).to_aff(aff_mode)
+            current_k = aff.pick_k(min_k=current_k)
+            print(current_k)
+            lab = aff.scluster(k=current_k)
+            new_layers.append(Segment(bs=layer.bs, raw_labs=lab))
+        return MultiSegment(raw_layers=new_layers)
+
+    def _upsample(self, finer_bs: np.ndarray) -> LabelAgreementMap:
+        """Upsample the LabelAgreementMap to a new set of boundaries.
+        finer_bs must be a superset of self.bs
+        """
+        if not np.all(np.isin(self.bs, finer_bs)):
+            raise ValueError("finer_bs must be a superset of self.bs")
+        if self.bs[0] != finer_bs[0] or self.bs[-1] != finer_bs[-1]:
+            raise ValueError("finer_bs must have the same start and end as self.bs")
+
+        # Find which original segment each new segment (start point) belongs to
+        # segment_indices will be of length len(finer_bs) - 1
+        segment_indices = np.searchsorted(self.bs, finer_bs[:-1], side="right") - 1
+
+        # Use the mapping to create the new lam
+        # finer_lam[i, j] = self.lam[segment_indices[i], segment_indices[j]]
+        finer_lam = self.mat[segment_indices[:, None], segment_indices]
+
+        return LabelAgreementMap(bs=finer_bs, mat=finer_lam)
+
+    def _integrate(self, coarser_bs: np.ndarray) -> SegmentAgreementProb:
+        """Integrate the LabelAgreementMap to a coarser set of boundaries."""
+        from scipy.ndimage import sum_labels
+
+        if not np.all(np.isin(coarser_bs, self.bs)):
+            raise ValueError("coarser_bs must be a subset of self.bs")
+        if self.bs[0] != coarser_bs[0] or self.bs[-1] != coarser_bs[-1]:
+            raise ValueError("coarser_bs must have the same start and end as self.bs")
+
+        # For each fine segment in self.bs, find which coarse segment it belongs to.
+        segment_mapping = np.searchsorted(coarser_bs, self.bs[:-1], side="right") - 1
+
+        # Create a 2D label matrix. Each element's value is a unique ID
+        # for the coarse grid cell it belongs to (from 0 to n_coarse_segs**2 - 1).
+        n_coarse_segs = len(coarser_bs) - 1
+        label_matrix = (segment_mapping[:, None] * n_coarse_segs) + segment_mapping
+
+        # lam is probability density, to integrate, we need to multiply each element
+        # by the area_portion of the cell it belongs to.
+        # Use sum_labels to calculate the sum of `self.mat` for each coarse cell.
+        sums = sum_labels(
+            self.mat * self.area_portion, labels=label_matrix, index=np.arange(n_coarse_segs**2)
+        )
+        # Reshape the 1D array of sums into the final 2D matrix
+        new_matrix = sums.reshape((n_coarse_segs, n_coarse_segs))
+
+        return SegmentAgreementProb(bs=coarser_bs, mat=new_matrix)
+
+    def to_sap(self, bs=None) -> SegmentAgreementProb:
+        """Integrate the LabelAgreementMap according to a set of boundaries.
+        Effectively turning probability density into a PMF.
+        This is useful for converting a LabelAgreementMap to a SegmentAgreementProb.
+        """
+        # respect the start and end of lam's bs
+        track_boundary = (self.bs[0], self.bs[-1])
+        if bs is None:
+            bs = self.bs
+        bs = np.concatenate([track_boundary, bs])
+        bs = np.unique(np.clip(bs, a_min=track_boundary[0], a_max=track_boundary[-1]))
+
+        # create common grid
+        common_bs = np.unique(np.concatenate([self.bs, bs]))
+        # upsample lam to common_bs, then integrate with respect to bs
+        return self._upsample(common_bs)._integrate(bs)
+
+
+@dataclass(frozen=True)
+class SegmentAgreementProb(AgreementMatrix):
+    """Label Agreement Matrix for segments. entries are PMFs"""
+
+    def to_aff(self, normalize="area") -> SegmentAffinityMatrix:
+        if normalize == "row":
+            # Row-normalize the SAP matrix to get the transition matrix P
+            row_sums = self.mat.sum(axis=1, keepdims=True)
+            tran_mat = self.mat / (row_sums + 1e-9)  # Add epsilon for stability
+            aff_mat = (tran_mat + tran_mat.T) / 2
+            return SegmentAffinityMatrix(self.bs, aff_mat)
+        elif normalize == "area":
+            return SegmentAffinityMatrix(self.bs, self.mat / self.area_portion)
+        elif normalize == "cosine":
+            from sklearn.metrics.pairwise import cosine_similarity
+
+            return SegmentAffinityMatrix(self.bs, cosine_similarity(self.mat))
+        else:
+            raise ValueError(f"Unknown normalization mode: {normalize}")
+
+
+@dataclass(frozen=True)
+class SegmentAffinityMatrix(AgreementMatrix):
+    """Label Agreement Matrix for segments. entries are affinities"""
+
+    def laplacian(self, norm: str = "sym") -> np.ndarray:
+        """
+        Computes the graph Laplacian.
+        This implementation correctly uses the full affinity matrix for degree calculation,
+        as opposed to scipy's which ignores the main diagonal.
+        """
+        degrees = np.sum(self.mat, axis=1)
+        unnormalized_laplacian = np.diag(degrees) - self.mat
+
+        # Handle zero-degree nodes to avoid division by zero.
+        # This is a robust way to prevent NaNs and Infs suggested by Gemini.
+        with np.errstate(divide="ignore", invalid="ignore"):
+            if norm == "rw":
+                # Efficiently compute the Random Walk Laplacian: D^-1 * L
+                inv_degrees = 1.0 / degrees
+                inv_degrees[degrees == 0] = 0
+                return np.diag(inv_degrees) @ unnormalized_laplacian
+
+            elif norm == "sym":
+                # Efficiently compute the Symmetric Normalized Laplacian: D^-1/2 * L * D^-1/2
+                sqrt_inv_degrees = 1.0 / np.sqrt(degrees)
+                sqrt_inv_degrees[degrees == 0] = 0
+                d_sqrt_inv = np.diag(sqrt_inv_degrees)
+                return d_sqrt_inv @ unnormalized_laplacian @ d_sqrt_inv
+
+            else:
+                raise NotImplementedError(
+                    f"bad laplacian normalization mode: {norm}. has to be rw or sym"
+                )
+
+    def spec_decomp(self, lap_norm="sym") -> tuple[np.ndarray, np.ndarray]:
+        from scipy.linalg import eig, eigh
+
+        if lap_norm == "sym":
+            evals, evecs = eigh(self.laplacian(lap_norm))
+        elif lap_norm == "rw":
+            # L_rw is generally not symmetric, use eig.
+            evals, evecs = eig(self.laplacian(lap_norm))
+
+            # Assert that imaginary parts are negligible before casting to real.
+            if np.iscomplexobj(evals):
+                assert np.allclose(evals.imag, 0), (
+                    f"Eigenvalues have significant imaginary part: {evals.imag}"
+                )
+                evals = evals.real
+            if np.iscomplexobj(evecs):
+                assert np.allclose(evecs.imag, 0), (
+                    f"Eigenvectors have significant imaginary part: {evecs.imag}"
+                )
+                evecs = evecs.real
+            # Sort the eigenvalues and eigenvectors
+            idx = np.argsort(evals)
+            evals = evals[idx]
+            evecs = evecs[:, idx]
+        else:
+            raise ValueError(f"Unknown laplacian normalization mode: {lap_norm}")
+        return evals, evecs
+
+    @cached_property
+    def lap_evals(self) -> np.ndarray:
+        # evals for sym and rm normalized laplacian are the same. Use sym for speed.
+        return self.spec_decomp("sym")[0]
+
+    @property
+    def egaps(self) -> np.ndarray:
+        return np.diff(self.lap_evals)
+
+    def scluster(self, k: int, lap_norm="sym") -> np.ndarray:
+        from sklearn.cluster import KMeans
+
+        n_segs = self.mat.shape[0]
+        if n_segs == 1:
+            return np.array(["0"])
+        if k >= n_segs:
+            return np.array([str(i) for i in range(n_segs)])
+
+        evals, evecs = self.spec_decomp(lap_norm)
+        first_k_evecs = evecs[:, :k]
+        if lap_norm == "sym":
+            norm = np.sqrt(np.sum(first_k_evecs**2, axis=1, keepdims=True))
+            seg_embedding = first_k_evecs / (norm + 1e-8)
+        elif lap_norm == "rw":
+            seg_embedding = first_k_evecs
+        else:
+            raise ValueError(f"Unknown laplacian normalization mode: {lap_norm}")
+
+        km = KMeans(n_clusters=k, init="k-means++", n_init=10)
+        seg_ids = km.fit_predict(seg_embedding)
+        return np.array([str(i) for i in seg_ids])
+
+    def pick_k(self, min_k: int = 1, fiedler_threshold: float = 0.2) -> int:
+        """
+        Determines k using eigengap
+        """
+        n_segs = self.mat.shape[0]
+        if min_k >= n_segs or n_segs <= 1:
+            return n_segs
+
+        # candidate_gaps = self.egaps[min_k - 1 :]
+        k = np.argmax(self.egaps) + 1
+
+        # check the Fiedler value to decide if
+        # we should return singleton groups or 1 big blob with k = 1
+        if k == 1 and self.lap_evals[1] < fiedler_threshold:
+            return n_segs
+        # if k is already big enough, return it
+        elif k >= min_k:
+            return k
+        # The largest gap occurred for a k < min_k.
+        # We must find the best alternative k >= min_k.
+        else:
+            alt_k = np.argmax(self.egaps[min_k - 1 :]) + min_k
+            # check if the new biggest gap is just noise, i.e. smaller than average gap size
+            if self.egaps[alt_k - 1] < self.egaps.mean():
+                return n_segs
+            else:
+                return alt_k

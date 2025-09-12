@@ -5,6 +5,8 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING, Any
 
+import librosa.display
+import matplotlib.pyplot as plt
 import pandas as pd
 import plotly.colors as pc
 import plotly.express as px
@@ -12,7 +14,13 @@ import plotly.graph_objects as go
 import seaborn as sns
 
 if TYPE_CHECKING:
-    from bnl.core import BoundaryContour, MultiSegment, Segment
+    from bnl.core import (
+        BoundaryContour,
+        LabelAgreementMap,
+        MultiSegment,
+        Segment,
+        SegmentAgreementProb,
+    )
 
 
 __all__ = [
@@ -258,3 +266,19 @@ def bmeasure_df(df):
 
     g.tight_layout()
     return g
+
+
+def agreement_mat_mpl(amat: LabelAgreementMap | SegmentAgreementProb, ax=None, **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+
+    librosa.display.specshow(
+        amat.mat,
+        x_axis="time",
+        y_axis="time",
+        x_coords=amat.bs,
+        y_coords=amat.bs,
+        ax=ax,
+        **kwargs,
+    )
+    return ax
