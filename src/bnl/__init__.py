@@ -22,13 +22,13 @@ from . import core, data, ops, viz, metrics, exp  # noqa: I001
 # --- Promote the core data structures to the top level ---
 from .core import (
     Boundary as B,
+    LeveledBoundary as LB,
+    RatedBoundary as RB,
+    TimeSpan as TS,
+    Segment as S,
+    MultiSegment as MS,
     BoundaryContour as BC,
     BoundaryHierarchy as BH,
-    LeveledBoundary as LB,
-    MultiSegment as MS,
-    RatedBoundary as RB,
-    Segment as S,
-    TimeSpan as TS,
     LabelAgreementMap as LAM,
     SegmentAgreementProb as SAP,
     SegmentAffinityMatrix as SAM,

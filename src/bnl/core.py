@@ -14,7 +14,11 @@ __all__ = [
     "MultiSegment",
     "BoundaryContour",
     "BoundaryHierarchy",
+    "LabelAgreementMap",
+    "SegmentAgreementProb",
+    "SegmentAffinityMatrix",
 ]
+import warnings
 from abc import ABC
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field, replace
@@ -24,6 +28,7 @@ from typing import Any
 import jams
 import numpy as np
 import plotly.graph_objects as go
+from sklearn.metrics.pairwise import cosine_similarity
 
 # region: Boundary Objects
 
@@ -666,13 +671,9 @@ class AgreementMatrix(ABC):
 class LabelAgreementMap(AgreementMatrix):
     """Label Agreement Map for segments. entries are PDFs"""
 
-    def decode(
-        self,
-        ms: MultiSegment,
-        aff_mode: str = "area",
-    ) -> MultiSegment:
+    def decode(self, ms: MultiSegment, aff_mode: str = "area", starting_k: int = 1) -> MultiSegment:
         new_layers = []
-        current_k = 1
+        current_k = starting_k
         for layer in ms:
             aff = self.to_sap(layer.btimes).to_aff(aff_mode)
             current_k = aff.pick_k(min_k=current_k)
@@ -760,9 +761,9 @@ class SegmentAgreementProb(AgreementMatrix):
         elif normalize == "area":
             return SegmentAffinityMatrix(self.bs, self.mat / self.area_portion)
         elif normalize == "cosine":
-            from sklearn.metrics.pairwise import cosine_similarity
-
             return SegmentAffinityMatrix(self.bs, cosine_similarity(self.mat))
+        elif normalize == "area+cosion":
+            return SegmentAffinityMatrix(self.bs, cosine_similarity(self.mat / self.area_portion))
         else:
             raise ValueError(f"Unknown normalization mode: {normalize}")
 
@@ -810,17 +811,18 @@ class SegmentAffinityMatrix(AgreementMatrix):
             # L_rw is generally not symmetric, use eig.
             evals, evecs = eig(self.laplacian(lap_norm))
 
-            # Assert that imaginary parts are negligible before casting to real.
-            if np.iscomplexobj(evals):
-                assert np.allclose(evals.imag, 0), (
-                    f"Eigenvalues have significant imaginary part: {evals.imag}"
+            # Cast to real, and warn if imaginary parts are non-negligible.
+            if not np.allclose(evals.imag, 0):
+                warnings.warn(
+                    "Eigenvalues have significant imaginary part", UserWarning, stacklevel=2
                 )
-                evals = evals.real
-            if np.iscomplexobj(evecs):
-                assert np.allclose(evecs.imag, 0), (
-                    f"Eigenvectors have significant imaginary part: {evecs.imag}"
+            evals = evals.real
+            if not np.allclose(evecs.imag, 0):
+                warnings.warn(
+                    "Eigenvectors have significant imaginary part", UserWarning, stacklevel=2
                 )
-                evecs = evecs.real
+            evecs = evecs.real
+
             # Sort the eigenvalues and eigenvectors
             idx = np.argsort(evals)
             evals = evals[idx]
@@ -888,3 +890,6 @@ class SegmentAffinityMatrix(AgreementMatrix):
                 return n_segs
             else:
                 return alt_k
+
+
+# endregion: Label Agreement
