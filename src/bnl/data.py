@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import jams
+import numpy as np
 import pandas as pd
 import requests
 
@@ -98,6 +99,15 @@ class Track:
         if jam_path is not None:
             return jams.load(self._fetch_content(jam_path))
         return None
+
+    @property
+    def feats(self) -> np.NpzFile:
+        audio_path = str(self.info["audio_mp3_path"])
+        feat_path = audio_path.replace("/audio.mp3", "_synced_feats.npz").replace("audio", "feats")
+        if not os.path.exists(feat_path):
+            raise FileNotFoundError("feature file does not exist...")
+        else:
+            return np.load(feat_path)
 
     def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:
         """Loads a specific annotation as a MultiSegment.

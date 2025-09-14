@@ -20,6 +20,7 @@ __all__ = [
 ]
 import warnings
 from abc import ABC
+from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
@@ -288,6 +289,23 @@ class Segment(TimeSpan):
         new_bs = [span.start] + list(inner_bs) + [span.end]
         return replace(self, bs=new_bs)
 
+    def expand_labels(self) -> MultiSegment:
+        """Keeping the same boundaries, expand and flatten labels to create a MultiSegment.
+        According to the Hierarchy Expansion TISMIR 2021 paper by Katie and Brian.
+        Using rules designed for the SALAMI dataset.
+        """
+        flat_labels = ["{}".format(_.replace("'", "")) for _ in self.labels]
+        seg_counter = Counter()
+        expanded_labels = []
+        for label in flat_labels:
+            expanded_labels.append(f"{label:s}_{seg_counter[label]:d}")
+            seg_counter[label] += 1
+
+        # create a flattened and a expanded layer
+        flat_layer = Segment.from_itvls(self.itvls, flat_labels)
+        expanded_layer = Segment.from_itvls(self.itvls, expanded_labels)
+        return MultiSegment(raw_layers=[flat_layer, self, expanded_layer], name=self.name)
+
 
 # endregion: Segment
 
@@ -508,6 +526,56 @@ class MultiSegment(TimeSpan):
         lam_strategy = strategy_class(**kwargs)
         return lam_strategy(self)
 
+    @staticmethod
+    def _reindex_labels(ref_int, ref_lab, est_int, est_lab):
+        # for each estimated label
+        #    find the reference label that is maximally overlaps with
+        score_map = defaultdict(lambda: 0)
+
+        for r_int, r_lab in zip(ref_int, ref_lab):
+            for e_int, e_lab in zip(est_int, est_lab):
+                score_map[(e_lab, r_lab)] += max(
+                    0, min(e_int[1], r_int[1]) - max(e_int[0], r_int[0])
+                )
+
+        r_taken = set()
+        e_map = dict()
+
+        hits = [(score_map[k], k) for k in score_map]
+        hits = sorted(hits, reverse=True)
+
+        while hits:
+            cand_v, (e_lab, r_lab) = hits.pop(0)
+            if r_lab in r_taken or e_lab in e_map:
+                continue
+            e_map[e_lab] = r_lab
+            r_taken.add(r_lab)
+
+        # Anything left over is unused
+        unused = set(est_lab) - set(ref_lab)
+
+        for e, u in zip(set(est_lab) - set(e_map.keys()), unused):
+            e_map[e] = u
+
+        return [e_map[e] for e in est_lab]
+
+    def relabel(self):
+        # relabel finer layers by finding max overlap with coarser layers
+        new_labels = [self.labels[0]]
+        for i in range(1, len(self.labels)):
+            labs = self._reindex_labels(
+                self.itvls[i - 1], new_labels[i - 1], self.itvls[i], self.labels[i]
+            )
+            new_labels.append(labs)
+
+        return MultiSegment.from_itvls(self.itvls, new_labels)
+
+    def expand_labels(self) -> MultiSegment:
+        expanded_layers = []
+        for layer in self:
+            expanded_layers.extend(layer.expand_labels().layers)
+        return MultiSegment(raw_layers=expanded_layers, name=self.name).prune_layers()
+
 
 # endregion: MultiSegment
 
@@ -671,16 +739,28 @@ class AgreementMatrix(ABC):
 class LabelAgreementMap(AgreementMatrix):
     """Label Agreement Map for segments. entries are PDFs"""
 
-    def decode(self, ms: MultiSegment, aff_mode: str = "area", starting_k: int = 1) -> MultiSegment:
+    def decode(
+        self,
+        bh: BoundaryHierarchy,
+        aff_mode: str = "area",
+        starting_k: int = 1,
+        min_k_inc: int = 0,  # minimal k increment across layers
+    ) -> MultiSegment:
+        """Decode labels according to boundaries set out in bh
+        Uses spectral clustering with k distinct labels.
+        k is choosen by the Eigengap heuristic.
+        k monotonically increase across layers, with a min_k_inc option.
+        """
         new_layers = []
         current_k = starting_k
-        for layer in ms:
+        for layer in bh.to_ms():
             aff = self.to_sap(layer.btimes).to_aff(aff_mode)
             current_k = aff.pick_k(min_k=current_k)
-            print(current_k)
+            # print(current_k)
             lab = aff.scluster(k=current_k)
+            current_k += min_k_inc
             new_layers.append(Segment(bs=layer.bs, raw_labs=lab))
-        return MultiSegment(raw_layers=new_layers)
+        return MultiSegment(raw_layers=new_layers).relabel()
 
     def _upsample(self, finer_bs: np.ndarray) -> LabelAgreementMap:
         """Upsample the LabelAgreementMap to a new set of boundaries.
@@ -762,7 +842,7 @@ class SegmentAgreementProb(AgreementMatrix):
             return SegmentAffinityMatrix(self.bs, self.mat / self.area_portion)
         elif normalize == "cosine":
             return SegmentAffinityMatrix(self.bs, cosine_similarity(self.mat))
-        elif normalize == "area+cosion":
+        elif normalize == "area+cosine":
             return SegmentAffinityMatrix(self.bs, cosine_similarity(self.mat / self.area_portion))
         else:
             raise ValueError(f"Unknown normalization mode: {normalize}")
