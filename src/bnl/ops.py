@@ -34,6 +34,11 @@ __all__ = [
     "LamByDepth",
     "LamByProb",
     "LamByCount",
+    # Labeling strategies
+    "LabelingStrategy",
+    "LabelByUniqueLabel",
+    "LabelByClosestSingleLayer",
+    "LabelByLam",
 ]
 
 from abc import ABC, abstractmethod
@@ -50,12 +55,14 @@ from sklearn.cluster import MeanShift
 from sklearn.neighbors import KernelDensity
 
 from .core import (
+    Boundary,
     BoundaryContour,
     BoundaryHierarchy,
     LabelAgreementMap,
     LeveledBoundary,
     MultiSegment,
     RatedBoundary,
+    Segment,
     TimeSpan,
 )
 
@@ -395,3 +402,157 @@ class LamByProb(LabelAgreementStrategy):
 
 
 # endregion: Label Agreement Strategies
+
+# region: Label filling strategies
+
+
+class LabelingStrategy(Strategy):
+    """Abstract base class for label filling strategies."""
+
+    _registry: dict[str, type[LabelingStrategy]] = {}
+
+    @abstractmethod
+    def __call__(self, bh: BoundaryHierarchy) -> MultiSegment:
+        raise NotImplementedError  # pragma: no cover
+
+
+@LabelingStrategy.register("unique")
+class LabelByUniqueLabel(LabelingStrategy):
+    """Fill empty strings with the closest single layer label."""
+
+    def __call__(self, bh: BoundaryHierarchy) -> MultiSegment:
+        layers = []
+        max_level = max(b.level for b in bh.bs)
+        for level in range(max_level, 0, -1):
+            level_boundaries = [Boundary(b.time) for b in bh.bs if b.level >= level]
+            labels = [None] * (len(level_boundaries) - 1)
+            layers.append(
+                Segment(
+                    bs=level_boundaries,
+                    raw_labs=labels,
+                    name=f"L{max_level - level + 1:02d}",
+                )
+            )
+
+        return MultiSegment(raw_layers=layers, name=bh.name)
+
+
+@LabelingStrategy.register("1layer")
+class LabelByClosestSingleLayer(LabelingStrategy):
+    """Find the closest single layer from a given MultiSegment, for each BH level
+    and fill the labels by looking for largest overlap."""
+
+    def __init__(self, ref_ms: MultiSegment, metric="v", hr_window=1):
+        self.reference_ms = ref_ms
+        self.metric = metric  # "hr" or "v"
+        self.hr_window = hr_window
+
+    def __call__(self, bh: BoundaryHierarchy) -> MultiSegment:
+        # get the MS with empty strings first
+        empty_ms = LabelByUniqueLabel()(bh)
+        labels = []
+        ref_layers_used = []
+        for layer in empty_ms.layers:
+            # Find the ref_ms layer that has highest boundary HR score with current level_boundaries
+            if self.metric == "hr":
+                best_ref_layer = max(
+                    self.reference_ms.layers,
+                    key=lambda ref_layer: mir_eval.segment.detection(
+                        ref_layer.itvls, layer.itvls, window=self.hr_window
+                    )[2],
+                )
+            elif self.metric == "v":
+                best_ref_layer = max(
+                    self.reference_ms.layers,
+                    key=lambda ref_layer: fle.vmeasure(
+                        ref_layer.itvls,
+                        np.arange(len(ref_layer)).astype(str),
+                        layer.itvls,
+                        np.arange(len(layer)).astype(str),
+                    )[2],
+                )
+            ref_layers_used.append(best_ref_layer)
+            # find the max overlapping reference interval and use their labels
+            layer_labels = self.find_max_overlap_labels(
+                best_ref_layer.btimes,
+                best_ref_layer.labels,
+                layer.btimes,
+            )
+            labels.append(layer_labels)
+
+        return MultiSegment.from_itvls(empty_ms.itvls, labels, name=bh.name)
+
+    @staticmethod
+    def find_max_overlap_labels(ref_boundaries, ref_labels, est_boundaries) -> np.ndarray:
+        """
+        For each estimated interval, find the reference interval index with max overlap.
+
+        Args:
+            ref_boundaries: A sorted np array of boundary times for reference segments.
+            est_boundaries: A sorted np array of boundary times for estimated segments.
+
+        Returns:
+            An array of indices, where the i-th element is the index of the reference
+            interval that maximally overlaps with the i-th estimated interval.
+        """
+        # Convert boundaries to interval start and end times
+        ref_starts, ref_ends = np.array(ref_boundaries[:-1]), np.array(ref_boundaries[1:])
+        est_starts, est_ends = np.array(est_boundaries[:-1]), np.array(est_boundaries[1:])
+
+        # For each estimated interval, find the range of candidate reference intervals
+        # `start_indices`: First ref interval that could possibly overlap
+        # `end_indices`: First ref interval that is guaranteed to be past the est interval
+        start_indices = np.searchsorted(ref_ends, est_starts, side="right")
+        end_indices = np.searchsorted(ref_starts, est_ends, side="left")
+
+        max_overlap_labels = []
+        # Iterate through each estimated interval and its candidate reference intervals
+        for i, (est_s, est_e) in enumerate(zip(est_starts, est_ends)):
+            # Slice the candidate reference intervals for the current estimated interval
+            cand_start, cand_end = start_indices[i], end_indices[i]
+            cand_ref_starts = ref_starts[cand_start:cand_end]
+            cand_ref_ends = ref_ends[cand_start:cand_end]
+            cand_ref_labels = ref_labels[cand_start:cand_end]
+
+            # Calculate overlap for all candidates in a vectorized way
+            # overlap = max(0, min(end1, end2) - max(start1, start2))
+            overlaps = np.maximum(
+                0, np.minimum(est_e, cand_ref_ends) - np.maximum(est_s, cand_ref_starts)
+            )
+
+            # Sum overlaps by label using a defaultdict
+            label_overlaps = defaultdict(float)
+            for label, overlap in zip(cand_ref_labels, overlaps):
+                if overlap > 0:
+                    label_overlaps[label] += overlap
+
+            # Find the label with the maximum summed overlap
+            best_label = max(label_overlaps, key=label_overlaps.get)
+            max_overlap_labels.append(best_label)
+
+        return max_overlap_labels
+
+
+@LabelingStrategy.register("lam")
+class LabelByLam(LabelingStrategy):
+    """Use LAM and eigengap spectral clustering to label intervals."""
+
+    def __init__(
+        self,
+        ref_ms: MultiSegment,
+        lam_mode: str = "prob",
+        aff_mode: str = "area",
+        starting_k: int = 2,
+        min_k_inc: int = 1,
+    ):
+        self.reference_ms = ref_ms
+        self.lam_mode = lam_mode
+        self.aff_mode = aff_mode
+        self.starting_k = starting_k
+        self.min_k_inc = min_k_inc
+
+    def __call__(self, bh: BoundaryHierarchy) -> MultiSegment:
+        lam = self.reference_ms.lam(strategy=self.lam_mode)
+        return lam.decode(
+            bh, aff_mode=self.aff_mode, starting_k=self.starting_k, min_k_inc=self.min_k_inc
+        )

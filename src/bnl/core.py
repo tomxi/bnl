@@ -568,7 +568,7 @@ class MultiSegment(TimeSpan):
             )
             new_labels.append(labs)
 
-        return MultiSegment.from_itvls(self.itvls, new_labels)
+        return MultiSegment.from_itvls(self.itvls, new_labels, name=self.name)
 
     def expand_labels(self) -> MultiSegment:
         expanded_layers = []
@@ -684,29 +684,22 @@ class BoundaryHierarchy(BoundaryContour):
         object.__setattr__(self, "end", self.bs[-1])
         super().__post_init__()
 
-    def to_ms(self, name: str | None = None) -> MultiSegment:
+    def to_ms(self, strategy: str = "unique", **kwargs: Any) -> MultiSegment:
         """Convert the BoundaryHierarchy to a MultiSegment.
 
         The MultiSegment will have layers from coarsest (highest level) to
-        finest (lowest level), with empty strings for all labels.
+        finest (lowest level).
 
         Returns:
             MultiSegment: The resulting MultiSegment object.
         """
-        layers = []
-        max_level = max(b.level for b in self.bs)
-        for level in range(max_level, 0, -1):
-            level_boundaries = [Boundary(b.time) for b in self.bs if b.level >= level]
-            labels = [None] * (len(level_boundaries) - 1)
-            layers.append(
-                Segment(
-                    bs=level_boundaries,
-                    raw_labs=labels,
-                    name=f"L{max_level - level + 1:02d}",
-                )
-            )
+        from . import ops
 
-        return MultiSegment(raw_layers=layers, name=name or f"{self.name} Monotonic MS")
+        if strategy not in ops.LabelingStrategy._registry:
+            raise ValueError(f"Unknown labeling strategy: {strategy}")
+
+        strategy_class = ops.LabelingStrategy._registry[strategy]
+        return strategy_class(**kwargs)(self)
 
 
 # endregion
@@ -760,7 +753,7 @@ class LabelAgreementMap(AgreementMatrix):
             lab = aff.scluster(k=current_k)
             current_k += min_k_inc
             new_layers.append(Segment(bs=layer.bs, raw_labs=lab))
-        return MultiSegment(raw_layers=new_layers).relabel()
+        return MultiSegment(raw_layers=new_layers, name=bh.name).relabel()
 
     def _upsample(self, finer_bs: np.ndarray) -> LabelAgreementMap:
         """Upsample the LabelAgreementMap to a new set of boundaries.
