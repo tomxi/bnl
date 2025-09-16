@@ -158,6 +158,14 @@ class SalByProb(SalienceStrategy):
                 weight = 1.0 / len(layer.bs[1:-1])
                 for boundary in layer.bs:
                     time_saliences[boundary.time] += weight
+        # manually add in the first and last boundaries, matching the highest probability
+        if len(time_saliences) == 0:
+            max_prob = 1.0
+        else:
+            max_prob = max(time_saliences.values())
+        time_saliences[ms.start.time] = max_prob
+        time_saliences[ms.end.time] = max_prob
+
         return BoundaryContour(
             name=ms.name or "Salience Contour",
             bs=sorted([RatedBoundary(t, s) for t, s in time_saliences.items()]),
