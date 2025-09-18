@@ -144,6 +144,10 @@ class TimeSpan:
     def __str__(self) -> str:
         return self.name
 
+    @classmethod
+    def from_times(cls, start, end):
+        return cls(Boundary(start), Boundary(end))
+
 
 @dataclass(frozen=True)
 class Segment(TimeSpan):
@@ -305,6 +309,19 @@ class Segment(TimeSpan):
         flat_layer = Segment.from_itvls(self.itvls, flat_labels)
         expanded_layer = Segment.from_itvls(self.itvls, expanded_labels)
         return MultiSegment(raw_layers=[flat_layer, self, expanded_layer], name=self.name)
+
+    def contour(self, normalize=True) -> BoundaryContour:
+        btimes = self.btimes
+        if len(btimes) <= 2:
+            return BoundaryContour(name=self.name or "Boundary Contour", bs=self.bs)
+        if normalize:
+            weight = 1.0 / len(btimes[1:-1])
+        else:
+            weight = 1.0
+        return BoundaryContour(
+            name=self.name or "Boundary Contour",
+            bs=[RatedBoundary(t, weight) for t in btimes],
+        )
 
 
 # endregion: Segment
@@ -576,6 +593,21 @@ class MultiSegment(TimeSpan):
             expanded_layers.extend(layer.expand_labels().layers)
         return MultiSegment(raw_layers=expanded_layers, name=self.name).prune_layers()
 
+    def prominence_mat(self, bw=0.8, grid_times=None):
+        from . import ops
+
+        if grid_times is None:
+            grid_times = ops.build_time_grid(self)
+        prominences = []
+        for layer in self:
+            if len(layer.btimes) <= 2:
+                prominences.append(np.zeros(len(grid_times)))
+            else:
+                prominences.append(
+                    layer.contour(normalize=True).prominence(bw=bw, grid_times=grid_times)[0]
+                )
+        return np.asarray(prominences), grid_times
+
 
 # endregion: MultiSegment
 
@@ -663,6 +695,15 @@ class BoundaryContour(TimeSpan):
 
         return level_strategy(self)
 
+    def prominence(self, bw=0.8, grid_times=None) -> np.ndarray:
+        from . import ops
+
+        kde_strat = ops.CleanByKDE(bw=bw)
+        if grid_times is None:
+            grid_times = kde_strat.build_time_grid(self)
+        log_density = kde_strat.log_density(self, grid_times=grid_times)
+        return np.exp(log_density), grid_times
+
 
 @dataclass(frozen=True)
 class BoundaryHierarchy(BoundaryContour):
@@ -726,6 +767,24 @@ class AgreementMatrix(ABC):
         track_dur = self.bs[-1] - self.bs[0]
         seg_portion = np.diff(self.bs) / track_dur
         return np.outer(seg_portion, seg_portion)
+
+    def sample(self, positions: np.ndarray) -> np.ndarray:
+        """Sample from the agreement matrix.
+        positions: (n_samples, 2) array of positions in bs
+        returns: (n_samples, ) array of sampled values
+        """
+        # basic input gaurding
+        if positions.shape[1] != 2:
+            raise ValueError("positions must be of shape (n_samples, 2)")
+        if np.any(positions < self.bs[0]) or np.any(positions > self.bs[-1]):
+            raise ValueError("positions must be within the bounds of bs")
+        # positions are in bs, convert to indices
+        x_indices = np.searchsorted(self.bs, positions[:, 0], side="right") - 1
+        y_indices = np.searchsorted(self.bs, positions[:, 1], side="right") - 1
+        # if its the very end, use the last index
+        x_indices[x_indices == len(self.bs) - 1] = len(self.bs) - 2
+        y_indices[y_indices == len(self.bs) - 1] = len(self.bs) - 2
+        return self.mat[x_indices, y_indices]
 
 
 @dataclass(frozen=True)

@@ -175,7 +175,7 @@ class SalByProb(SalienceStrategy):
 # endregion: Different Notions of Boundary Salience
 
 
-# region: Two ways to clean up boundaries closeby in time
+# region: Clean up boundaries closeby in time
 
 
 class CleanStrategy(Strategy):
@@ -221,28 +221,21 @@ class CleanByKDE(CleanStrategy):
     def __init__(self, bw: float = 0.5):
         self.time_kde = KernelDensity(kernel="gaussian", bandwidth=bw)
 
-    def _build_time_grid(self, span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
-        """
-        Build a grid of times using the same logic as mir_eval to build the ticks
-        """
-        # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
-        n_frames = int(
-            (_round(span.end.time, frame_size) - _round(span.start.time, frame_size)) / frame_size
-        )
-        return np.arange(n_frames + 1) * frame_size + span.start.time
-
-    def __call__(self, bc: BoundaryContour) -> BoundaryContour:
-        if len(bc.bs) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
-            return bc
-
+    def log_density(self, bc: BoundaryContour, grid_times: np.ndarray) -> np.ndarray:
         inner_boundaries = bc.bs[1:-1]
         times = np.array([b.time for b in inner_boundaries])
         saliences = np.array([b.salience for b in inner_boundaries])
 
         self.time_kde.fit(times.reshape(-1, 1), sample_weight=saliences)
-
-        grid_times = self._build_time_grid(bc, frame_size=0.1)
         log_density = self.time_kde.score_samples(grid_times.reshape(-1, 1))
+        return log_density
+
+    def __call__(self, bc: BoundaryContour) -> BoundaryContour:
+        if len(bc.bs) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
+            return bc
+
+        grid_times = build_time_grid(bc, frame_size=0.1)
+        log_density = self.log_density(bc, grid_times)
 
         peak_indices = scipy.signal.find_peaks(log_density)[0]
         peak_times = grid_times.flatten()[peak_indices]
@@ -387,6 +380,10 @@ class LamByCount(LabelAgreementStrategy):
 class LamByProb(LabelAgreementStrategy):
     """Combining label agreement maps of a hierarchy using lam prob density."""
 
+    def __init__(self, w: np.ndarray | None = None):
+        self.w = w / np.sum(w) * len(w) if w is not None else None
+        print(self.w)
+
     def __call__(self, ms: MultiSegment) -> LabelAgreementMap:
         grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])
         labels = np.asarray(labels)
@@ -406,6 +403,10 @@ class LamByProb(LabelAgreementStrategy):
 
         # Boundaries too
         boundaries = mir_eval.util.intervals_to_boundaries(grid)
+
+        # weighted combination
+        if self.w is not None:
+            level_lam_pdfs = level_lam_pdfs * self.w[:, None, None]
         return LabelAgreementMap(bs=boundaries, mat=np.mean(level_lam_pdfs, axis=0))
 
 
@@ -564,3 +565,29 @@ class LabelByLam(LabelingStrategy):
         return lam.decode(
             bh, aff_mode=self.aff_mode, starting_k=self.starting_k, min_k_inc=self.min_k_inc
         )
+
+
+# endregion: Labeling strategies
+
+# region: Helper functions
+
+
+def bs2uv(bs):
+    """Convert a set of boundaries to a set of (u,v) coordinates."""
+    mid_points = (bs[:-1] + bs[1:]) / 2
+    n = len(mid_points)
+    # Get indices for the upper triangle of an (n x n) matrix
+    i, j = np.triu_indices(n)
+    # Directly create the (u, v) pairs
+    return np.stack([mid_points[i], mid_points[j]], axis=1)
+
+
+def build_time_grid(span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
+    """
+    Build a grid of times using the same logic as mir_eval to build the ticks
+    """
+    # Figure out how many frames we need by using `mir_eval`'s exact frame finding logic.
+    n_frames = int(
+        (_round(span.end.time, frame_size) - _round(span.start.time, frame_size)) / frame_size
+    )
+    return np.arange(n_frames + 1) * frame_size + span.start.time
