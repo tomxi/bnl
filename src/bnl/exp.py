@@ -171,3 +171,17 @@ def mir_eval_between_slm_refs(track):
     record = mir_eval.hierarchy.evaluate(ref1.itvls, ref1.labels, ref2.itvls, ref2.labels)
     record["track_id"] = track.track_id
     return pd.Series(record)
+
+
+def mir_eval_flat_between_slm_refs(track):
+    if len(track.refs) < 2:
+        raise ValueError(f"Track {track.track_id} has less than 2 references.")
+    ref1, ref2 = track.refs.values()
+    upper_hr = mir_eval.segment.detection(ref1.itvls[0], ref2.itvls[0])
+    lower_hr = mir_eval.segment.detection(ref1.itvls[1], ref2.itvls[1])
+    record = {
+        "track_id": track.track_id,
+        "upper_hr": upper_hr[2],
+        "lower_hr": lower_hr[2],
+    }
+    return pd.Series(record)
