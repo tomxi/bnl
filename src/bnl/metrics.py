@@ -154,3 +154,102 @@ def bmeasure_suite(
         .sort_values(by=["track_id", "window", "prf", "metric"])
         .reset_index(drop=True)
     )
+
+
+def bmeasure2(
+    ref_bc: BC,
+    est_bc: BC,
+    window: float = 0.5,
+    trim: bool = False,
+    verbose: bool = False,
+    beta: float = 1,
+):
+    """
+    Instead of doing the HR and POA separately, let's do HR and POA together.
+    """
+    # Get matching boundaries
+    ref_bs = ref_bc.bs
+    est_bs = est_bc.bs
+
+    if trim:
+        ref_bs = ref_bs[1:-1]
+        est_bs = est_bs[1:-1]
+    ref_b_times = [b.time for b in ref_bs]
+    est_b_times = [b.time for b in est_bs]
+    match_idx = mir_eval.util.match_events(ref_b_times, est_b_times, window)
+
+    # For recall, the denominator is the number of reference boundaries
+    # The numerator is the sum of the per boundary POA score in estimate
+    rec_denom, prec_denom = len(ref_b_times), len(est_b_times)
+    rec_num, prec_num = 0, 0
+
+    # Construct the boundary prominence according to ref_bs for recall
+    rec_ref_prom, rec_est_prom = [], []
+    # consider all boundaries in reference, and insert 0 prominence for unmatched est bdry
+    ref_to_est_idx_map = {pair[0]: pair[1] for pair in match_idx}
+    for ref_b_idx, ref_b in enumerate(ref_bs):
+        rec_ref_prom.append(ref_b.salience)
+        if ref_b_idx in ref_to_est_idx_map:
+            est_b_idx = ref_to_est_idx_map[ref_b_idx]
+            rec_est_prom.append(est_bs[est_b_idx].salience)
+        else:
+            rec_est_prom.append(0)
+
+    # Now do the same for precision using boundaries in estimate
+    prec_ref_prom, prec_est_prom = [], []
+    est_to_ref_idx_map = {pair[1]: pair[0] for pair in match_idx}
+    for est_b_idx, est_b in enumerate(est_bs):
+        prec_est_prom.append(est_b.salience)
+        if est_b_idx in est_to_ref_idx_map:
+            ref_b_idx = est_to_ref_idx_map[est_b_idx]
+            prec_ref_prom.append(ref_bs[ref_b_idx].salience)
+        else:
+            prec_ref_prom.append(0)
+
+    rec_ref_prom = np.array(rec_ref_prom)
+    rec_est_prom = np.array(rec_est_prom)
+    prec_ref_prom = np.array(prec_ref_prom)
+    prec_est_prom = np.array(prec_est_prom)
+    if verbose:
+        print("recall, ref, est", rec_ref_prom, rec_est_prom)
+        print("precision, ref, est", prec_ref_prom, prec_est_prom)
+    for ref_b_idx, est_b_idx in match_idx:
+        ref_b = ref_bs[ref_b_idx]
+        est_b = est_bs[est_b_idx]
+        # So I want to ask for this hit boundary, how is the ordinal information related to the
+        # reference boundary recalled?
+        # For all the boundaries in the ref_bs, which ones have salience higher?
+        # Do these relationships preserve in the est_bs?
+        rec_ref_more_prom = rec_ref_prom > ref_b.salience
+        rec_est_more_prom = rec_est_prom > est_b.salience
+        rec_ref_less_prom = rec_ref_prom < ref_b.salience
+        rec_est_less_prom = rec_est_prom < est_b.salience
+
+        pairs_inverted = (
+            rec_ref_more_prom * rec_est_less_prom + rec_ref_less_prom * rec_est_more_prom
+        )
+        pairs_to_recall = len(ref_bs) - 1
+        if verbose:
+            print(pairs_inverted.sum(), pairs_to_recall)
+        rec_num += safe_div(pairs_to_recall - pairs_inverted.sum(), pairs_to_recall, 1)
+
+        # Do the same on est_b for precision
+        prec_ref_more_prom = prec_ref_prom > ref_b.salience
+        prec_est_more_prom = prec_est_prom > est_b.salience
+        prec_ref_less_prom = prec_ref_prom < ref_b.salience
+        prec_est_less_prom = prec_est_prom < est_b.salience
+
+        pairs_inverted = (
+            prec_ref_more_prom * prec_est_less_prom + prec_ref_less_prom * prec_est_more_prom
+        )
+        pairs_predicted = len(est_bs) - 1
+        if verbose:
+            print(pairs_inverted.sum(), pairs_predicted)
+        prec_num += safe_div(pairs_predicted - pairs_inverted.sum(), pairs_predicted, 1)
+
+    if verbose:
+        print("recall", rec_num, rec_denom)
+        print("precision", prec_num, prec_denom)
+    recall = safe_div(rec_num, rec_denom, 1)
+    precision = safe_div(prec_num, prec_denom, 1)
+    return precision, recall, f_measure(precision, recall, beta=beta)

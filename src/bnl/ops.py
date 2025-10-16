@@ -193,7 +193,7 @@ class CleanStrategy(Strategy):
 class CleanByAbsorb(CleanStrategy):
     """Clean boundaries by absorbing less salient ones within a window."""
 
-    def __init__(self, window: float = 1.5) -> None:
+    def __init__(self, window: float = 1.0) -> None:
         self.window = window
 
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:

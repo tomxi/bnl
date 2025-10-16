@@ -163,6 +163,18 @@ def bmeasure_between_slm_refs(track):
     )
 
 
+def bmeasure2_between_slm_refs(track):
+    """Runs bmeasure between the first two references in a track."""
+    if len(track.refs) < 2:
+        raise ValueError(f"Track {track.track_id} has less than 2 references.")
+    ref1, ref2 = track.refs.values()
+    p, r, f = metrics.bmeasure2(
+        ref1.contour("depth"),
+        ref2.contour("depth"),
+    )
+    return pd.Series({"track_id": track.track_id, "b2_p": p, "b2_r": r, "b2_f": f})
+
+
 def mir_eval_between_slm_refs(track):
     """Runs mir_eval.hierarchy.evaluate between the first two references in a track."""
     if len(track.refs) < 2:
@@ -185,3 +197,72 @@ def mir_eval_flat_between_slm_refs(track):
         "lower_hr": lower_hr[2],
     }
     return pd.Series(record)
+
+
+def bmeasure2_mono_casting_effects(
+    slm_track, save_folder="./monocasting_results_bmeasure2/", overwrite=False, verbose=False
+):
+    # Construct the expected output file path
+    file_name = f"{slm_track.track_id}.feather"
+    output_path = os.path.join(save_folder, file_name)
+
+    # If not overwriting and the file exists, load and return it
+    if not overwrite and os.path.exists(output_path):
+        if verbose:
+            print(f"Loading existing results for track {slm_track.track_id} from {output_path}")
+        return pd.read_feather(output_path)
+
+    try:
+        # Attempt to get the first reference
+        ref = list(slm_track.refs.values())[0]
+        # Attempt to get a specific estimate and align it with the ref
+        raw_est = slm_track.ests["mu1gamma9"].align(ref)
+    except (IndexError, KeyError):
+        # If either ref or est is not found, print a message and exit
+        print(f"--> Error: Can't find ref or est for track {slm_track.track_id}. Skipping.")
+        return None
+
+    if verbose:
+        print(f"Running experiment for track {slm_track.track_id}...")
+    params = {
+        "prom_func": ["depth", "prob"],
+        "bdry_cleaning": ["absorb", "kde", "none"],
+        "leveling": ["unique", "mean_shift"],
+    }
+    param_combos = itertools.product(*params.values())
+    records = []
+
+    for prom_func, bdry_cleaning, leveling in param_combos:
+        est_bc = raw_est.contour(prom_func).clean(bdry_cleaning).level(leveling)
+        ref_bc = ref.contour("depth").level()
+
+        b2_05_p, b2_05_r, b2_05_f = metrics.bmeasure2(ref_bc, est_bc, window=0.5)
+        b2_15_p, b2_15_r, b2_15_f = metrics.bmeasure2(ref_bc, est_bc, window=1.5)
+        b2_30_p, b2_30_r, b2_30_f = metrics.bmeasure2(ref_bc, est_bc, window=3)
+
+        bmeasure_df = pd.DataFrame(
+            {
+                "track_id": [slm_track.track_id],
+                "prom_func": [prom_func],
+                "bdry_cleaning": [bdry_cleaning],
+                "leveling": [leveling],
+                "b2_05_p": [b2_05_p],
+                "b2_05_r": [b2_05_r],
+                "b2_05_f": [b2_05_f],
+                "b2_15_p": [b2_15_p],
+                "b2_15_r": [b2_15_r],
+                "b2_15_f": [b2_15_f],
+                "b2_30_p": [b2_30_p],
+                "b2_30_r": [b2_30_r],
+                "b2_30_f": [b2_30_f],
+            }
+        )
+        records.append(bmeasure_df)
+
+    results_df = pd.concat(records).reset_index(drop=True)
+    results_df.columns.name = None
+    os.makedirs(save_folder, exist_ok=True)
+    results_df.to_feather(output_path)
+    if verbose:
+        print(f"Results for track {slm_track.track_id} saved to {output_path}")
+    return results_df
