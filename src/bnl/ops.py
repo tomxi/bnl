@@ -382,7 +382,7 @@ class LamByProb(LabelAgreementStrategy):
 
     def __init__(self, w: np.ndarray | None = None):
         self.w = w / np.sum(w) * len(w) if w is not None else None
-        print(self.w)
+        # print(self.w)
 
     def __call__(self, ms: MultiSegment) -> LabelAgreementMap:
         grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])

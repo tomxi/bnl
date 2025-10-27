@@ -731,6 +731,8 @@ class BoundaryHierarchy(BoundaryContour):
         The MultiSegment will have layers from coarsest (highest level) to
         finest (lowest level).
 
+        strategy: "unique", "1layer", "lam"
+
         Returns:
             MultiSegment: The resulting MultiSegment object.
         """
