@@ -1,10 +1,13 @@
 import frameless_eval as fle
+import numpy as np
 import pandas as pd
+from scipy.optimize import minimize
+from scipy.special import rel_entr
 
 from .metrics import bmeasure2
 
 
-def relevance(ref, ests, metric="b", debug=False):
+def relevance(ref, ests, metric="b30", debug=False):
     # Get the relevance of each estimate with respect to the reference using metric
     # Metric can be "b30", "b05", "t", "l", "l-mono-lam", "l-mono-1layer"
     # Let's do the simple case of having existing metrics to compute relevance.
@@ -81,8 +84,90 @@ def relevance_per_level(ref, ests, metric="bpc_combo", debug=False):
     if metric == "bpc_combo":
         # Setup est_bpcs and ref_bpc.
         ref_bpc, grid_times = ref.prominence_mat(bw=0.8)
-        est_bpcs = {key: est.prominence_mat(bw=0.8)[0].sum(axis=0) for key, est in ests.items()}
+        est_bpcs = {key: est.prominence_mat(bw=0.8)[0] for key, est in ests.items()}
+
+        # Setup the objective function, the KL divergence between two BPCs
+        # quantized into PMF bins over time
         return ref_bpc.sum(axis=0), est_bpcs, grid_times
     else:
         raise ValueError(f"Metric {metric} not recognized.")
     return None
+
+
+def kl_div(weights, distributions, target):
+    """
+    KL divergence objective function for scipy.optimize.
+
+    Args:
+        weights: Array of shape (num_distributions,) - mixing weights
+        distributions: Array of shape (num_distributions, distribution_dim) - input distributions
+        target: Array of shape (distribution_dim,) - target distribution
+
+    Returns:
+        KL divergence value (float)
+    """
+    # Ensure weights are valid probabilities
+    weights = np.maximum(weights, 0)  # Non-negative
+    weights = weights / (np.sum(weights) + 1e-10)  # Normalize to sum to 1
+
+    # Combined distribution
+    combined = weights @ distributions
+
+    # KL divergence: sum(p * log(p/q))
+    kl_div = np.sum(rel_entr(target, combined))
+
+    return kl_div
+
+
+def scipy_kl_optimization(target_distribution, distributions, verbose=True):
+    """
+    Solve KL divergence minimization using scipy.optimize.
+
+    Args:
+        distributions: Array of shape (num_distributions, distribution_dim) - input probability distributions
+        target_distribution: Array of shape (distribution_dim,) - target distribution
+        verbose: Whether to print optimization details
+
+    Returns:
+        optimal_weights: Array of shape (num_distributions,) - optimal mixing weights
+        optimal_combined: Array of shape (distribution_dim,) - optimally combined distribution
+        optimal_kl: Float - optimal KL divergence value
+    """
+    num_distributions, dist_dim = distributions.shape
+
+    # Initial guess: uniform weights
+    initial_weights = np.ones(num_distributions) / num_distributions
+
+    # Define constraints for scipy
+    constraints = [
+        # Sum of weights = 1
+        {"type": "eq", "fun": lambda w: np.sum(w) - 1},
+    ]
+
+    # Bounds: each weight between 0 and 1
+    bounds = [(0, 1) for _ in range(num_distributions)]
+
+    if verbose:
+        print(f"Number of distributions: {num_distributions}")
+        print(f"Distribution dimension: {dist_dim}")
+
+    # Solve optimization problem
+    result = minimize(
+        kl_div,
+        initial_weights,
+        args=(distributions, target_distribution),
+        bounds=bounds,
+        constraints=constraints,
+        options={"disp": verbose, "maxiter": 1000},
+    )
+
+    if not result.success:
+        print(f"Optimization warning: {result.message}")
+
+    # Combined distribution
+    optimal_combined = result.x @ distributions
+
+    # KL divergence
+    optimal_kl = kl_div(result.x, distributions, target_distribution)
+
+    return result.x, optimal_combined, optimal_kl
