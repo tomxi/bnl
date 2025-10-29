@@ -84,11 +84,13 @@ def relevance_per_level(ref, ests, metric="bpc_combo", debug=False):
     if metric == "bpc_combo":
         # Setup est_bpcs and ref_bpc.
         ref_bpc, grid_times = ref.prominence_mat(bw=0.8)
-        est_bpcs = {key: est.prominence_mat(bw=0.8)[0] for key, est in ests.items()}
+        est_bpcs = {
+            key: est.prominence_mat(bw=0.8, grid_times=grid_times)[0] for key, est in ests.items()
+        }
 
         # Setup the objective function, the KL divergence between two BPCs
         # quantized into PMF bins over time
-        return ref_bpc.sum(axis=0), est_bpcs, grid_times
+        return ref_bpc.mean(axis=0), est_bpcs, grid_times
     else:
         raise ValueError(f"Metric {metric} not recognized.")
     return None
@@ -119,7 +121,47 @@ def kl_div(weights, distributions, target):
     return kl_div
 
 
-def scipy_kl_optimization(target_distribution, distributions, verbose=True):
+def js_div(weights, distributions, target):
+    """
+    Jensen-Shannon Divergence (JSD) objective function.
+
+    Computes JSD(target || combined), where 'combined' is the
+    weighted mixture of the input 'distributions'.
+
+    Args:
+        weights: Array of shape (num_distributions,) - mixing weights
+        distributions: Array of shape (num_distributions, distribution_dim) - input distributions
+        target: Array of shape (distribution_dim,) - target distribution
+
+    Returns:
+        Jensen-Shannon Divergence value (float)
+    """
+    # 1. Create the combined (mixture) distribution 'M'
+    # Ensure weights are valid probabilities
+    weights = np.maximum(weights, 0)  # Non-negative
+    weights = weights / (np.sum(weights) + 1e-10)  # Normalize
+
+    # M = sum(w_i * D_i)
+    combined_dist = weights @ distributions
+
+    # 2. Define the average distribution 'A'
+    # A = 0.5 * (P + M), where P is 'target'
+    avg_dist = 0.5 * (target + combined_dist)
+
+    # 3. Compute the two KL components
+    # D_KL(P || A)
+    kl_p_a = np.sum(rel_entr(target, avg_dist))
+
+    # D_KL(M || A)
+    kl_m_a = np.sum(rel_entr(combined_dist, avg_dist))
+
+    # 4. Compute the JSD
+    jsd = 0.5 * kl_p_a + 0.5 * kl_m_a
+
+    return jsd
+
+
+def scipy_kl_optimization(target_distribution, distributions, verbose=True, obj_fn=kl_div):
     """
     Solve KL divergence minimization using scipy.optimize.
 
@@ -153,7 +195,7 @@ def scipy_kl_optimization(target_distribution, distributions, verbose=True):
 
     # Solve optimization problem
     result = minimize(
-        kl_div,
+        obj_fn,
         initial_weights,
         args=(distributions, target_distribution),
         bounds=bounds,
@@ -167,7 +209,7 @@ def scipy_kl_optimization(target_distribution, distributions, verbose=True):
     # Combined distribution
     optimal_combined = result.x @ distributions
 
-    # KL divergence
-    optimal_kl = kl_div(result.x, distributions, target_distribution)
+    # KL/JS divergence
+    optimal_div = obj_fn(result.x, distributions, target_distribution)
 
-    return result.x, optimal_combined, optimal_kl
+    return result.x, optimal_combined, optimal_div

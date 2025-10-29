@@ -695,14 +695,18 @@ class BoundaryContour(TimeSpan):
 
         return level_strategy(self)
 
-    def prominence(self, bw=0.8, grid_times=None) -> np.ndarray:
+    def prominence(self, bw=0.8, grid_times=None, normalize=True) -> np.ndarray:
         from . import ops
 
         kde_strat = ops.CleanByKDE(bw=bw)
         if grid_times is None:
             grid_times = ops.build_time_grid(self)
         log_density = kde_strat.log_density(self, grid_times=grid_times)
-        return np.exp(log_density), grid_times
+        p = np.exp(log_density)
+        if normalize:
+            p += 1e-10
+            p /= p.sum()
+        return p, grid_times
 
 
 @dataclass(frozen=True)
