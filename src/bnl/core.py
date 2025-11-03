@@ -594,19 +594,23 @@ class MultiSegment(TimeSpan):
         return MultiSegment(raw_layers=expanded_layers, name=self.name).prune_layers()
 
     def prominence_mat(self, bw=0.8, grid_times=None):
+        """
+        Returns a matrix of prominences for each layer. layer x time.
+        """
         from . import ops
 
         if grid_times is None:
             grid_times = ops.build_time_grid(self)
         prominences = []
+        layer_ids = []
         for layer in self:
-            if len(layer.btimes) <= 2:
-                prominences.append(np.zeros(len(grid_times)))
-            else:
+            if len(layer.btimes) > 2:
+                # Ignore empty layers when btimes <= 2
                 prominences.append(
                     layer.contour(normalize=True).prominence(bw=bw, grid_times=grid_times)[0]
                 )
-        return np.asarray(prominences), grid_times
+                layer_ids.append(self.name + ":" + layer.name)
+        return np.asarray(prominences), layer_ids, grid_times
 
 
 # endregion: MultiSegment
@@ -704,8 +708,7 @@ class BoundaryContour(TimeSpan):
         log_density = kde_strat.log_density(self, grid_times=grid_times)
         p = np.exp(log_density)
         if normalize:
-            p += 1e-10
-            p /= p.sum()
+            p /= p.sum() + 1e-10
         return p, grid_times
 
 

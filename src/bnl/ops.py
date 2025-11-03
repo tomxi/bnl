@@ -230,27 +230,30 @@ class CleanByKDE(CleanStrategy):
         log_density = self.time_kde.score_samples(grid_times.reshape(-1, 1))
         return log_density
 
+    @staticmethod
+    def bpc2bs(bpc: np.ndarray, grid_times: np.ndarray) -> list[RatedBoundary]:
+        peak_indices = scipy.signal.find_peaks(bpc)[0]
+        peak_times = grid_times.flatten()[peak_indices]
+        peak_saliences = bpc[peak_indices]
+        inner_boundaries = [
+            RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)
+        ]
+        max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 1
+        final_boundaries = [
+            RatedBoundary(grid_times[0], max_salience),
+            *inner_boundaries,
+            RatedBoundary(grid_times[-1], max_salience),
+        ]
+        return sorted(final_boundaries)
+
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
         if len(bc.bs) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
             return bc
 
         grid_times = build_time_grid(bc, frame_size=0.1)
         log_density = self.log_density(bc, grid_times)
-
-        peak_indices = scipy.signal.find_peaks(log_density)[0]
-        peak_times = grid_times.flatten()[peak_indices]
-        peak_saliences = np.exp(log_density[peak_indices])
-        max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 1
-
-        new_inner_boundaries = [
-            RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)
-        ]
-        final_boundaries = [
-            RatedBoundary(bc.start.time, max_salience),
-            *new_inner_boundaries,
-            RatedBoundary(bc.end.time, max_salience),
-        ]
-        return BoundaryContour(name=bc.name or "Cleaned Contour", bs=sorted(final_boundaries))
+        boundaries = self.bpc2bs(np.exp(log_density), grid_times)
+        return BoundaryContour(name=bc.name or "Cleaned Contour", bs=boundaries)
 
 
 @CleanStrategy.register("none")
