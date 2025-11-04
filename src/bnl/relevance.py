@@ -5,6 +5,7 @@ from mir_eval.segment import detection as me_hr
 from scipy.optimize import minimize
 from scipy.stats import entropy
 
+from .core import MultiSegment
 from .metrics import bmeasure2
 from .ops import bs2uv, build_time_grid
 
@@ -276,3 +277,50 @@ def relevance_f2f(ref, est, metric="hr15") -> pd.Series:
 
 
 # endregion: relevance functions
+
+
+# region: compatibility diagrams
+
+
+def comp_diag_h2h(
+    refs: dict[str, MultiSegment], ests: dict[str, MultiSegment], metric="b15"
+) -> pd.DataFrame:
+    """
+    columns:refs, rows: ests
+    """
+    rels = []
+    for name, ref in refs.items():
+        r = relevance_h2h(ref, ests, metric=metric)
+        r.name = name
+        rels.append(r)
+
+    df = pd.concat(rels, axis=1)
+    df.name = metric
+    return df
+
+
+def comp_diag_h2f(refs: dict[str, MultiSegment], est: MultiSegment, metric="bpc") -> pd.DataFrame:
+    rels = []
+    for name, ref in refs.items():
+        r = relevance_h2f(ref, est, metric=metric)
+        r.name = name
+        rels.append(r)
+
+    df = pd.concat(rels, axis=1)
+    df.name = metric
+    return df
+
+
+def comp_diag_f2f(ref: MultiSegment, est: MultiSegment, metric="hr15") -> pd.DataFrame:
+    rels = []
+    for ref_layer in ref:
+        r = relevance_f2f(ref_layer, est, metric=metric)
+        r.name = ref_layer.name
+        rels.append(r)
+
+    df = pd.concat(rels, axis=1)
+    df.name = metric
+    return df
+
+
+# endregion: compatibility diagrams
