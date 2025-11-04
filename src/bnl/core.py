@@ -367,6 +367,10 @@ class MultiSegment(TimeSpan):
 
         return processed_layers
 
+    @property
+    def layer_names(self) -> list[str]:
+        return [layer.name for layer in self.layers]
+
     def __len__(self) -> int:
         return len(self.raw_layers)
 
@@ -602,15 +606,16 @@ class MultiSegment(TimeSpan):
         if grid_times is None:
             grid_times = ops.build_time_grid(self)
         prominences = []
-        layer_ids = []
         for layer in self:
             if len(layer.btimes) > 2:
                 # Ignore empty layers when btimes <= 2
                 prominences.append(
                     layer.contour(normalize=True).prominence(bw=bw, grid_times=grid_times)[0]
                 )
-                layer_ids.append(self.name + ":" + layer.name)
-        return np.asarray(prominences), layer_ids, grid_times
+            else:
+                # add uniform prominence for empty layers
+                prominences.append(np.ones(len(grid_times)) / len(grid_times))
+        return np.asarray(prominences), grid_times
 
 
 # endregion: MultiSegment

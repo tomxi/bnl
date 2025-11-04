@@ -7,8 +7,142 @@ from scipy.stats import entropy
 from .metrics import bmeasure2
 from .ops import bs2uv, build_time_grid
 
+# region: scipy optimizations
 
-def relevance(ref, ests, metric="b30", debug=False):
+
+def kl_div(weights, distributions, target):
+    """
+    KL divergence objective function for scipy.optimize.
+
+    Args:
+        weights: Array of shape (num_distributions,) - mixing weights
+        distributions: Array of shape (num_distributions, distribution_dim) - input distributions
+        target: Array of shape (distribution_dim,) - target distribution
+
+    Returns:
+        KL divergence value (float)
+    """
+    # Combined distribution
+    combined = weights @ distributions
+
+    # Normalize distribution
+    combined += 1e-12  # add a small number to avoid log(p/q) where q is zero
+    target += 1e-12
+    combined /= np.sum(combined)
+    target /= np.sum(target)
+
+    # KL divergence: sum(p * log(p/q)) entropy takes care of p=0, it returns 0 for that bin.
+    kl_div = entropy(target, combined)
+
+    return kl_div
+
+
+def mse(weights, distributions, target):
+    # Combined distribution
+    combined = weights @ distributions
+
+    # Normalize distribution
+    combined /= np.sum(combined)
+    target /= np.sum(target)
+
+    return np.sum((combined - target) ** 2)
+
+
+def js_div(weights, distributions, target):
+    """
+    Jensen-Shannon Divergence (JSD) objective function.
+
+    Computes JSD(target || combined), where 'combined' is the
+    weighted mixture of the input 'distributions'.
+
+    Args:
+        weights: Array of shape (num_distributions,) - mixing weights
+        distributions: Array of shape (num_distributions, distribution_dim) - input distributions
+        target: Array of shape (distribution_dim,) - target distribution
+
+    Returns:
+        Jensen-Shannon Divergence value (float)
+    """
+
+    # Combined distribution
+    combined = weights @ distributions
+
+    # Normalize distribution
+    combined /= np.sum(combined)
+    target /= np.sum(target)
+
+    # Define the average distribution 'A'
+    # A = 0.5 * (P + M), where P is 'target'
+    avg_dist = 0.5 * (target + combined)
+
+    # Compute the two KL components
+    # D_KL(P || A)
+    kl_p_a = entropy(target, avg_dist)
+
+    # D_KL(M || A)
+    kl_m_a = entropy(combined, avg_dist)
+
+    # Compute the JSD
+    jsd = 0.5 * kl_p_a + 0.5 * kl_m_a
+
+    return jsd
+
+
+def scipy_optimize(target_distribution, distributions, verbose=False, obj_fn=kl_div):
+    """
+    Solve KL divergence minimization using scipy.optimize.
+
+    Args:
+        distributions: Array of shape (num_distributions, distribution_dim)
+         - input probability distributions
+        target_distribution: Array of shape (distribution_dim,)
+         - target distribution
+        verbose: Whether to print optimization details
+        obj_fn: Objective function to minimize (default: KL divergence)
+
+    Returns:
+        optimal_weights: Array of shape (num_distributions,) - optimal mixing weights
+        optimal_combined: Array of shape (distribution_dim,) - optimally combined distribution
+        optimal_kl: Float - optimal KL divergence value
+    """
+    num_distributions, dist_dim = distributions.shape
+
+    # Initial guess: uniform weights
+    initial_weights = np.ones(num_distributions) / num_distributions
+
+    # constrain the weights to sum to 1
+    constraints = [{"type": "eq", "fun": lambda w: np.sum(w) - 1}]
+
+    # Bounds: each weight between 0 and 1
+    bounds = [(0, 1) for _ in range(num_distributions)]
+
+    if verbose:
+        print(f"Number of distributions: {num_distributions}")
+        print(f"Distribution dimension: {dist_dim}")
+
+    # Solve optimization problem
+    result = minimize(
+        obj_fn,
+        initial_weights,
+        args=(distributions, target_distribution),
+        bounds=bounds,
+        constraints=constraints,
+        options={"disp": verbose, "maxiter": 1000},
+    )
+
+    if not result.success:
+        print(f"Optimization warning: {result.message}")
+
+    return result.x
+
+
+# endregion: scipy optimization
+
+
+# region: relevance functions
+
+
+def relevance_h2h(ref, ests, metric="b30", debug=False) -> pd.Series:
     # Get the relevance of each estimate with respect to the reference using metric
     # Metric can be "b30", "b05", "t", "l", "l-mono-lam", "l-mono-1layer"
     # Let's do the simple case of having existing metrics to compute relevance.
@@ -79,181 +213,43 @@ def relevance(ref, ests, metric="b30", debug=False):
     return pd.Series(rel, name=metric)
 
 
-def relevance_per_level(ref, ests, metric="bpc_combo", debug=False):
+def relevance_h2f(ref, est, metric="bpc", obj_fn=js_div) -> pd.Series:
     # Get the relevance of each estimate with respect to the reference using metric
-    # Metric can be "hr", "v", "bpc_combo", "lam_combo"
-    if metric == "bpc_combo":
-        # Setup est_bpcs and ref_bpc.
-        ref_bpc, ref_layer_ids, grid_times = ref.prominence_mat(bw=0.5)
+    # Metric can be "bpc", "lam"
+    # right now the gridtime is predefined: for bpc it's 0.1 second in build_time_grid
+    # for lam it's 0.5 second for lam
+    est = est.align(ref)
+    if len(est) == 0:
+        raise ValueError("No valid estimated layers found.")
 
-        est_bpcs = []
-        est_labels = []
-        for est_key in ests:
-            est_bpc, est_layer_ids, _ = (
-                ests[est_key].align(ref).prominence_mat(bw=0.5, grid_times=grid_times)
-            )
-            est_bpcs.extend(est_bpc)
-            est_labels.extend(est_layer_ids)
+    if metric == "bpc":
+        grid_times = build_time_grid(ref, 0.1)
+        ref_bpc = ref.prominence_mat(bw=0.5, grid_times=grid_times)[0]
+        est_bpcs = est.prominence_mat(bw=0.5, grid_times=grid_times)[0]
+        y = ref_bpc.mean(axis=0)
+        x = np.asarray(est_bpcs)
 
-        # Setup the objective function, the KL divergence between two BPCs
-        # quantized into PMF bins over time
-        if len(est_bpcs) == 0:
-            raise ValueError("No estimated boundaries found.")
-        return ref_bpc.mean(axis=0), np.asarray(est_bpcs), est_labels, grid_times
-    elif metric == "lam_combo":
-        # Setup est_lams and ref_lam.
-        # setup 0.5 second grid
+    elif metric == "lam":
         grid_times = build_time_grid(ref, 0.5)
         sample_points = bs2uv(grid_times)
         ref_lam_values = ref.expand_labels().lam(strategy="depth").sample(sample_points)
 
-        est_lam_values = []
-        est_labels = []
-        for est_key in ests:
-            est = ests[est_key].align(ref)
-            for layer in est:
-                est_lam_values.append(layer.lam_pdf.sample(sample_points))
-                est_labels.append(est.name + ":" + layer.name)
-        return ref_lam_values.astype(float), np.asarray(est_lam_values), est_labels, grid_times
-    elif metric == "v":
-        pass
-    elif metric == "hr":
-        pass
+        est_lam_values = [layer.lam_pdf.sample(sample_points) for layer in est]
+        y = ref_lam_values.mean(axis=0)
+        x = np.asarray(est_lam_values)
     else:
         raise ValueError(f"Metric {metric} not recognized.")
-    return None
+
+    # run scipy optimize
+    weights = scipy_optimize(y, x, obj_fn=obj_fn)
+    return pd.Series(weights, index=est.layer_names, name=metric)
 
 
-def kl_div(weights, distributions, target):
+def relevance_f2f(ref, ests, metric="hr") -> pd.Series:
     """
-    KL divergence objective function for scipy.optimize.
-
-    Args:
-        weights: Array of shape (num_distributions,) - mixing weights
-        distributions: Array of shape (num_distributions, distribution_dim) - input distributions
-        target: Array of shape (distribution_dim,) - target distribution
-
-    Returns:
-        KL divergence value (float)
+    metric can be "hr05", "hr15", "hr30", "v", "pfc"
     """
-    # Combined distribution
-    combined = weights @ distributions
-
-    # Normalize distribution
-    combined += 1e-12
-    target += 1e-12
-    combined /= np.sum(combined)
-    target /= np.sum(target)
-
-    # KL divergence: sum(p * log(p/q))
-    kl_div = entropy(target, combined)
-
-    return kl_div
+    pass
 
 
-def mse(weights, distributions, target):
-    # Combined distribution
-    combined = weights @ distributions
-
-    # Normalize distribution
-    combined /= np.sum(combined)
-    target /= np.sum(target)
-
-    return np.sum((combined - target) ** 2)
-
-
-def js_div(weights, distributions, target):
-    """
-    Jensen-Shannon Divergence (JSD) objective function.
-
-    Computes JSD(target || combined), where 'combined' is the
-    weighted mixture of the input 'distributions'.
-
-    Args:
-        weights: Array of shape (num_distributions,) - mixing weights
-        distributions: Array of shape (num_distributions, distribution_dim) - input distributions
-        target: Array of shape (distribution_dim,) - target distribution
-
-    Returns:
-        Jensen-Shannon Divergence value (float)
-    """
-
-    # Combined distribution
-    combined = weights @ distributions
-
-    # Normalize distribution
-    combined /= np.sum(combined)
-    target /= np.sum(target)
-
-    # Define the average distribution 'A'
-    # A = 0.5 * (P + M), where P is 'target'
-    avg_dist = 0.5 * (target + combined)
-
-    # Compute the two KL components
-    # D_KL(P || A)
-    kl_p_a = entropy(target, avg_dist)
-
-    # D_KL(M || A)
-    kl_m_a = entropy(combined, avg_dist)
-
-    # Compute the JSD
-    jsd = 0.5 * kl_p_a + 0.5 * kl_m_a
-
-    return jsd
-
-
-def scipy_optimize(target_distribution, distributions, verbose=True, obj_fn=kl_div):
-    """
-    Solve KL divergence minimization using scipy.optimize.
-
-    Args:
-        distributions: Array of shape (num_distributions, distribution_dim)
-         - input probability distributions
-        target_distribution: Array of shape (distribution_dim,)
-         - target distribution
-        verbose: Whether to print optimization details
-        obj_fn: Objective function to minimize (default: KL divergence)
-
-    Returns:
-        optimal_weights: Array of shape (num_distributions,) - optimal mixing weights
-        optimal_combined: Array of shape (distribution_dim,) - optimally combined distribution
-        optimal_kl: Float - optimal KL divergence value
-    """
-    num_distributions, dist_dim = distributions.shape
-
-    # Initial guess: uniform weights
-    initial_weights = np.ones(num_distributions) / num_distributions
-
-    # Define constraints for scipy
-    constraints = [
-        # Sum of weights = 1
-        {"type": "eq", "fun": lambda w: np.sum(w) - 1},
-    ]
-
-    # Bounds: each weight between 0 and 1
-    bounds = [(0, 1) for _ in range(num_distributions)]
-
-    if verbose:
-        print(f"Number of distributions: {num_distributions}")
-        print(f"Distribution dimension: {dist_dim}")
-
-    # Solve optimization problem
-    result = minimize(
-        obj_fn,
-        initial_weights,
-        args=(distributions, target_distribution),
-        bounds=bounds,
-        constraints=constraints,
-        options={"disp": verbose, "maxiter": 1000},
-    )
-
-    if not result.success:
-        print(f"Optimization warning: {result.message}")
-
-    # Combined distribution
-    optimal_combined = result.x @ distributions
-
-    # KL/JS divergence
-    optimal_div = obj_fn(result.x, distributions, target_distribution)
-
-    return result.x, optimal_combined, optimal_div
+# endregion: relevance functions

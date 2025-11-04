@@ -44,11 +44,13 @@ __all__ = [
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Any
 
 import frameless_eval as fle
 import mir_eval
 import numpy as np
+import pandas as pd
 import scipy.signal
 from mir_eval.hierarchy import _round
 from sklearn.cluster import MeanShift
@@ -146,18 +148,24 @@ class SalByDepth(SalienceStrategy):
 class SalByProb(SalienceStrategy):
     """Salience weighted by layer density."""
 
+    def __init__(self, w: pd.Series | None = None) -> None:
+        self.layer_w = w
+
     def __call__(self, ms: MultiSegment) -> BoundaryContour:
         """
         In layers with less boundaries, they are more important.
         This is because they are intrinsically in a higher level and more salient.
         """
+        if self.layer_w is None:
+            uniform_weights = np.ones(len(ms.layers)) / len(ms.layers)
+            self.layer_w = pd.Series(index=ms.layer_names, data=uniform_weights)
         time_saliences: defaultdict[float, float] = defaultdict(float)
         for layer in ms.layers:
-            if len(layer.bs) > 2:
+            if len(layer.bs) > 2 and self.layer_w[layer.name] > 0:
                 # Weight is inversely proportional to the number of effective boundaries.
                 weight = 1.0 / len(layer.bs[1:-1])
                 for boundary in layer.bs:
-                    time_saliences[boundary.time] += weight
+                    time_saliences[boundary.time] += weight * self.layer_w[layer.name]
         # manually add in the first and last boundaries, matching the highest probability
         if len(time_saliences) == 0:
             max_prob = 1.0
@@ -385,9 +393,9 @@ class LamByCount(LabelAgreementStrategy):
 class LamByProb(LabelAgreementStrategy):
     """Combining label agreement maps of a hierarchy using lam prob density."""
 
-    def __init__(self, w: np.ndarray | None = None):
-        self.w = w / np.sum(w) * len(w) if w is not None else None
-        # print(self.w)
+    def __init__(self, w: pd.Series | None = None):
+        # We are multiplying by len(w) because we are doing np.mean later
+        self.w = w / (w.sum() + 1e-10) * len(w) if w is not None else None
 
     def __call__(self, ms: MultiSegment) -> LabelAgreementMap:
         grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])
@@ -411,7 +419,7 @@ class LamByProb(LabelAgreementStrategy):
 
         # weighted combination
         if self.w is not None:
-            level_lam_pdfs = level_lam_pdfs * self.w[:, None, None]
+            level_lam_pdfs = level_lam_pdfs * self.w.values[:, None, None]
         return LabelAgreementMap(bs=boundaries, mat=np.mean(level_lam_pdfs, axis=0))
 
 
@@ -596,3 +604,22 @@ def build_time_grid(span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
         (_round(span.end.time, frame_size) - _round(span.start.time, frame_size)) / frame_size
     )
     return np.arange(n_frames + 1) * frame_size + span.start.time
+
+
+def combine_ms(
+    named_ms: dict[str, MultiSegment], new_name: str = "combined", prune=True, reorder=False
+) -> MultiSegment:
+    """
+    Combined multiple MS in a single MS, and rename the layers to include the name of the old MS.
+    """
+    layers = []
+    for name, old_ms in named_ms.items():
+        for old_layer in old_ms:
+            layers.append(replace(old_layer, name=name + ":" + old_layer.name))
+
+    if reorder:
+        layers = sorted(layers, key=lambda layer: len(layer))
+    new_ms = MultiSegment(layers, name=new_name)
+    if prune:
+        return new_ms.prune_layers(relabel=False)
+    return new_ms
