@@ -231,7 +231,9 @@ class CleanByKDE(CleanStrategy):
         return log_density
 
     @staticmethod
-    def bpc2bs(bpc: np.ndarray, grid_times: np.ndarray) -> list[RatedBoundary]:
+    def bpc2bs(
+        bpc: np.ndarray, grid_times: np.ndarray, start_time: float, end_time: float
+    ) -> list[RatedBoundary]:
         peak_indices = scipy.signal.find_peaks(bpc)[0]
         peak_times = grid_times.flatten()[peak_indices]
         peak_saliences = bpc[peak_indices]
@@ -240,9 +242,9 @@ class CleanByKDE(CleanStrategy):
         ]
         max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 1
         final_boundaries = [
-            RatedBoundary(grid_times[0], max_salience),
+            RatedBoundary(start_time, max_salience),
             *inner_boundaries,
-            RatedBoundary(grid_times[-1], max_salience),
+            RatedBoundary(end_time, max_salience),
         ]
         return sorted(final_boundaries)
 
@@ -252,7 +254,7 @@ class CleanByKDE(CleanStrategy):
 
         grid_times = build_time_grid(bc, frame_size=0.1)
         log_density = self.log_density(bc, grid_times)
-        boundaries = self.bpc2bs(np.exp(log_density), grid_times)
+        boundaries = self.bpc2bs(np.exp(log_density), grid_times, bc.start.time, bc.end.time)
         return BoundaryContour(name=bc.name or "Cleaned Contour", bs=boundaries)
 
 
@@ -478,9 +480,9 @@ class LabelByClosestSingleLayer(LabelingStrategy):
                     self.reference_ms.layers,
                     key=lambda ref_layer: fle.vmeasure(
                         ref_layer.itvls,
-                        np.arange(len(ref_layer)).astype(str),
+                        np.arange(len(ref_layer)).astype(str).tolist(),
                         layer.itvls,
-                        np.arange(len(layer)).astype(str),
+                        np.arange(len(layer)).astype(str).tolist(),
                     )[2],
                 )
             ref_layers_used.append(best_ref_layer)

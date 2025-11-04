@@ -817,9 +817,12 @@ class LabelAgreementMap(AgreementMatrix):
         for layer in bh.to_ms():
             aff = self.to_sap(layer.btimes).to_aff(aff_mode)
             current_k = aff.pick_k(min_k=current_k)
-            # print(current_k)
             lab = aff.scluster(k=current_k)
             current_k += min_k_inc
+            # DEBUG prints
+            # print(current_k)
+            # aff.plot()
+            # print(layer.btimes, lab, aff.bs)
             new_layers.append(Segment(bs=layer.bs, raw_labs=lab))
         return MultiSegment(raw_layers=new_layers, name=bh.name).relabel()
 
