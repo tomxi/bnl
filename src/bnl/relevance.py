@@ -1,6 +1,7 @@
 import frameless_eval as fle
 import numpy as np
 import pandas as pd
+from mir_eval.segment import detection as me_hr
 from scipy.optimize import minimize
 from scipy.stats import entropy
 
@@ -142,7 +143,7 @@ def scipy_optimize(target_distribution, distributions, verbose=False, obj_fn=kl_
 # region: relevance functions
 
 
-def relevance_h2h(ref, ests, metric="b30", debug=False) -> pd.Series:
+def relevance_h2h(ref, ests, metric="b15", debug=False) -> pd.Series:
     # Get the relevance of each estimate with respect to the reference using metric
     # Metric can be "b30", "b05", "t", "l", "l-mono-lam", "l-mono-1layer"
     # Let's do the simple case of having existing metrics to compute relevance.
@@ -245,11 +246,33 @@ def relevance_h2f(ref, est, metric="bpc", obj_fn=js_div) -> pd.Series:
     return pd.Series(weights, index=est.layer_names, name=metric)
 
 
-def relevance_f2f(ref, ests, metric="hr") -> pd.Series:
+def relevance_f2f(ref, est, metric="hr15") -> pd.Series:
     """
     metric can be "hr05", "hr15", "hr30", "v", "pfc"
     """
-    pass
+    rel = dict()
+    est = est.align(ref)
+    if metric[:2] == "hr":
+        try:
+            window = int(metric[2:]) * 0.1
+        except ValueError as e:
+            raise ValueError(f"{metric} has invalid window string.") from e
+        for est_layer in est:
+            # record the relevance of each layer with respect to the reference
+            rel[est_layer.name] = me_hr(ref.itvls, est_layer.itvls, window=window)[2]
+    elif metric == "v":
+        for est_layer in est:
+            rel[est_layer.name] = fle.vmeasure(
+                ref.itvls, ref.labels, est_layer.itvls, est_layer.labels
+            )[2]
+    elif metric == "pfc":
+        for est_layer in est:
+            rel[est_layer.name] = fle.pairwise(
+                ref.itvls, ref.labels, est_layer.itvls, est_layer.labels
+            )[2]
+    else:
+        raise ValueError(f"Metric {metric} not recognized.")
+    return pd.Series(rel, name=metric)
 
 
 # endregion: relevance functions
