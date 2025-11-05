@@ -226,43 +226,17 @@ class CleanByAbsorb(CleanStrategy):
 class CleanByKDE(CleanStrategy):
     """Clean boundaries by finding peaks in a weighted kernel density estimate."""
 
-    def __init__(self, bw: float = 0.5):
-        self.time_kde = KernelDensity(kernel="gaussian", bandwidth=bw)
-
-    def log_density(self, bc: BoundaryContour, grid_times: np.ndarray) -> np.ndarray:
-        inner_boundaries = bc.bs[1:-1]
-        times = np.array([b.time for b in inner_boundaries])
-        saliences = np.array([b.salience for b in inner_boundaries])
-
-        self.time_kde.fit(times.reshape(-1, 1), sample_weight=saliences)
-        log_density = self.time_kde.score_samples(grid_times.reshape(-1, 1))
-        return log_density
-
-    @staticmethod
-    def bpc2bs(
-        bpc: np.ndarray, grid_times: np.ndarray, start_time: float, end_time: float
-    ) -> list[RatedBoundary]:
-        peak_indices = scipy.signal.find_peaks(bpc)[0]
-        peak_times = grid_times.flatten()[peak_indices]
-        peak_saliences = bpc[peak_indices]
-        inner_boundaries = [
-            RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)
-        ]
-        max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 1
-        final_boundaries = [
-            RatedBoundary(start_time, max_salience),
-            *inner_boundaries,
-            RatedBoundary(end_time, max_salience),
-        ]
-        return sorted(final_boundaries)
+    def __init__(self, bw: float = 0.5, frame_size: float = 0.1) -> None:
+        self.bw = bw
+        self.frame_size = frame_size
 
     def __call__(self, bc: BoundaryContour) -> BoundaryContour:
-        if len(bc.bs) < 4:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
+        if len(bc.bs) <= 3:  # if only 3 boundaries (1 start, 1 end, 1 inner), just return
             return bc
 
-        grid_times = build_time_grid(bc, frame_size=0.1)
-        log_density = self.log_density(bc, grid_times)
-        boundaries = self.bpc2bs(np.exp(log_density), grid_times, bc.start.time, bc.end.time)
+        grid_times = build_time_grid(bc, frame_size=self.frame_size)
+        bpc = bc.bpc(bw=self.bw, time_grid=grid_times)
+        boundaries = bpc2bs(bpc, bc.start.time, bc.end.time)
         return BoundaryContour(name=bc.name or "Cleaned Contour", bs=boundaries)
 
 
@@ -609,6 +583,22 @@ def build_time_grid(span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
     if ts[-1] != span.end.time:
         ts = np.append(ts, span.end.time)
     return ts
+
+
+def bpc2bs(bpc: pd.Series, start_time: float, end_time: float) -> list[RatedBoundary]:
+    peak_indices = scipy.signal.find_peaks(bpc)[0]
+    peak_times = bpc.index[peak_indices]
+    peak_saliences = bpc.iloc[peak_indices]
+    inner_boundaries = [
+        RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)
+    ]
+    max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 1
+    final_boundaries = [
+        RatedBoundary(start_time, max_salience),
+        *inner_boundaries,
+        RatedBoundary(end_time, max_salience),
+    ]
+    return sorted(final_boundaries)
 
 
 def combine_ms(
