@@ -54,7 +54,6 @@ import pandas as pd
 import scipy.signal
 from mir_eval.hierarchy import _round
 from sklearn.cluster import MeanShift
-from sklearn.neighbors import KernelDensity
 
 from .core import (
     Boundary,
@@ -294,7 +293,11 @@ class LevelByMeanShift(LevelStrategy):
     Use mean shift clustering to find peaks in the salience values and clusters them into levels.
     """
 
-    def __init__(self, bw: float = 0.15):
+    def __init__(self, bw: float = 1 / 3, log: bool = True):
+        self.log = log
+        if log:
+            bw = -np.log(1 - bw)
+            print(bw)
         self.sal_ms = MeanShift(bandwidth=bw)
 
     def __call__(self, bc: BoundaryContour) -> BoundaryHierarchy:
@@ -303,8 +306,16 @@ class LevelByMeanShift(LevelStrategy):
 
         inner_boundaries = bc.bs[1:-1]
         saliences = np.array([b.salience for b in inner_boundaries])
-        normalized_saliences = saliences / saliences.max()
-        self.sal_ms.fit(normalized_saliences.reshape(-1, 1))
+        if self.log:
+            saliences = np.log(saliences)
+        else:
+            saliences /= saliences.max()
+        if True:
+            import matplotlib.pyplot as plt
+
+            plt.stem(saliences)
+            plt.show()
+        self.sal_ms.fit(saliences.reshape(-1, 1))
         quantized_salience = self.sal_ms.cluster_centers_.flatten()[self.sal_ms.labels_]
         inner_boundaries = [
             RatedBoundary(time=b.time, salience=s)
