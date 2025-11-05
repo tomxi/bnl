@@ -7,7 +7,7 @@ from scipy.stats import entropy
 
 from .core import MultiSegment
 from .metrics import bmeasure2
-from .ops import bs2uv, build_time_grid
+from .ops import bs2uv, build_time_grid, combine_ms
 
 # region: scipy optimizations
 
@@ -25,7 +25,7 @@ def kl_div(weights, distributions, target):
         KL divergence value (float)
     """
     # Combined distribution
-    combined = weights @ distributions
+    combined = distributions @ weights
 
     # Normalize distribution
     combined += 1e-12  # add a small number to avoid log(p/q) where q is zero
@@ -41,7 +41,7 @@ def kl_div(weights, distributions, target):
 
 def mse(weights, distributions, target):
     # Combined distribution
-    combined = weights @ distributions
+    combined = distributions @ weights
 
     # Normalize distribution
     combined /= np.sum(combined)
@@ -67,7 +67,7 @@ def js_div(weights, distributions, target):
     """
 
     # Combined distribution
-    combined = weights @ distributions
+    combined = distributions @ weights
 
     # Normalize distribution
     combined /= np.sum(combined)
@@ -95,7 +95,7 @@ def scipy_optimize(target_distribution, distributions, verbose=False, obj_fn=kl_
     Solve KL divergence minimization using scipy.optimize.
 
     Args:
-        distributions: Array of shape (num_distributions, distribution_dim)
+        distributions: Array of shape (distribution_dim, num_distributions)
          - input probability distributions
         target_distribution: Array of shape (distribution_dim,)
          - target distribution
@@ -107,7 +107,7 @@ def scipy_optimize(target_distribution, distributions, verbose=False, obj_fn=kl_
         optimal_combined: Array of shape (distribution_dim,) - optimally combined distribution
         optimal_kl: Float - optimal KL divergence value
     """
-    num_distributions, dist_dim = distributions.shape
+    dist_dim, num_distributions = distributions.shape
 
     # Initial guess: uniform weights
     initial_weights = np.ones(num_distributions) / num_distributions
@@ -144,75 +144,48 @@ def scipy_optimize(target_distribution, distributions, verbose=False, obj_fn=kl_
 # region: relevance functions
 
 
-def relevance_h2h(ref, ests, metric="b15", debug=False) -> pd.Series:
+def relevance_h2h(ref, ests, metric="b15") -> pd.Series:
     # Get the relevance of each estimate with respect to the reference using metric
-    # Metric can be "b30", "b05", "t", "l", "l-mono-lam", "l-mono-1layer"
+    # Metric can be "b30", "b05", "t", "l", "l-exp"
+    # Monocasting and label decoding should be done before hand.
     # Let's do the simple case of having existing metrics to compute relevance.
-    rel = dict()
 
-    # For B-measure and T-measure, we need to make sure that they are monotonic boundaries.
+    # h2h should check for boundary monotonicity. and raise error if not monotonic.
+    if not ref.has_monotonic_bs():
+        raise ValueError("Reference must have monotonic boundaries.")
+    for est in ests.values():
+        if not est.has_monotonic_bs():
+            raise ValueError("Estimates must all have monotonic boundaries.")
+
+    rel = pd.Series(index=ests.keys(), dtype=float, name=metric)
+
+    # For B-measure and T-measure, we use bc objects.
     if metric[0] == "b":
+        window = int(metric[1:]) * 0.1
         ref_bc = ref.contour("depth").level("unique")
-        if debug:
-            ref_bc.plot().show()
         for key, est in ests.items():
-            est_bc = (
-                est.align(ref).contour("prob").clean("kde", bw=0.5).level("mean_shift", bw=0.15)
-            )
-            window = int(metric[1:]) * 0.1
+            est_bc = est.align(ref).contour("depth").level("unique")
             rel[key] = bmeasure2(ref_bc, est_bc, window=window)[2]  # Take the f-score
-            if debug:
-                est_bc.plot().show()
 
-    # For L-measure, we need expanded labeling... and no monotonicity requirement for now.
-    elif metric == "l":
-        ref = ref.expand_labels()
-        if debug:
-            ref.plot().show()
+    # For L-measure, check if we want to do hierarchy label expansion.
+    elif metric[0] == "l":
+        if metric == "l-exp":
+            ref = ref.expand_labels()
         for key, est in ests.items():
-            est = est.align(ref)
-            if debug:
-                est.plot().show()
+            if metric == "l-exp":
+                est = est.align(ref).expand_labels()
             rel[key] = fle.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)[2]
 
-    # L-measure on monotonicity casted and label decoding.
-    elif metric[:6] == "l-mono":
-        ref = ref.expand_labels()
-        if debug:
-            ref.plot().show()
-        for key, est in ests.items():
-            est = est.align(ref)
-            labeling_strat = metric[7:]
-            mono_est = (
-                est.contour("prob")
-                .clean("kde", bw=0.5)
-                .level("mean_shift", bw=0.15)
-                .to_ms(strategy=labeling_strat, ref_ms=est)
-            )
-            if debug:
-                mono_est.plot().show()
-            rel[key] = fle.lmeasure(ref.itvls, ref.labels, mono_est.itvls, mono_est.labels)[2]
-
-    # For T-measure, we need unique leveling, and monotonic casting.
+    # For T-measure, let's do L-measure with unique labeling.
     elif metric == "t":
-        ref_ms = ref.contour("depth").level("unique").to_ms()
-        if debug:
-            ref_ms.plot().show()
+        ref = ref.scrub_labels(None)
         for key, est in ests.items():
-            est_ms = (
-                est.align(ref)
-                .contour("prob")
-                .clean("kde", bw=0.5)
-                .level("mean_shift", bw=0.15)
-                .to_ms()
-            )
-            rel[key] = fle.lmeasure(ref_ms.itvls, ref_ms.labels, est_ms.itvls, est_ms.labels)[2]
-            if debug:
-                est_ms.plot().show()
+            est = est.align(ref).scrub_labels(None)
+            rel[key] = fle.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)[2]
 
     else:
         raise ValueError(f"Metric {metric} not recognized.")
-    return pd.Series(rel, name=metric)
+    return rel
 
 
 def relevance_h2f(ref, est, metric="bpc", obj_fn=js_div) -> pd.Series:
@@ -220,39 +193,45 @@ def relevance_h2f(ref, est, metric="bpc", obj_fn=js_div) -> pd.Series:
     # Metric can be "bpc", "lam"
     # right now the gridtime is predefined: for bpc it's 0.1 second in build_time_grid
     # for lam it's 0.5 second for lam
-    est = est.align(ref)
-    if len(est) == 0:
-        raise ValueError("No valid estimated layers found.")
 
     if metric == "bpc":
-        grid_times = build_time_grid(ref, 0.1)
-        ref_bpc = ref.prominence_mat(bw=0.5, grid_times=grid_times)[0]
-        est_bpcs = est.prominence_mat(bw=0.5, grid_times=grid_times)[0]
-        y = ref_bpc.mean(axis=0)
-        x = np.asarray(est_bpcs)
+        # pick a sampling rate that gives me about less than 20k points, and no finer than 0.1 secs
+        frame_size = max(0.1, ref.duration / 20000)
+        # print(f"Using frame size: {frame_size}")
+        time_grid = build_time_grid(ref, frame_size)
+        y = ref.contour("prob").bpc(bw=0.5, time_grid=time_grid)
+
+        est = est.align(ref)
+        if len(est) == 0:
+            raise ValueError("No valid estimated layers found.")
+        x = est.bpcs(bw=0.5, time_grid=time_grid)
 
     elif metric == "lam":
-        grid_times = build_time_grid(ref, 0.5)
-        sample_points = bs2uv(grid_times)
+        # pick a sampling rate that gives me about 20k points
+        frame_size = max(0.1, ref.duration / 200)
+        # print(f"Using frame size: {frame_size}")
+        time_grid = build_time_grid(ref, frame_size)
+        sample_points = bs2uv(time_grid)
+        # should I use depth or prob for ref lam?
         ref_lam_values = ref.expand_labels().lam(strategy="depth").sample(sample_points)
 
-        est_lam_values = [layer.lam_pdf.sample(sample_points) for layer in est]
-        y = ref_lam_values.mean(axis=0)
-        x = np.asarray(est_lam_values)
+        est_lams = {layer.name: layer.lam_pdf.sample(sample_points) for layer in est.align(ref)}
+        y = pd.Series(ref_lam_values, index=sample_points.T.tolist())
+        x = pd.DataFrame(est_lams, index=sample_points.T.tolist())
     else:
         raise ValueError(f"Metric {metric} not recognized.")
 
     # run scipy optimize
     weights = scipy_optimize(y, x, obj_fn=obj_fn)
-    return pd.Series(weights, index=est.layer_names, name=metric)
+    return pd.Series(weights, index=x.columns, name=metric)
 
 
-def relevance_f2f(ref, est, metric="hr15") -> pd.Series:
+def relevance_f2f(ref_layer, est, metric="hr15") -> pd.Series:
     """
     metric can be "hr05", "hr15", "hr30", "v", "pfc"
     """
-    rel = dict()
-    est = est.align(ref)
+    rel = pd.Series(index=est.layer_names, dtype=float, name=metric)
+    est = est.align(ref_layer)
     if metric[:2] == "hr":
         try:
             window = int(metric[2:]) * 0.1
@@ -260,20 +239,20 @@ def relevance_f2f(ref, est, metric="hr15") -> pd.Series:
             raise ValueError(f"{metric} has invalid window string.") from e
         for est_layer in est:
             # record the relevance of each layer with respect to the reference
-            rel[est_layer.name] = me_hr(ref.itvls, est_layer.itvls, window=window)[2]
+            rel[est_layer.name] = me_hr(ref_layer.itvls, est_layer.itvls, window=window)[2]
     elif metric == "v":
         for est_layer in est:
             rel[est_layer.name] = fle.vmeasure(
-                ref.itvls, ref.labels, est_layer.itvls, est_layer.labels
+                ref_layer.itvls, ref_layer.labels, est_layer.itvls, est_layer.labels
             )[2]
     elif metric == "pfc":
         for est_layer in est:
             rel[est_layer.name] = fle.pairwise(
-                ref.itvls, ref.labels, est_layer.itvls, est_layer.labels
+                ref_layer.itvls, ref_layer.labels, est_layer.itvls, est_layer.labels
             )[2]
     else:
         raise ValueError(f"Metric {metric} not recognized.")
-    return pd.Series(rel, name=metric)
+    return rel
 
 
 # endregion: relevance functions
@@ -299,9 +278,13 @@ def comp_diag_h2h(
     return df
 
 
-def comp_diag_h2f(refs: dict[str, MultiSegment], est: MultiSegment, metric="bpc") -> pd.DataFrame:
+def comp_diag_h2f(
+    refs: dict[str, MultiSegment], ests: dict[str, MultiSegment], metric="bpc"
+) -> pd.DataFrame:
     rels = []
+
     for name, ref in refs.items():
+        est = combine_ms(ests, ignore_names=(name))
         r = relevance_h2f(ref, est, metric=metric)
         r.name = name
         rels.append(r)

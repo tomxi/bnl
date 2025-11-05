@@ -603,19 +603,29 @@ def build_time_grid(span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
     n_frames = int(
         (_round(span.end.time, frame_size) - _round(span.start.time, frame_size)) / frame_size
     )
-    return np.arange(n_frames + 1) * frame_size + span.start.time
+
+    # preserve the start and end times. round always rounds down.
+    ts = np.arange(n_frames + 1) * frame_size + span.start.time
+    if ts[-1] != span.end.time:
+        ts = np.append(ts, span.end.time)
+    return ts
 
 
 def combine_ms(
-    named_ms: dict[str, MultiSegment], new_name: str = "combined", prune=True, reorder=False
+    named_ms: dict[str, MultiSegment],
+    new_name: str = "combined",
+    prune=True,
+    reorder=False,
+    ignore_names=(),
 ) -> MultiSegment:
     """
     Combined multiple MS in a single MS, and rename the layers to include the name of the old MS.
     """
     layers = []
     for name, old_ms in named_ms.items():
-        for old_layer in old_ms:
-            layers.append(replace(old_layer, name=name + ":" + old_layer.name))
+        if name not in ignore_names:
+            for old_layer in old_ms:
+                layers.append(replace(old_layer, name=name + ":" + old_layer.name))
 
     if reorder:
         layers = sorted(layers, key=lambda layer: len(layer))

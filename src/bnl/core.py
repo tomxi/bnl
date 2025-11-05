@@ -28,8 +28,11 @@ from typing import Any
 
 import jams
 import numpy as np
+import pandas as pd
 import plotly.graph_objects as go
 from sklearn.metrics.pairwise import cosine_similarity
+
+from . import ops
 
 # region: Boundary Objects
 
@@ -430,7 +433,6 @@ class MultiSegment(TimeSpan):
 
     def contour(self, strategy: str = "depth", **kwargs: Any) -> BoundaryContour:
         """Calculates boundary salience and converts to a BoundaryContour."""
-        from . import ops
 
         if strategy not in ops.SalienceStrategy._registry:
             raise ValueError(f"Unknown salience strategy: {strategy}")
@@ -538,8 +540,6 @@ class MultiSegment(TimeSpan):
         return self.lam(strategy="depth", mono=False)
 
     def lam(self, strategy: str = "depth", **kwargs: Any) -> LabelAgreementMap:
-        from . import ops
-
         if strategy not in ops.LabelAgreementStrategy._registry:
             raise ValueError(f"Unknown label agreement strategy: {strategy}")
 
@@ -597,25 +597,25 @@ class MultiSegment(TimeSpan):
             expanded_layers.extend(layer.expand_labels().layers)
         return MultiSegment(raw_layers=expanded_layers, name=self.name).prune_layers()
 
-    def prominence_mat(self, bw=0.8, grid_times=None):
-        """
-        Returns a matrix of prominences for each layer. layer x time.
-        """
-        from . import ops
+    def bpcs(self, bw=0.5, time_grid=None) -> pd.DataFrame:
+        if time_grid is None:
+            time_grid = ops.build_time_grid(self, 0.1)
+        return pd.concat(
+            [layer.contour(normalize=True).bpc(bw=bw, time_grid=time_grid) for layer in self],
+            axis=1,
+        )
 
-        if grid_times is None:
-            grid_times = ops.build_time_grid(self)
-        prominences = []
-        for layer in self:
-            if len(layer.btimes) > 2:
-                # Ignore empty layers when btimes <= 2
-                prominences.append(
-                    layer.contour(normalize=True).prominence(bw=bw, grid_times=grid_times)[0]
-                )
-            else:
-                # add uniform prominence for empty layers
-                prominences.append(np.ones(len(grid_times)) / len(grid_times))
-        return np.asarray(prominences), grid_times
+    def has_monotonic_bs(self) -> bool:
+        coarser_layer = self[0]
+
+        for finer_layer in self[1:]:
+            # check if all btimes in coarser_layer are in finer_layer
+            # if not, return false
+            if not all(b in finer_layer.btimes for b in coarser_layer.btimes):
+                return False
+            # move down 1 layer
+            coarser_layer = finer_layer
+        return True
 
 
 # endregion: MultiSegment
@@ -679,7 +679,6 @@ class BoundaryContour(TimeSpan):
         Returns:
             BoundaryContour: A new, cleaned BoundaryContour.
         """
-        from . import ops
 
         if strategy not in ops.CleanStrategy._registry:
             raise ValueError(f"Unknown boundary cleaning strategy: {strategy}")
@@ -694,7 +693,6 @@ class BoundaryContour(TimeSpan):
         """
         Converts the BoundaryContour to a BoundaryHierarchy by quantizing salience.
         """
-        from . import ops
 
         if strategy not in ops.LevelStrategy._registry:
             raise ValueError(f"Unknown boundary level strategy: {strategy}")
@@ -704,17 +702,27 @@ class BoundaryContour(TimeSpan):
 
         return level_strategy(self)
 
-    def prominence(self, bw=0.8, grid_times=None, normalize=True) -> np.ndarray:
-        from . import ops
+    def bpc(self, bw=0.5, time_grid=None, pmf=False) -> pd.Series:
+        from sklearn.neighbors import KernelDensity
 
-        kde_strat = ops.CleanByKDE(bw=bw)
-        if grid_times is None:
-            grid_times = ops.build_time_grid(self)
-        log_density = kde_strat.log_density(self, grid_times=grid_times)
-        p = np.exp(log_density)
-        if normalize:
-            p /= p.sum() + 1e-10
-        return p, grid_times
+        if time_grid is None:
+            time_grid = ops.build_time_grid(self, 0.1)
+        # get a Kernel Density Object and the log_density
+        kde = KernelDensity(kernel="gaussian", bandwidth=bw)
+
+        effective_bs = self.bs[1:-1]
+        if len(effective_bs) == 0:
+            p = np.ones_like(time_grid) / self.duration
+        else:
+            times = np.array([b.time for b in effective_bs])
+            saliences = np.array([b.salience for b in effective_bs])
+            kde.fit(times.reshape(-1, 1), sample_weight=saliences)
+            log_density = kde.score_samples(time_grid.reshape(-1, 1))
+            p = np.exp(log_density)
+
+        if pmf:
+            p /= p.sum()
+        return pd.Series(p, index=time_grid, name=self.name)
 
 
 @dataclass(frozen=True)
@@ -748,8 +756,6 @@ class BoundaryHierarchy(BoundaryContour):
         Returns:
             MultiSegment: The resulting MultiSegment object.
         """
-        from . import ops
-
         if strategy not in ops.LabelingStrategy._registry:
             raise ValueError(f"Unknown labeling strategy: {strategy}")
 
