@@ -35,7 +35,7 @@ from .core import (
 )
 
 # Surface data loading conveniences at the top level as well
-from .data import Dataset, Track
+from .data import SalamiDataset, SpamDataset, Track
 
 
 # --- Define the public-facing API of the `bnl` package ---
@@ -56,7 +56,8 @@ __all__ = [
     "SAP",
     "SAM",
     # Data access
-    "Dataset",
+    "SalamiDataset",
+    "SpamDataset",
     "Track",
     # Submodules (toolboxes)
     "data",

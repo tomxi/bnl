@@ -32,8 +32,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from sklearn.metrics.pairwise import cosine_similarity
 
-from . import ops
-
 # region: Boundary Objects
 
 
@@ -433,6 +431,7 @@ class MultiSegment(TimeSpan):
 
     def contour(self, strategy: str = "depth", **kwargs: Any) -> BoundaryContour:
         """Calculates boundary salience and converts to a BoundaryContour."""
+        from . import ops
 
         if strategy not in ops.SalienceStrategy._registry:
             raise ValueError(f"Unknown salience strategy: {strategy}")
@@ -540,6 +539,8 @@ class MultiSegment(TimeSpan):
         return self.lam(strategy="depth", mono=False)
 
     def lam(self, strategy: str = "depth", **kwargs: Any) -> LabelAgreementMap:
+        from . import ops
+
         if strategy not in ops.LabelAgreementStrategy._registry:
             raise ValueError(f"Unknown label agreement strategy: {strategy}")
 
@@ -598,6 +599,8 @@ class MultiSegment(TimeSpan):
         return MultiSegment(raw_layers=expanded_layers, name=self.name).prune_layers()
 
     def bpcs(self, bw=0.5, time_grid=None) -> pd.DataFrame:
+        from . import ops
+
         if time_grid is None:
             time_grid = ops.build_time_grid(self, 0.1)
         return pd.concat(
@@ -679,6 +682,7 @@ class BoundaryContour(TimeSpan):
         Returns:
             BoundaryContour: A new, cleaned BoundaryContour.
         """
+        from . import ops
 
         if strategy not in ops.CleanStrategy._registry:
             raise ValueError(f"Unknown boundary cleaning strategy: {strategy}")
@@ -694,6 +698,8 @@ class BoundaryContour(TimeSpan):
         Converts the BoundaryContour to a BoundaryHierarchy by quantizing salience.
         """
 
+        from . import ops
+
         if strategy not in ops.LevelStrategy._registry:
             raise ValueError(f"Unknown boundary level strategy: {strategy}")
 
@@ -704,6 +710,8 @@ class BoundaryContour(TimeSpan):
 
     def bpc(self, bw=0.5, time_grid=None, pmf=False) -> pd.Series:
         from sklearn.neighbors import KernelDensity
+
+        from . import ops
 
         if time_grid is None:
             time_grid = ops.build_time_grid(self, 0.1)
@@ -756,6 +764,8 @@ class BoundaryHierarchy(BoundaryContour):
         Returns:
             MultiSegment: The resulting MultiSegment object.
         """
+        from . import ops
+
         if strategy not in ops.LabelingStrategy._registry:
             raise ValueError(f"Unknown labeling strategy: {strategy}")
 

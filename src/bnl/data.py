@@ -185,11 +185,73 @@ class Track:
             raise FileNotFoundError(f"File not found: {path}")
 
 
+@dataclass
+class SpamTrack:
+    """A track in the SPAM dataset."""
+
+    track_id: str
+    manifest_row: pd.Series
+    dataset: Dataset
+
+    @cached_property
+    def refs(self) -> dict[str, MultiSegment]:
+        pass
+
+    @property
+    def ref(self) -> MultiSegment:
+        """Returns the first reference annotation."""
+        return self.refs[list(self.refs)[0]]
+
+    @cached_property
+    def ests(self) -> dict[str, MultiSegment]:
+        pass
+
+    @cached_property
+    def jam(self) -> jams.JAMS | None:
+        # construct jams path from where the manifest was
+        jams_path = self.dataset._reconstruct_path(self.track_id, "annotation", "reference")
+        if jams_path is None:
+            return None
+        return jams.load(jams_path)
+
+    @property
+    def feats(self) -> pd.DataFrame:
+        feat_path = (
+            self.dataset.manifest_path.parent
+            / "features"
+            / self.manifest_row["File Name"].replace(".mp3", ".json")
+        )
+        return feat_path
+
+
 class Dataset:
     """A manifest-based dataset."""
 
     track_ids: list[str]
     manifest: pd.DataFrame
+
+    def __getitem__(self, track_id: str) -> Track:
+        """Load a specific track by its ID."""
+        track_id = str(track_id)
+        if track_id not in self.track_ids:
+            raise ValueError(f"Track ID '{track_id}' not found in manifest.")
+        return Track(track_id, self.manifest.loc[track_id], self)
+
+    def __len__(self) -> int:
+        return len(self.track_ids)
+
+    def __iter__(self) -> Iterator[Track]:
+        for track_id in self.track_ids:
+            yield self[track_id]
+
+    def lucky(self) -> Track:
+        """Return a random track."""
+        return self[random.choice(self.track_ids)]
+
+
+class SalamiDataset(Dataset):
+    """A manifest-based dataset."""
+
     # Allow overriding the public bucket via environment for easy configuration in
     # local development without code changes.
     R2_BUCKET_PUBLIC_URL: str = os.getenv(
@@ -248,24 +310,6 @@ class Dataset:
             self.track_ids = sorted(self.manifest["track_id"].unique(), key=int)
         except ValueError:
             self.track_ids = sorted(self.manifest["track_id"].unique())
-
-    def __getitem__(self, track_id: str) -> Track:
-        """Load a specific track by its ID."""
-        track_id = str(track_id)
-        if track_id not in self.track_ids:
-            raise ValueError(f"Track ID '{track_id}' not found in manifest.")
-        return Track(track_id, self.manifest.loc[track_id], self)
-
-    def __len__(self) -> int:
-        return len(self.track_ids)
-
-    def __iter__(self) -> Iterator[Track]:
-        for track_id in self.track_ids:
-            yield self[track_id]
-
-    def lucky(self) -> Track:
-        """Return a random track."""
-        return self[random.choice(self.track_ids)]
 
     @staticmethod
     def _format_adobe_params(asset_subtype: str) -> str:
@@ -326,3 +370,29 @@ class Dataset:
             return self._reconstruct_cloud_url(track_id, asset_type, asset_subtype)
         else:
             raise ValueError(f"Unknown data location: {self.data_location}")
+
+
+class SpamDataset(Dataset):
+    """A manifest-based dataset."""
+
+    def __init__(self, manifest_path: Path | str = "~/code/msaf-data/SPAM/metadata.tsv") -> None:
+        try:
+            self.manifest_path = Path(manifest_path).expanduser()
+            self.manifest = pd.read_csv(self.manifest_path, delimiter="\t")
+            self.manifest.rename(columns={"id": "track_id"}, inplace=True)
+            self.manifest["track_id"] = self.manifest["track_id"].astype(str)
+            self.manifest.set_index("track_id", inplace=True, drop=True)
+        except FileNotFoundError as e:
+            raise FileNotFoundError(f"Manifest not found: {self.manifest_path}") from e
+
+        try:
+            self.track_ids = sorted(self.manifest.index.unique(), key=int)
+        except ValueError:
+            self.track_ids = sorted(self.manifest.index.unique())
+
+    def __getitem__(self, track_id: str) -> Track:
+        """Load a specific track by its ID."""
+        track_id = str(track_id)
+        if track_id not in self.track_ids:
+            raise ValueError(f"Track ID '{track_id}' not found in manifest.")
+        return SpamTrack(track_id, self.manifest.loc[track_id], self)
