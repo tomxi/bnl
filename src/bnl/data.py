@@ -195,7 +195,19 @@ class SpamTrack:
 
     @cached_property
     def refs(self) -> dict[str, MultiSegment]:
-        pass
+        refs = {}
+        for name in SpamDataset.ANNOTATOR_NAMES:
+            upper_annos = self.jam.search(namespace="segment_salami_upper", name=name)
+            lower_annos = self.jam.search(namespace="segment_salami_lower", name=name)
+
+            refs[name] = MultiSegment(
+                raw_layers=[
+                    Segment.from_jams(upper_annos[0], name="coarse"),
+                    Segment.from_jams(lower_annos[0], name="fine"),
+                ],
+                name=f"{self.track_id}-{name}",
+            )
+        return refs
 
     @property
     def ref(self) -> MultiSegment:
@@ -209,10 +221,15 @@ class SpamTrack:
     @cached_property
     def jam(self) -> jams.JAMS | None:
         # construct jams path from where the manifest was
-        jams_path = self.dataset._reconstruct_path(self.track_id, "annotation", "reference")
-        if jams_path is None:
-            return None
-        return jams.load(jams_path)
+        jams_path = (
+            self.dataset.manifest_path.parent
+            / "references"
+            / self.manifest_row["File Name"].replace(".mp3", ".jams")
+        )
+        if jams_path.exists():
+            return jams.load(str(jams_path), validate=False)
+        else:
+            raise FileNotFoundError(f"JAMS file not found: {jams_path}")
 
     @property
     def feats(self) -> pd.DataFrame:
@@ -229,6 +246,7 @@ class Dataset:
 
     track_ids: list[str]
     manifest: pd.DataFrame
+    manifest_path: Path
 
     def __getitem__(self, track_id: str) -> Track:
         """Load a specific track by its ID."""
@@ -374,6 +392,14 @@ class SalamiDataset(Dataset):
 
 class SpamDataset(Dataset):
     """A manifest-based dataset."""
+
+    ANNOTATOR_NAMES = [
+        "Colin Hua",
+        "Eleni Vasilia Maltas",
+        "Evan S. Johnson",
+        "John Turner",
+        "Shuli Tang",
+    ]
 
     def __init__(self, manifest_path: Path | str = "~/code/msaf-data/SPAM/metadata.tsv") -> None:
         try:
