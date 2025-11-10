@@ -207,7 +207,7 @@ class Segment(TimeSpan):
     @property
     def lam(self) -> LabelAgreementMap:
         """Label Agreement Matrix"""
-        return LabelAgreementMap(bs=self.btimes, mat=np.equal.outer(self.labels, self.labels))
+        return LabelAgreementMap(mat=np.equal.outer(self.labels, self.labels), bs=self.btimes)
 
     @property
     def lam_pdf(self) -> LabelAgreementMap:
@@ -215,7 +215,7 @@ class Segment(TimeSpan):
         np.sum(s.lam_pdf * lam_area_grid) == 1
         """
         lam_area = np.sum(self.lam.mat * self.lam.area_portion)
-        return LabelAgreementMap(bs=self.btimes, mat=self.lam.mat / lam_area)
+        return LabelAgreementMap(mat=self.lam.mat / lam_area, bs=self.btimes)
 
     def __len__(self) -> int:
         return len(self.sections)
@@ -781,8 +781,15 @@ class BoundaryHierarchy(BoundaryContour):
 class AgreementMatrix(ABC):
     """Base class for agreement matrices."""
 
-    bs: np.ndarray  # 1D array of boundary times (len = n_segs + 1)
     mat: np.ndarray  # 2D array of agreement (shape = n_segs, n_segs)
+    bs: np.ndarray | None = field(default=None)  # 1D array of boundary times (len = n_segs + 1)
+    labels: np.ndarray | None = field(default=None)  # 1D array of labels (len = n_segs)
+
+    def __post_init__(self):
+        if self.bs is None:
+            object.__setattr__(self, "bs", np.arange(self.mat.shape[0] + 1))
+        if self.labels is None:
+            object.__setattr__(self, "labels", np.arange(self.mat.shape[0]))
 
     def plot(self, ax=None, colorbar=True, **kwargs):
         from . import viz
@@ -922,13 +929,13 @@ class SegmentAgreementProb(AgreementMatrix):
             row_sums = self.mat.sum(axis=1, keepdims=True)
             tran_mat = self.mat / (row_sums + 1e-9)  # Add epsilon for stability
             aff_mat = (tran_mat + tran_mat.T) / 2
-            return SegmentAffinityMatrix(self.bs, aff_mat)
+            return SegmentAffinityMatrix(aff_mat, self.bs)
         elif normalize == "area":
-            return SegmentAffinityMatrix(self.bs, self.mat / self.area_portion)
+            return SegmentAffinityMatrix(self.mat / self.area_portion, self.bs)
         elif normalize == "cosine":
-            return SegmentAffinityMatrix(self.bs, cosine_similarity(self.mat))
+            return SegmentAffinityMatrix(cosine_similarity(self.mat), self.bs)
         elif normalize == "area+cosine":
-            return SegmentAffinityMatrix(self.bs, cosine_similarity(self.mat / self.area_portion))
+            return SegmentAffinityMatrix(cosine_similarity(self.mat / self.area_portion), self.bs)
         else:
             raise ValueError(f"Unknown normalization mode: {normalize}")
 
@@ -1010,9 +1017,9 @@ class SegmentAffinityMatrix(AgreementMatrix):
 
         n_segs = self.mat.shape[0]
         if n_segs == 1:
-            return np.array(["0"])
+            return ["0"]
         if k >= n_segs:
-            return np.array([str(i) for i in range(n_segs)])
+            return [str(i) for i in range(n_segs)]
 
         evals, evecs = self.spec_decomp(lap_norm)
         first_k_evecs = evecs[:, :k]
@@ -1026,7 +1033,14 @@ class SegmentAffinityMatrix(AgreementMatrix):
 
         km = KMeans(n_clusters=k, init="k-means++", n_init=10)
         seg_ids = km.fit_predict(seg_embedding)
-        return np.array([str(i) for i in seg_ids])
+        return [str(i) for i in seg_ids]
+
+    def named_clusters(self, k: int, lap_norm="sym") -> dict[str, list]:
+        seg_ids = self.scluster(k, lap_norm)
+        assignment = defaultdict(list)
+        for i, key in enumerate(seg_ids):
+            assignment[key].append(self.labels[i])
+        return assignment
 
     def pick_k(self, min_k: int = 1, fiedler_threshold: float = 0.2) -> int:
         """

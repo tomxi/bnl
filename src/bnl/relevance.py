@@ -172,8 +172,9 @@ def relevance_h2h(ref, ests, metric="b15") -> pd.Series:
         if metric == "l-exp":
             ref = ref.expand_labels()
         for key, est in ests.items():
+            est = est.align(ref)
             if metric == "l-exp":
-                est = est.align(ref).expand_labels()
+                est = est.expand_labels()
             rel[key] = fle.lmeasure(ref.itvls, ref.labels, est.itvls, est.labels)[2]
 
     # For T-measure, let's do L-measure with unique labeling.
@@ -316,8 +317,16 @@ def comp_diag_h2f(
     return df
 
 
-def comp_diag_f2f(ref: MultiSegment, est: MultiSegment, metric="hr15") -> pd.DataFrame:
+def comp_diag_f2f(
+    ref: MultiSegment | dict[str, MultiSegment],
+    est: MultiSegment | dict[str, MultiSegment],
+    metric="hr15",
+) -> pd.DataFrame:
     rels = []
+    if isinstance(ref, dict):
+        ref = combine_ms(ref)
+    if isinstance(est, dict):
+        est = combine_ms(est)
     for ref_layer in ref:
         r = relevance_f2f(ref_layer, est, metric=metric)
         r.name = ref_layer.name
