@@ -923,21 +923,25 @@ class LabelAgreementMap(AgreementMatrix):
 class SegmentAgreementProb(AgreementMatrix):
     """Label Agreement Matrix for segments. entries are PMFs"""
 
-    def to_aff(self, normalize="area") -> SegmentAffinityMatrix:
+    def to_aff(self, normalize="area", self_link=True) -> SegmentAffinityMatrix:
+        if not self_link:
+            np.fill_diagonal(self.mat, 0)
         if normalize == "row":
             # Row-normalize the SAP matrix to get the transition matrix P
             row_sums = self.mat.sum(axis=1, keepdims=True)
             tran_mat = self.mat / (row_sums + 1e-9)  # Add epsilon for stability
             aff_mat = (tran_mat + tran_mat.T) / 2
-            return SegmentAffinityMatrix(aff_mat, self.bs)
         elif normalize == "area":
-            return SegmentAffinityMatrix(self.mat / self.area_portion, self.bs)
+            aff_mat = self.mat / self.area_portion
         elif normalize == "cosine":
-            return SegmentAffinityMatrix(cosine_similarity(self.mat), self.bs)
+            aff_mat = cosine_similarity(self.mat)
         elif normalize == "area+cosine":
-            return SegmentAffinityMatrix(cosine_similarity(self.mat / self.area_portion), self.bs)
+            aff_mat = cosine_similarity(self.mat / self.area_portion)
         else:
             raise ValueError(f"Unknown normalization mode: {normalize}")
+        if not self_link:
+            np.fill_diagonal(aff_mat, 0)
+        return SegmentAffinityMatrix(aff_mat, self.bs)
 
 
 @dataclass(frozen=True)
@@ -1042,7 +1046,7 @@ class SegmentAffinityMatrix(AgreementMatrix):
             assignment[key].append(self.labels[i])
         return assignment
 
-    def pick_k(self, min_k: int = 1, fiedler_threshold: float = 0.2) -> int:
+    def pick_k(self, min_k: int = 1, fiedler_threshold: float = 0.15) -> int:
         """
         Determines k using eigengap
         """

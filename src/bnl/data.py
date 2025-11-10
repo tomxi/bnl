@@ -103,9 +103,9 @@ class Track:
     @property
     def feats(self) -> np.NpzFile:
         audio_path = str(self.info["audio_mp3_path"])
-        feat_path = audio_path.replace("/audio.mp3", "_synced_feats.npz").replace("audio", "feats")
+        feat_path = audio_path.replace("/audio.mp3", "_feats.npz").replace("audio", "slm_feats")
         if not os.path.exists(feat_path):
-            raise FileNotFoundError("feature file does not exist...")
+            raise FileNotFoundError(f"{feat_path} does not exist...")
         else:
             return np.load(feat_path)
 

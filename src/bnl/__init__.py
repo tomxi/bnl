@@ -17,7 +17,7 @@ from __future__ import annotations
 __version__ = "0.0.3"
 
 # --- Import submodules for explicit, namespaced access ---
-from . import core, data, ops, viz, metrics, exp  # noqa: I001
+from . import core, data, ops, viz, metrics, exp, lsd  # noqa: I001
 
 # --- Promote the core data structures to the top level ---
 from .core import (
@@ -66,4 +66,5 @@ __all__ = [
     "core",
     "metrics",
     "exp",
+    "lsd",
 ]
