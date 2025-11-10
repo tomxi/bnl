@@ -200,19 +200,20 @@ class SpamTrack:
             upper_annos = self.jam.search(namespace="segment_salami_upper", name=name)
             lower_annos = self.jam.search(namespace="segment_salami_lower", name=name)
 
-            refs[name] = MultiSegment(
+            first_name = name.split(" ")[0]
+            refs[first_name] = MultiSegment(
                 raw_layers=[
                     Segment.from_jams(upper_annos[0], name="coarse"),
                     Segment.from_jams(lower_annos[0], name="fine"),
                 ],
-                name=f"{self.track_id}-{name}",
+                name=f"{self.track_id}-{first_name}",
             )
         return refs
 
     @property
     def ref(self) -> MultiSegment:
         """Returns the first reference annotation."""
-        return self.refs[list(self.refs)[0]]
+        return self.refs["colin"]
 
     @cached_property
     def ests(self) -> dict[str, MultiSegment]:

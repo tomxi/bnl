@@ -310,7 +310,7 @@ class LevelByMeanShift(LevelStrategy):
             saliences = np.log(saliences)
         else:
             saliences /= saliences.max()
-        if True:
+        if False:  # for debugging
             import matplotlib.pyplot as plt
 
             plt.stem(saliences)

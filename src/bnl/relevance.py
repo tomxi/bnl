@@ -188,11 +188,19 @@ def relevance_h2h(ref, ests, metric="b15") -> pd.Series:
     return rel
 
 
-def relevance_h2f(ref, est, metric="bpc", obj_fn=js_div) -> pd.Series:
+def relevance_h2f(
+    ref: MultiSegment,
+    ests: dict[str, MultiSegment],
+    metric: str = "bpc",
+    obj_fn=js_div,
+    ignore_names=(),
+    aggregate_hierarchy=False,
+) -> pd.Series:
     # Get the relevance of each estimate with respect to the reference using metric
     # Metric can be "bpc", "lam"
     # right now the gridtime is predefined: for bpc it's 0.1 second in build_time_grid
     # for lam it's 0.5 second for lam
+    est = combine_ms(ests, ignore_names=ignore_names).align(ref)
 
     if metric == "bpc":
         # pick a sampling rate that gives me about less than 20k points, and no finer than 0.1 secs
@@ -201,7 +209,6 @@ def relevance_h2f(ref, est, metric="bpc", obj_fn=js_div) -> pd.Series:
         time_grid = build_time_grid(ref, frame_size)
         y = ref.contour("prob").bpc(bw=0.5, time_grid=time_grid)
 
-        est = est.align(ref)
         if len(est) == 0:
             raise ValueError("No valid estimated layers found.")
         x = est.bpcs(bw=0.5, time_grid=time_grid)
@@ -215,15 +222,26 @@ def relevance_h2f(ref, est, metric="bpc", obj_fn=js_div) -> pd.Series:
         # should I use depth or prob for ref lam?
         ref_lam_values = ref.expand_labels().lam(strategy="depth").sample(sample_points)
 
-        est_lams = {layer.name: layer.lam_pdf.sample(sample_points) for layer in est.align(ref)}
+        est_lams = {layer.name: layer.lam_pdf.sample(sample_points) for layer in est}
         y = pd.Series(ref_lam_values, index=sample_points.T.tolist())
         x = pd.DataFrame(est_lams, index=sample_points.T.tolist())
     else:
         raise ValueError(f"Metric {metric} not recognized.")
 
     # run scipy optimize
-    weights = scipy_optimize(y, x, obj_fn=obj_fn)
-    return pd.Series(weights, index=x.columns, name=metric)
+    weights = pd.Series(scipy_optimize(y, x, obj_fn=obj_fn), index=x.columns, name=metric)
+
+    # aggregate layers relevance for a hierarchy if aggregate_hierarchy is True
+    if aggregate_hierarchy:
+        agg_weights = dict()
+        for hier_name in ests.keys():
+            # aggregate the weights of all layers in the same hierarchy
+            # slice out weights that starts with f"{hier_name}:" using pandas filtering
+            hier_weights = weights.filter(regex=f"{hier_name}:")
+            agg_weights[hier_name] = hier_weights.sum(skipna=True)
+        return pd.Series(agg_weights, index=ests.keys(), name=metric)
+    else:
+        return weights
 
 
 def relevance_f2f(ref_layer, est, metric="hr15") -> pd.Series:
@@ -255,6 +273,11 @@ def relevance_f2f(ref_layer, est, metric="hr15") -> pd.Series:
     return rel
 
 
+def aggregate_h2f(rels: pd.Series) -> pd.Series:
+    # aggregate the relevance of each hierarchy
+    return rels.sum()
+
+
 # endregion: relevance functions
 
 
@@ -279,13 +302,12 @@ def comp_diag_h2h(
 
 
 def comp_diag_h2f(
-    refs: dict[str, MultiSegment], ests: dict[str, MultiSegment], metric="bpc"
+    refs: dict[str, MultiSegment], ests: dict[str, MultiSegment], metric="bpc", agg=False
 ) -> pd.DataFrame:
     rels = []
 
     for name, ref in refs.items():
-        est = combine_ms(ests, ignore_names=(name))
-        r = relevance_h2f(ref, est, metric=metric)
+        r = relevance_h2f(ref, ests, metric=metric, aggregate_hierarchy=agg, ignore_names=(name))
         r.name = name
         rels.append(r)
 
