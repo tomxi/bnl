@@ -297,7 +297,7 @@ class LevelByMeanShift(LevelStrategy):
         self.log = log
         if log:
             bw = -np.log(1 - bw)
-            print(bw)
+            # print(bw)
         self.sal_ms = MeanShift(bandwidth=bw)
 
     def __call__(self, bc: BoundaryContour) -> BoundaryHierarchy:
