@@ -77,7 +77,7 @@ line-ending = "lf"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "C90", "N", "UP", "A", "B"]
-ignore = ["B905", "N817", "C901"] # zip strict flag; importing acronyms; McCabe complexity
+ignore = ["B905", "N817", "C901", "N806"] # zip strict flag; importing acronyms; McCabe complexity
 
 [tool.ruff.lint.isort]
 known-first-party = ["bnl"]

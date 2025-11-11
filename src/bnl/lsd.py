@@ -3,6 +3,8 @@ import numpy as np
 import scipy
 from sklearn.cluster import KMeans
 
+from .core import MultiSegment
+
 
 def construct_graph(rep_feat, loc_feat, rep_width, rec_smooth, rep_metric="cosine"):
     R = librosa.segment.recurrence_matrix(
@@ -47,11 +49,11 @@ def beat_embedding(A, smooth=9):
     return evals, evecs
 
 
-def segment_embedding(evecs, Cnorm, k):
+def segment_embedding(evecs, cnorm, k):
     # Normalize the eigenvectors by the cumulative norm
     # This is needed for symmetric normalized laplacian eigenvectors
     # See Tutorial on Spectral Clustering paper
-    X = evecs[:, :k] / (Cnorm[:, k - 1 : k] + 1e-8)
+    X = evecs[:, :k] / (cnorm[:, k - 1 : k] + 1e-8)
     KM = KMeans(n_clusters=k, init="k-means++", n_init=10)
     seg_ids = KM.fit_predict(X)
 
@@ -89,23 +91,23 @@ def run(
 
     # extract top k eigenvectors
     first_evecs = evecs[:, :depth]
-    Cnorm = np.cumsum(first_evecs**2, axis=1) ** 0.5
+    cnorm = np.cumsum(first_evecs**2, axis=1) ** 0.5
 
     # iterate through all k levels and build segmentation 1 layer at a time
     itvls = []
     labels = []
     for k in range(1, depth + 1):
         # print(k)
-        bound_beats, seg_labels = segment_embedding(first_evecs, Cnorm, k)
+        bound_beats, seg_labels = segment_embedding(first_evecs, cnorm, k)
         # add-in last beat, change to intervals and make string labels
-        bound_time = np.append(feats["ts"][bound_beats], feats["ts"][-1])
+        bound_time = np.append(feats["bs"][bound_beats], feats["bs"][-1])
         lvl_bdry, lvl_label = remove_empty_segments(bound_time, seg_labels)
 
         lvl_itvls = boundaries_to_intervals(lvl_bdry)
         itvls.append(lvl_itvls)
         labels.append(lvl_label)
 
-    return itvls, labels
+    return MultiSegment.from_itvls(itvls, labels, name=f"{rep_feat}_{loc_feat}")
 
 
 # region: Post-processing Clean ups

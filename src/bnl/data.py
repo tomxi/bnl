@@ -23,6 +23,7 @@ import pandas as pd
 import requests
 
 from .core import MultiSegment, Segment
+from .lsd import run as run_lsd
 
 
 @dataclass
@@ -103,11 +104,24 @@ class Track:
     @property
     def feats(self) -> np.NpzFile:
         audio_path = str(self.info["audio_mp3_path"])
-        feat_path = audio_path.replace("/audio.mp3", "_feats.npz").replace("audio", "slm_feats")
+        feat_path = audio_path.replace("/audio.mp3", "_synced_feats.npz").replace("audio", "feats")
         if not os.path.exists(feat_path):
             raise FileNotFoundError(f"{feat_path} does not exist...")
         else:
             return np.load(feat_path)
+
+    @property
+    def lsds(self, feat_types: list[str] = ("tempogram", "crema", "yamnet", "openl3", "mfcc")):
+        all_outs = dict()
+        for rep_feat in feat_types:
+            for loc_feat in feat_types:
+                print(rep_feat, loc_feat)
+                all_outs[f"{rep_feat}_{loc_feat}"] = run_lsd(
+                    self.feats,
+                    rep_feat=rep_feat,
+                    loc_feat=loc_feat,
+                )
+        return all_outs
 
     def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:
         """Loads a specific annotation as a MultiSegment.
@@ -211,9 +225,13 @@ class SpamTrack:
         return refs
 
     @property
+    def info(self):
+        return self.manifest_row
+
+    @property
     def ref(self) -> MultiSegment:
         """Returns the first reference annotation."""
-        return self.refs["colin"]
+        return self.refs["Colin"]
 
     @cached_property
     def ests(self) -> dict[str, MultiSegment]:

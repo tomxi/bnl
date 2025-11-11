@@ -571,13 +571,17 @@ class LabelByLam(LabelingStrategy):
 
 
 def bs2uv(bs):
-    """Convert a set of boundaries to a set of (u,v) coordinates."""
+    """Convert a set of boundaries to a set of (u,v) coordinates.
+    also return the area of each associated sample point.
+    """
     mid_points = (bs[:-1] + bs[1:]) / 2
     n = len(mid_points)
     # Get indices for the upper triangle of an (n x n) matrix
     i, j = np.triu_indices(n)
+    dur = bs[1:] - bs[:-1]
+    area = dur[i] * dur[j]
     # Directly create the (u, v) pairs
-    return np.stack([mid_points[i], mid_points[j]], axis=1)
+    return np.stack([mid_points[i], mid_points[j]], axis=1), area
 
 
 def build_time_grid(span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
@@ -634,3 +638,10 @@ def combine_ms(
     if prune:
         return new_ms.prune_layers(relabel=False)
     return new_ms
+
+
+def common_itvls(layers: MultiSegment | list[Segment]) -> np.ndarray:
+    common_bs = set()
+    for layer in layers:
+        common_bs.update(layer.btimes)
+    return np.array(sorted(common_bs))
