@@ -3,54 +3,17 @@ import numpy as np
 import pandas as pd
 from mir_eval.segment import detection as me_hr
 from scipy.optimize import minimize
-from scipy.stats import entropy
+from scipy.special import rel_entr
 
+# from scipy.stats import entropy
 from .core import MultiSegment
 from .metrics import bmeasure2
-from .ops import bs2uv, build_time_grid, combine_ms
+from .ops import bs2uv, build_time_grid, combine_ms, common_itvls
 
 # region: scipy optimizations
 
 
-def kl_div(weights, distributions, target):
-    """
-    KL divergence objective function for scipy.optimize.
-
-    Args:
-        weights: Array of shape (num_distributions,) - mixing weights
-        distributions: Array of shape (num_distributions, distribution_dim) - input distributions
-        target: Array of shape (distribution_dim,) - target distribution
-
-    Returns:
-        KL divergence value (float)
-    """
-    # Combined distribution
-    combined = distributions @ weights
-
-    # Normalize distribution
-    combined += 1e-12  # add a small number to avoid log(p/q) where q is zero
-    target += 1e-12
-    combined /= np.sum(combined)
-    target /= np.sum(target)
-
-    # KL divergence: sum(p * log(p/q)) entropy takes care of p=0, it returns 0 for that bin.
-    kl_div = entropy(target, combined)
-
-    return kl_div
-
-
-def mse(weights, distributions, target):
-    # Combined distribution
-    combined = distributions @ weights
-
-    # Normalize distribution
-    combined /= np.sum(combined)
-    target /= np.sum(target)
-
-    return np.sum((combined - target) ** 2)
-
-
-def js_div(weights, distributions, target):
+def js_div(weights, distributions, target, sample_weights):
     """
     Jensen-Shannon Divergence (JSD) objective function.
 
@@ -79,10 +42,10 @@ def js_div(weights, distributions, target):
 
     # Compute the two KL components
     # D_KL(P || A)
-    kl_p_a = entropy(target, avg_dist)
+    kl_p_a = rel_entr(target, avg_dist) @ sample_weights
 
     # D_KL(M || A)
-    kl_m_a = entropy(combined, avg_dist)
+    kl_m_a = rel_entr(combined, avg_dist) @ sample_weights
 
     # Compute the JSD
     jsd = 0.5 * kl_p_a + 0.5 * kl_m_a
@@ -90,7 +53,9 @@ def js_div(weights, distributions, target):
     return jsd
 
 
-def scipy_optimize(target_distribution, distributions, verbose=False, obj_fn=kl_div):
+def scipy_optimize(
+    target_distribution, distributions, verbose=True, obj_fn=js_div, sample_weights=None
+):
     """
     Solve KL divergence minimization using scipy.optimize.
 
@@ -126,7 +91,7 @@ def scipy_optimize(target_distribution, distributions, verbose=False, obj_fn=kl_
     result = minimize(
         obj_fn,
         initial_weights,
-        args=(distributions, target_distribution),
+        args=(distributions, target_distribution, sample_weights),
         bounds=bounds,
         constraints=constraints,
         options={"disp": verbose, "maxiter": 1000},
@@ -204,8 +169,8 @@ def relevance_h2f(
     est = combine_ms(ests, ignore_names=ignore_names).align(ref)
 
     if metric == "bpc":
-        # pick a sampling rate that gives me about less than 20k points, and no finer than 0.1 secs
-        frame_size = max(0.1, ref.duration / 20000)
+        # pick a sampling rate that gives me about less than 10k points, and no finer than 0.1 secs
+        frame_size = max(0.1, ref.duration / 10000)
         # print(f"Using frame size: {frame_size}")
         time_grid = build_time_grid(ref, frame_size)
         y = ref.contour("prob").bpc(bw=0.5, time_grid=time_grid)
@@ -213,24 +178,32 @@ def relevance_h2f(
         if len(est) == 0:
             raise ValueError("No valid estimated layers found.")
         x = est.bpcs(bw=0.5, time_grid=time_grid)
+        sample_weights = np.ones_like(y)
 
     elif metric == "lam":
-        # pick a sampling rate that gives me about 20k points
-        frame_size = max(0.1, ref.duration / 200)
-        # print(f"Using frame size: {frame_size}")
-        time_grid = build_time_grid(ref, frame_size)
-        sample_points = bs2uv(time_grid)
+        # let's do it in the SAM space. Find the common time grid
+        time_grid = common_itvls(ref.layers + est.layers)
+        # I need area for each sample point as well
+        sample_points, sample_weights = bs2uv(time_grid)
+        # sample_weights /= np.sum(sample_weights)
+        # sample_weights *= len(sample_weights)
         # should I use depth or prob for ref lam?
-        ref_lam_values = ref.expand_labels().lam(strategy="depth").sample(sample_points)
+        ref_lam_values = ref.expand_labels().lam(strategy="prob").sample(sample_points)
 
         est_lams = {layer.name: layer.lam_pdf.sample(sample_points) for layer in est}
         y = pd.Series(ref_lam_values, index=sample_points.T.tolist())
         x = pd.DataFrame(est_lams, index=sample_points.T.tolist())
+
     else:
         raise ValueError(f"Metric {metric} not recognized.")
 
+    # sample_weights = np.ones_like(y)
     # run scipy optimize
-    weights = pd.Series(scipy_optimize(y, x, obj_fn=obj_fn), index=x.columns, name=metric)
+    weights = pd.Series(
+        scipy_optimize(y, x, obj_fn=obj_fn, sample_weights=sample_weights),
+        index=x.columns,
+        name=metric,
+    )
 
     # aggregate layers relevance for a hierarchy if aggregate_hierarchy is True
     if aggregate_hierarchy:
