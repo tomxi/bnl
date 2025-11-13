@@ -407,6 +407,12 @@ class MultiSegment(TimeSpan):
             layers.append(Segment.from_itvls(itvls, labels, name=f"L{i:02d}"))
         return cls(raw_layers=layers, name=name)
 
+    def to_json(self) -> list:
+        json_data = []
+        for layer in self:
+            json_data.append([layer.itvls.tolist(), layer.labels])
+        return json_data
+
     @classmethod
     def from_itvls(
         cls, itvls: Sequence[Sequence[float]], labels: Sequence[str], name: str | None = None
@@ -619,6 +625,17 @@ class MultiSegment(TimeSpan):
             # move down 1 layer
             coarser_layer = finer_layer
         return True
+
+    def monocast(self) -> MultiSegment:
+        return (
+            self.contour("prob")
+            .clean("kde", bw=0.5)
+            .level(strategy="mean_shift", log=True, bw=0.3)
+            .to_ms(strategy="lam", ref_ms=self)
+        )
+
+    def to_multisegment(self) -> MultiSegment:
+        return MultiSegment(raw_layers=[self], name=self.name)
 
 
 # endregion: MultiSegment

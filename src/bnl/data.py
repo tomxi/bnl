@@ -112,16 +112,33 @@ class Track:
 
     @property
     def lsds(self, feat_types: list[str] = ("tempogram", "crema", "yamnet", "openl3", "mfcc")):
-        all_outs = dict()
-        for rep_feat in feat_types:
-            for loc_feat in feat_types:
-                print(rep_feat, loc_feat)
-                all_outs[f"{rep_feat}_{loc_feat}"] = run_lsd(
-                    self.feats,
-                    rep_feat=rep_feat,
-                    loc_feat=loc_feat,
-                )
-        return all_outs
+        # check if lsds already exists
+        lsds_path = self.dataset.manifest_path.replace("manifest.csv", f"lsds/{self.track_id}.json")
+        if os.path.exists(lsds_path):
+            # load json file as dict
+            with open(lsds_path) as f:
+                all_outs = json.load(f)
+        else:
+            os.makedirs(os.path.dirname(lsds_path), exist_ok=True)
+            # run lsd for all combinations of features
+            all_outs = dict()
+            for rep_feat in feat_types:
+                for loc_feat in feat_types:
+                    print(rep_feat, loc_feat)
+                    all_outs[f"{rep_feat}_{loc_feat}"] = run_lsd(
+                        self.feats,
+                        rep_feat=rep_feat,
+                        loc_feat=loc_feat,
+                    ).to_json()
+
+            # save json file
+            with open(lsds_path, "w") as f:
+                json.dump(all_outs, f)
+
+        # convert each value to MultiSegment before returning
+        return {
+            k: MultiSegment.from_json(v, name=self.track_id + "-" + k) for k, v in all_outs.items()
+        }
 
     def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:
         """Loads a specific annotation as a MultiSegment.
