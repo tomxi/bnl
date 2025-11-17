@@ -111,7 +111,10 @@ class Track:
             return np.load(feat_path)
 
     @property
-    def lsds(self, feat_types: list[str] = ("tempogram", "crema", "yamnet", "openl3", "mfcc")):
+    def lsds(
+        self,
+        feat_types: list[str] = ("tempogram", "crema", "yamnet", "openl3", "mfcc"),
+    ):
         # check if lsds already exists
         lsds_path = self.dataset.manifest_path.replace("manifest.csv", f"lsds/{self.track_id}.json")
         if os.path.exists(lsds_path):

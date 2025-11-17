@@ -32,9 +32,9 @@ def js_div(weights, distributions, target, sample_weights):
     # Combined distribution
     combined = distributions @ weights
 
-    # Normalize distribution
-    combined /= np.sum(combined)
-    target /= np.sum(target)
+    # # Normalize distribution
+    # combined /= np.sum(combined)
+    # target /= np.sum(target)
 
     # Define the average distribution 'A'
     # A = 0.5 * (P + M), where P is 'target'
@@ -53,8 +53,21 @@ def js_div(weights, distributions, target, sample_weights):
     return jsd
 
 
+def sym_ce(weights, distributions, target, sample_weights):
+    # Doesn't check if the distributions are valid probability distributions
+    # Make sure weights, each row of distributsions, and target all sum to 1.
+    combined = distributions @ weights
+    if sample_weights is None:
+        sample_weights = 1 / distributions.shape[1]
+    epsilon = 1e-12
+    ce = -np.sum(target * np.log(combined + epsilon) * sample_weights) - np.sum(
+        combined * np.log(target + epsilon) * sample_weights
+    )
+    return ce
+
+
 def scipy_optimize(
-    target_distribution, distributions, verbose=True, obj_fn=js_div, sample_weights=None
+    target_distribution, distributions, verbose=False, obj_fn=js_div, sample_weights=None
 ):
     """
     Solve KL divergence minimization using scipy.optimize.
@@ -94,7 +107,7 @@ def scipy_optimize(
         args=(distributions, target_distribution, sample_weights),
         bounds=bounds,
         constraints=constraints,
-        options={"disp": verbose, "maxiter": 1000},
+        options={"disp": verbose, "maxiter": 500},
     )
 
     if not result.success:
@@ -198,6 +211,10 @@ def relevance_h2f(
         raise ValueError(f"Metric {metric} not recognized.")
 
     # sample_weights = np.ones_like(y)
+    # Make sure inputs are valid probability distributions
+    y = y / np.sum(y)
+    x = x / np.sum(x, axis=0)
+
     # run scipy optimize
     weights = pd.Series(
         scipy_optimize(y, x, obj_fn=obj_fn, sample_weights=sample_weights),
@@ -247,11 +264,6 @@ def relevance_f2f(ref_layer, est, metric="hr15") -> pd.Series:
     return rel
 
 
-def aggregate_h2f(rels: pd.Series) -> pd.Series:
-    # aggregate the relevance of each hierarchy
-    return rels.sum()
-
-
 # endregion: relevance functions
 
 
@@ -276,12 +288,18 @@ def comp_diag_h2h(
 
 
 def comp_diag_h2f(
-    refs: dict[str, MultiSegment], ests: dict[str, MultiSegment], metric="bpc", agg=False
+    refs: dict[str, MultiSegment],
+    ests: dict[str, MultiSegment],
+    metric="bpc",
+    agg=False,
+    obj_fn=js_div,
 ) -> pd.DataFrame:
     rels = []
 
     for name, ref in refs.items():
-        r = relevance_h2f(ref, ests, metric=metric, aggregate_hierarchy=agg, ignore_names=(name))
+        r = relevance_h2f(
+            ref, ests, metric=metric, aggregate_hierarchy=agg, ignore_names=(name), obj_fn=obj_fn
+        )
         r.name = name
         rels.append(r)
 
