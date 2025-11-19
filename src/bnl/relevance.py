@@ -7,7 +7,7 @@ from scipy.special import rel_entr
 
 # from scipy.stats import entropy
 from .core import MultiSegment
-from .metrics import bmeasure2
+from .metrics import bmeasure3
 from .ops import bs2uv, build_time_grid, combine_ms, common_itvls
 
 # region: scipy optimizations
@@ -38,8 +38,10 @@ def js_div(weights, distributions, target, sample_weights):
 
     # Define the average distribution 'A'
     # A = 0.5 * (P + M), where P is 'target'
-    avg_dist = 0.5 * (target + combined)
+    avg_dist = 0.5 * (target + combined) + 1e-12
 
+    if sample_weights is None:
+        sample_weights = np.ones(distributions.shape[1]) / distributions.shape[1]
     # Compute the two KL components
     # D_KL(P || A)
     kl_p_a = rel_entr(target, avg_dist) @ sample_weights
@@ -137,13 +139,10 @@ def relevance_h2h(ref, ests, metric="b15") -> pd.Series:
 
     rel = pd.Series(index=ests.keys(), dtype=float, name=metric)
 
-    # For B-measure and T-measure, we use bc objects.
     if metric[0] == "b":
         window = int(metric[1:]) * 0.1
-        ref_bc = ref.contour("depth").level("unique")
         for key, est in ests.items():
-            est_bc = est.align(ref).contour("depth").level("unique")
-            rel[key] = bmeasure2(ref_bc, est_bc, window=window)[2]  # Take the f-score
+            rel[key] = bmeasure3(ref, est.align(ref), window=window)[2]  # Take the f-score
 
     # For L-measure, check if we want to do hierarchy label expansion.
     elif metric[0] == "l":

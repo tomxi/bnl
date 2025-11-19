@@ -116,8 +116,11 @@ class Track:
         feat_types: list[str] = ("tempogram", "crema", "yamnet", "openl3", "mfcc"),
     ):
         # check if lsds already exists
-        lsds_path = self.dataset.manifest_path.replace("manifest.csv", f"lsds/{self.track_id}.json")
-        if os.path.exists(lsds_path):
+        lsds_path = (
+            Path(self.dataset.manifest_path).expanduser().parent / "lsds" / f"{self.track_id}.json"
+        )
+        print(lsds_path)
+        if lsds_path.exists():
             # load json file as dict
             with open(lsds_path) as f:
                 all_outs = json.load(f)

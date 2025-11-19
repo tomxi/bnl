@@ -1,7 +1,7 @@
 import mir_eval
 import numpy as np
 import pandas as pd
-from mir_eval.util import f_measure
+from mir_eval.util import f_measure, match_events
 
 from .core import BoundaryContour as BC
 
@@ -163,6 +163,7 @@ def bmeasure2(
     trim: bool = False,
     verbose: bool = False,
     beta: float = 1,
+    weighted: bool = True,
 ):
     """
     Instead of doing the HR and POA separately, let's do HR and POA together.
@@ -253,3 +254,164 @@ def bmeasure2(
     recall = safe_div(rec_num, rec_denom, 1)
     precision = safe_div(prec_num, prec_denom, 1)
     return precision, recall, f_measure(precision, recall, beta=beta)
+
+
+# region: newest bmeasure
+
+
+def _build_salience_arrays(ref_bs, est_bs, match_idx):
+    """
+    Build salience arrays at ref_bs's positions, with matched est saliences (0 for unmatched)
+
+    Args:
+        ref_bs: Reference boundaries
+        est_bs: Estimate boundaries
+        match_idx: ref_idx -> est_idx mapping dictionary
+
+    Returns:
+        tuple: (ref_sal, est_sal)
+    """
+
+    # Recall arrays: iterate over reference boundaries
+    ref_sals = np.array([b.salience for b in ref_bs])
+    est_sals = np.array(
+        [est_bs[match_idx[i]].salience if i in match_idx else 0.0 for i in range(len(ref_bs))]
+    )
+
+    return ref_sals, est_sals
+
+
+def _pair_inversion_ratio(ref_saliences, est_saliences):
+    """
+    For ref_saliences and est_saliences of the same length, compare ordinal relationships
+    at all positions at once.
+
+    For each position, counts how many pairwise ordinal relationships are inverted
+    compared to all other positions.
+
+    Requires ref_saliences be all non-zeros. est_saliences can have zeros.
+
+    Args:
+        ref_saliences: Array of reference saliences (non-zeros)
+        est_saliences: Array of estimate saliences
+
+    Returns:
+        np.ndarray: Number of inverted pairs for each position
+    """
+    if len(ref_saliences) != len(est_saliences):
+        raise ValueError("ref_saliences and est_saliences must have the same length")
+
+    if len(ref_saliences) == 1:
+        # no pairs to compare, perfect ordial agreement
+        return np.array([0.0])
+    else:
+        # Create comparison matrices using broadcasting
+        # Shape: (n, n) where [i, j] indicates whether position i > position j
+        ref_more = ref_saliences[:, np.newaxis] > ref_saliences[np.newaxis, :]
+        ref_less = ref_saliences[:, np.newaxis] < ref_saliences[np.newaxis, :]
+
+        est_more_or_eq = est_saliences[:, np.newaxis] >= est_saliences[np.newaxis, :]
+        est_less_or_eq = est_saliences[:, np.newaxis] <= est_saliences[np.newaxis, :]
+
+        # Count inversions for each position (row)
+        # ref says more but est says less, or vice versa
+        inversions = (ref_more & est_less_or_eq) | (ref_less & est_more_or_eq)
+
+        # Sum across columns to get inversion count for each position
+        return inversions.sum(axis=1) / (len(ref_saliences) - 1)
+
+
+def bmeasure3(
+    ref,
+    est,
+    window: float = 0.5,
+    trim: bool = True,
+    weighted: bool = True,
+    verbose: bool = False,
+    beta: float = 1.0,
+):
+    """
+    Boundary measure combining hit rate and pairwise ordinal agreement.
+
+    For each matched boundary, computes how well the ordinal relationships
+    with all other boundaries are preserved between reference and estimate.
+
+    Args:
+        ref: Reference MultiSegment
+        est: Estimate MultiSegment
+        window: Matching window in seconds
+        trim: If True, exclude first and last boundaries
+        verbose: If True, print debug information
+        beta: F-measure beta parameter
+
+    Returns:
+        tuple: (precision, recall, f_measure)
+    """
+    # check boundary monotonicity
+    if not (ref.has_monotonic_bs() and est.has_monotonic_bs()):
+        raise ValueError("Both reference and estimate must have monotonic boundaries")
+
+    # turn MS to BCs
+    ref_bc = ref.contour("prob")
+    est_bc = est.contour("prob")
+
+    # Extract boundaries
+    ref_bs = ref_bc.bs
+    est_bs = est_bc.bs
+
+    # Optional trimming
+    if trim:
+        ref_bs = ref_bs[1:-1]
+        est_bs = est_bs[1:-1]
+
+    # Match boundaries
+    ref_times = [b.time for b in ref_bs]
+    est_times = [b.time for b in est_bs]
+    match_idx = match_events(ref_times, est_times, window)
+
+    # Build salience arrays for recall
+    ref_match_map = {pair[0]: pair[1] for pair in match_idx}
+    rec_ref_sals, rec_est_sals = _build_salience_arrays(ref_bs, est_bs, ref_match_map)
+
+    # Build salience arrays for precision
+    est_match_map = {pair[1]: pair[0] for pair in match_idx}
+    prec_est_sals, prec_ref_sals = _build_salience_arrays(est_bs, ref_bs, est_match_map)
+
+    if verbose:
+        print(f"Recall - Ref saliences: {rec_ref_sals}")
+        print(f"Recall - Est saliences: {rec_est_sals}")
+        print(f"Precision - Ref saliences: {prec_ref_sals}")
+        print(f"Precision - Est saliences: {prec_est_sals}")
+
+    # Compute per boundary recall and precision scores
+    rec_scores = np.zeros(len(ref_bs))
+    prec_scores = np.zeros(len(est_bs))
+
+    # Compute all inversions at once for recall and precision
+    rec_ord_scores = 1 - _pair_inversion_ratio(rec_ref_sals, rec_est_sals)
+    prec_ord_scores = 1 - _pair_inversion_ratio(prec_est_sals, prec_ref_sals)
+
+    # aggregate matched boundaries' ordinal scores for final recall and precision
+    for ref_idx, est_idx in match_idx:
+        rec_scores[ref_idx] = rec_ord_scores[ref_idx]
+        prec_scores[est_idx] = prec_ord_scores[est_idx]
+
+    if weighted:
+        rec_weights = rec_ref_sals / rec_ref_sals.sum()
+        prec_weights = prec_est_sals / prec_est_sals.sum()
+    else:
+        rec_weights = np.ones(len(ref_bs)) / len(ref_bs)
+        prec_weights = np.ones(len(est_bs)) / len(est_bs)
+
+    if verbose:
+        print("Precision scores:", prec_scores)
+        print("Precision weights:", prec_weights)
+        print("Recall scores:", rec_scores)
+        print("Recall weights:", rec_weights)
+
+    rec = rec_scores @ rec_weights
+    prec = prec_scores @ prec_weights
+    return prec, rec, f_measure(prec, rec, beta)
+
+
+# endregion
