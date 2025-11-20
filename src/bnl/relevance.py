@@ -32,13 +32,9 @@ def js_div(weights, distributions, target, sample_weights):
     # Combined distribution
     combined = distributions @ weights
 
-    # # Normalize distribution
-    # combined /= np.sum(combined)
-    # target /= np.sum(target)
-
     # Define the average distribution 'A'
     # A = 0.5 * (P + M), where P is 'target'
-    avg_dist = 0.5 * (target + combined) + 1e-12
+    avg_dist = 0.5 * (target + combined)
 
     if sample_weights is None:
         sample_weights = np.ones(distributions.shape[1]) / distributions.shape[1]
@@ -61,15 +57,14 @@ def sym_ce(weights, distributions, target, sample_weights):
     combined = distributions @ weights
     if sample_weights is None:
         sample_weights = 1 / distributions.shape[1]
-    epsilon = 1e-12
-    ce = -np.sum(target * np.log(combined + epsilon) * sample_weights) - np.sum(
-        combined * np.log(target + epsilon) * sample_weights
+    ce = -np.sum(target * np.log(combined) * sample_weights) - np.sum(
+        combined * np.log(target) * sample_weights
     )
     return ce
 
 
 def scipy_optimize(
-    target_distribution, distributions, verbose=False, obj_fn=js_div, sample_weights=None
+    target_distribution, distributions, verbose=True, obj_fn=js_div, sample_weights=None
 ):
     """
     Solve KL divergence minimization using scipy.optimize.
@@ -101,6 +96,12 @@ def scipy_optimize(
     if verbose:
         print(f"Number of distributions: {num_distributions}")
         print(f"Distribution dimension: {dist_dim}")
+
+    # normalize and pad distributions for stability
+    distributions /= np.sum(distributions, axis=0)
+    distributions += 1e-12
+    target_distribution /= np.sum(target_distribution)
+    target_distribution += 1e-12
 
     # Solve optimization problem
     result = minimize(
@@ -181,15 +182,15 @@ def relevance_h2f(
     est = combine_ms(ests, ignore_names=ignore_names).align(ref)
 
     if metric == "bpc":
-        # pick a sampling rate that gives me about less than 10k points, and no finer than 0.1 secs
-        frame_size = max(0.1, ref.duration / 10000)
+        # pick a sampling rate that gives me about less than 4k points, and no finer than 0.1 secs
+        frame_size = max(0.1, ref.duration / 4000)
         # print(f"Using frame size: {frame_size}")
         time_grid = build_time_grid(ref, frame_size)
-        y = ref.contour("prob").bpc(bw=0.5, time_grid=time_grid)
+        y = ref.contour("prob").bpc(bw=0.8, time_grid=time_grid)
 
         if len(est) == 0:
             raise ValueError("No valid estimated layers found.")
-        x = est.bpcs(bw=0.5, time_grid=time_grid)
+        x = est.bpcs(bw=0.8, time_grid=time_grid)
         sample_weights = np.ones_like(y)
 
     elif metric == "lam":

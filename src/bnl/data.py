@@ -111,15 +111,18 @@ class Track:
             return np.load(feat_path)
 
     @property
+    def feat_types(self) -> list[str]:
+        return ["tempogram", "crema", "yamnet", "openl3", "mfcc"]
+
     def lsds(
         self,
-        feat_types: list[str] = ("tempogram", "crema", "yamnet", "openl3", "mfcc"),
+        rep_feats: tuple[str] | None = None,
+        loc_feats: tuple[str] | None = None,
     ):
         # check if lsds already exists
         lsds_path = (
             Path(self.dataset.manifest_path).expanduser().parent / "lsds" / f"{self.track_id}.json"
         )
-        print(lsds_path)
         if lsds_path.exists():
             # load json file as dict
             with open(lsds_path) as f:
@@ -128,8 +131,8 @@ class Track:
             os.makedirs(os.path.dirname(lsds_path), exist_ok=True)
             # run lsd for all combinations of features
             all_outs = dict()
-            for rep_feat in feat_types:
-                for loc_feat in feat_types:
+            for rep_feat in self.feat_types:
+                for loc_feat in self.feat_types:
                     print(rep_feat, loc_feat)
                     all_outs[f"{rep_feat}_{loc_feat}"] = run_lsd(
                         self.feats,
@@ -142,8 +145,14 @@ class Track:
                 json.dump(all_outs, f)
 
         # convert each value to MultiSegment before returning
+        if rep_feats is None:
+            rep_feats = self.feat_types
+        if loc_feats is None:
+            loc_feats = self.feat_types
         return {
-            k: MultiSegment.from_json(v, name=self.track_id + "-" + k) for k, v in all_outs.items()
+            k: MultiSegment.from_json(v, name=self.track_id + "-" + k)
+            for k, v in all_outs.items()
+            if k.split("_")[0] in rep_feats and k.split("_")[1] in loc_feats
         }
 
     def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:

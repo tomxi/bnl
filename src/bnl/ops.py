@@ -548,18 +548,20 @@ class LabelByLam(LabelingStrategy):
         self,
         ref_ms: MultiSegment,
         lam_mode: str = "prob",
+        w: pd.Series | None = None,
         aff_mode: str = "area",
         starting_k: int = 2,
         min_k_inc: int = 1,
     ):
         self.reference_ms = ref_ms
         self.lam_mode = lam_mode
+        self.lam_w = w
         self.aff_mode = aff_mode
         self.starting_k = starting_k
         self.min_k_inc = min_k_inc
 
     def __call__(self, bh: BoundaryHierarchy) -> MultiSegment:
-        lam = self.reference_ms.lam(strategy=self.lam_mode)
+        lam = self.reference_ms.lam(strategy=self.lam_mode, w=self.lam_w)
         return lam.decode(
             bh, aff_mode=self.aff_mode, starting_k=self.starting_k, min_k_inc=self.min_k_inc
         )
@@ -600,14 +602,18 @@ def build_time_grid(span: TimeSpan, frame_size: float = 0.1) -> np.ndarray:
     return ts
 
 
-def bpc2bs(bpc: pd.Series, start_time: float, end_time: float) -> list[RatedBoundary]:
+def bpc2bs(
+    bpc: pd.Series, start_time: float, end_time: float, low_threshold: float = 1e-2
+) -> list[RatedBoundary]:
     peak_indices = scipy.signal.find_peaks(bpc)[0]
     peak_times = bpc.index[peak_indices]
     peak_saliences = bpc.iloc[peak_indices]
-    inner_boundaries = [
-        RatedBoundary(t, s) for t, s in zip(peak_times, peak_saliences, strict=True)
-    ]
     max_salience = np.max(peak_saliences) if peak_saliences.size > 0 else 1
+    inner_boundaries = [
+        RatedBoundary(t, s)
+        for t, s in zip(peak_times, peak_saliences, strict=True)
+        if s > max_salience * low_threshold
+    ]
     final_boundaries = [
         RatedBoundary(start_time, max_salience),
         *inner_boundaries,
