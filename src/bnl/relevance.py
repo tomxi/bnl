@@ -6,7 +6,7 @@ from scipy.optimize import minimize
 from scipy.special import rel_entr
 
 # from scipy.stats import entropy
-from .core import MultiSegment
+from .core import MultiSegment, Segment
 from .metrics import bmeasure3
 from .ops import bs2uv, build_time_grid, combine_ms, common_itvls
 
@@ -168,7 +168,7 @@ def relevance_h2h(ref, ests, metric="b15") -> pd.Series:
 
 
 def relevance_h2f(
-    ref: MultiSegment,
+    ref: MultiSegment | Segment,
     ests: dict[str, MultiSegment],
     metric: str = "bpc",
     obj_fn=js_div,
@@ -198,8 +198,6 @@ def relevance_h2f(
         time_grid = common_itvls(ref.layers + est.layers)
         # I need area for each sample point as well
         sample_points, sample_weights = bs2uv(time_grid)
-        # sample_weights /= np.sum(sample_weights)
-        # sample_weights *= len(sample_weights)
         # should I use depth or prob for ref lam?
         ref_lam_values = ref.expand_labels().lam(strategy="prob").sample(sample_points)
 
