@@ -626,12 +626,12 @@ class MultiSegment(TimeSpan):
             coarser_layer = finer_layer
         return True
 
-    def monocast(self) -> MultiSegment:
+    def monocast(self, label_strat: str = "lam") -> MultiSegment:
         return (
             self.contour("prob")
-            .clean("kde", bw=0.5)
-            .level(strategy="mean_shift", log=True, bw=0.3)
-            .to_ms(strategy="lam", ref_ms=self)
+            .clean("kde", bw=0.8)
+            .level(strategy="mean_shift", log=True, bw=1 / 3)
+            .to_ms(strategy=label_strat, ref_ms=self)
         )
 
     def to_multisegment(self) -> MultiSegment:
@@ -863,12 +863,9 @@ class LabelAgreementMap(AgreementMatrix):
             aff = self.to_sap(layer.btimes).to_aff(aff_mode)
             current_k = aff.pick_k(min_k=current_k)
             lab = aff.scluster(k=current_k)
-            current_k += min_k_inc
-            # DEBUG prints
-            # print(current_k)
-            # aff.plot()
-            # print(layer.btimes, lab, aff.bs)
+            # print(f"current_k: {current_k}")
             new_layers.append(Segment(bs=layer.bs, raw_labs=lab))
+            current_k += min_k_inc
         return MultiSegment(raw_layers=new_layers, name=bh.name).relabel()
 
     def _upsample(self, finer_bs: np.ndarray) -> LabelAgreementMap:

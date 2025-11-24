@@ -24,6 +24,7 @@ import requests
 
 from .core import MultiSegment, Segment
 from .lsd import run as run_lsd
+from .relevance import rel_suite
 
 
 @dataclass
@@ -154,6 +155,29 @@ class Track:
             for k, v in all_outs.items()
             if k.split("_")[0] in rep_feats and k.split("_")[1] in loc_feats
         }
+
+    def lsd_relevance(self):
+        import pickle
+
+        # check if relevance already calculated
+        rel_path = (
+            Path(self.dataset.manifest_path).expanduser().parent
+            / "lsd_rel"
+            / f"{self.track_id}.pkl"
+        )
+        if rel_path.exists():
+            # load pickle file as dict
+            with open(rel_path, "rb") as f:
+                return pickle.load(f)
+        else:
+            out = dict()
+            for ref_name, ref in self.refs.items():
+                out[ref_name] = rel_suite(ref, self.lsds())
+            # save pickle file
+            os.makedirs(os.path.dirname(rel_path), exist_ok=True)
+            with open(rel_path, "wb") as f:
+                pickle.dump(out, f)
+            return out
 
     def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:
         """Loads a specific annotation as a MultiSegment.

@@ -310,11 +310,7 @@ class LevelByMeanShift(LevelStrategy):
             saliences = np.log(saliences)
         else:
             saliences /= saliences.max()
-        if False:  # for debugging
-            import matplotlib.pyplot as plt
 
-            plt.stem(saliences)
-            plt.show()
         self.sal_ms.fit(saliences.reshape(-1, 1))
         quantized_salience = self.sal_ms.cluster_centers_.flatten()[self.sal_ms.labels_]
         inner_boundaries = [
@@ -551,7 +547,7 @@ class LabelByLam(LabelingStrategy):
         w: pd.Series | None = None,
         aff_mode: str = "area",
         starting_k: int = 2,
-        min_k_inc: int = 1,
+        min_k_inc: int = 0,
     ):
         self.reference_ms = ref_ms
         self.lam_mode = lam_mode
@@ -572,15 +568,36 @@ class LabelByLam(LabelingStrategy):
 # region: Helper functions
 
 
-def bs2uv(bs):
+def bs2uv(bs, min_dur=0.1):
     """Convert a set of boundaries to a set of (u,v) coordinates.
     also return the area of each associated sample point.
+
+    Add a filtering option to remove very small intervals.
     """
-    mid_points = (bs[:-1] + bs[1:]) / 2
+    # get rid of bs that are too close to the previous one
+    filtered_bs = [bs[0]]
+    for b in bs[1:]:
+        if b - filtered_bs[-1] > min_dur:
+            filtered_bs.append(b)
+
+    # Ensure the last boundary is included
+    if filtered_bs[-1] < bs[-1]:
+        # If the last added boundary is too close to the end, replace it,
+        # unless it is the start boundary itself (to preserve at least one interval)
+        if (len(filtered_bs) > 1) and (bs[-1] - filtered_bs[-1] < min_dur):
+            filtered_bs[-1] = bs[-1]
+        else:
+            filtered_bs.append(bs[-1])
+
+    filtered_bs = np.array(filtered_bs)
+    print("Filtered boundaries:", len(filtered_bs))
+
+    # get the mid points of the filtered bs
+    mid_points = (filtered_bs[:-1] + filtered_bs[1:]) / 2
     n = len(mid_points)
     # Get indices for the upper triangle of an (n x n) matrix
     i, j = np.triu_indices(n)
-    dur = bs[1:] - bs[:-1]
+    dur = filtered_bs[1:] - filtered_bs[:-1]
     area = dur[i] * dur[j]
     # Directly create the (u, v) pairs
     return np.stack([mid_points[i], mid_points[j]], axis=1), area
