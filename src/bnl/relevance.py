@@ -1,3 +1,5 @@
+import warnings
+
 import frameless_eval as fle
 import numpy as np
 import pandas as pd
@@ -5,7 +7,6 @@ from mir_eval.segment import detection as me_hr
 from scipy.optimize import minimize
 from scipy.special import rel_entr
 
-# from scipy.stats import entropy
 from .core import MultiSegment, Segment
 from .metrics import bmeasure3
 from .ops import bs2uv, build_time_grid, combine_ms, common_itvls
@@ -125,7 +126,7 @@ def scipy_optimize(
 # region: relevance functions
 
 
-def relevance_h2h(ref, ests, metric="b15") -> pd.Series:
+def h2h(ref, ests, metric="b15") -> pd.Series:
     # Get the relevance of each estimate with respect to the reference using metric
     # Metric can be "b30", "b05", "t", "l", "l-exp"
     # Monocasting and label decoding should be done before hand.
@@ -133,10 +134,12 @@ def relevance_h2h(ref, ests, metric="b15") -> pd.Series:
 
     # h2h should check for boundary monotonicity. and raise error if not monotonic.
     if not ref.has_monotonic_bs():
-        raise ValueError("Reference must have monotonic boundaries.")
-    for est in ests.values():
-        if not est.has_monotonic_bs():
-            raise ValueError("Estimates must all have monotonic boundaries.")
+        warnings.warn("Reference must have monotonic boundaries. monocasting...", stacklevel=2)
+        ref = ref.monocast()
+    for est_key in ests.keys():
+        if not ests[est_key].has_monotonic_bs():
+            warnings.warn("Estimate must have monotonic boundaries. monocasting...", stacklevel=2)
+            ests[est_key] = ests[est_key].monocast()
 
     rel = pd.Series(index=ests.keys(), dtype=float, name=metric)
 
@@ -167,13 +170,12 @@ def relevance_h2h(ref, ests, metric="b15") -> pd.Series:
     return rel
 
 
-def relevance_h2f(
+def h2f(
     ref: MultiSegment | Segment,
     ests: dict[str, MultiSegment],
     metric: str = "bpc",
     obj_fn=js_div,
     ignore_names=(),
-    aggregate_hierarchy=False,
 ) -> pd.Series:
     # Get the relevance of each estimate with respect to the reference using metric
     # Metric can be "bpc", "lam"
@@ -197,7 +199,7 @@ def relevance_h2f(
         # let's do it in the SAM space. Find the common time grid
         time_grid = common_itvls(ref.layers + est.layers)
         # I need area for each sample point as well
-        sample_points, sample_weights = bs2uv(time_grid)
+        sample_points, sample_weights = bs2uv(time_grid, min_dur=1)
         # should I use depth or prob for ref lam?
         ref_lam_values = ref.expand_labels().lam(strategy="prob").sample(sample_points)
 
@@ -208,11 +210,6 @@ def relevance_h2f(
     else:
         raise ValueError(f"Metric {metric} not recognized.")
 
-    # sample_weights = np.ones_like(y)
-    # Make sure inputs are valid probability distributions
-    y = y / np.sum(y)
-    x = x / np.sum(x, axis=0)
-
     # run scipy optimize
     weights = pd.Series(
         scipy_optimize(y, x, obj_fn=obj_fn, sample_weights=sample_weights),
@@ -220,20 +217,10 @@ def relevance_h2f(
         name=metric,
     )
 
-    # aggregate layers relevance for a hierarchy if aggregate_hierarchy is True
-    if aggregate_hierarchy:
-        agg_weights = dict()
-        for hier_name in ests.keys():
-            # aggregate the weights of all layers in the same hierarchy
-            # slice out weights that starts with f"{hier_name}:" using pandas filtering
-            hier_weights = weights.filter(regex=f"{hier_name}:")
-            agg_weights[hier_name] = hier_weights.sum(skipna=True)
-        return pd.Series(agg_weights, index=ests.keys(), name=metric)
-    else:
-        return weights
+    return weights
 
 
-def relevance_f2f(ref_layer, est, metric="hr15") -> pd.Series:
+def f2f(ref_layer, est, metric="hr15") -> pd.Series:
     """
     metric can be "hr05", "hr15", "hr30", "v", "pfc"
     """
@@ -262,13 +249,36 @@ def relevance_f2f(ref_layer, est, metric="hr15") -> pd.Series:
     return rel
 
 
+def rel_suite(ref, ests):
+    mono_ests = {name: ms.monocast() for name, ms in ests.items()}
+
+    rel_b15 = h2h(ref, mono_ests, metric="b15")
+    rel_t = h2h(ref, mono_ests, metric="t")
+    rel_l = h2h(ref, mono_ests, metric="l-exp")
+    rel_bpc = h2f(ref, ests, metric="bpc")
+    rel_lam = h2f(ref, ests, metric="lam")
+
+    rel_mat = pd.concat(
+        [
+            aggregate_relevance(rel_bpc, name="bpc"),
+            aggregate_relevance(rel_lam, name="lam"),
+            rel_b15,
+            rel_t,
+            rel_l,
+        ],
+        axis=1,
+    )
+
+    return rel_mat
+
+
 # endregion: relevance functions
 
 
 # region: compatibility diagrams
 
 
-def comp_diag_h2h(
+def cd_h2h(
     refs: dict[str, MultiSegment], ests: dict[str, MultiSegment], metric="b15"
 ) -> pd.DataFrame:
     """
@@ -276,7 +286,7 @@ def comp_diag_h2h(
     """
     rels = []
     for name, ref in refs.items():
-        r = relevance_h2h(ref, ests, metric=metric)
+        r = h2h(ref, ests, metric=metric)
         r.name = name
         rels.append(r)
 
@@ -285,7 +295,7 @@ def comp_diag_h2h(
     return df
 
 
-def comp_diag_h2f(
+def cd_h2f(
     refs: dict[str, MultiSegment],
     ests: dict[str, MultiSegment],
     metric="bpc",
@@ -295,10 +305,10 @@ def comp_diag_h2f(
     rels = []
 
     for name, ref in refs.items():
-        r = relevance_h2f(
-            ref, ests, metric=metric, aggregate_hierarchy=agg, ignore_names=(name), obj_fn=obj_fn
-        )
+        r = h2f(ref, ests, metric=metric, ignore_names=(name), obj_fn=obj_fn)
         r.name = name
+        if agg:
+            r = aggregate_relevance(r)
         rels.append(r)
 
     df = pd.concat(rels, axis=1)
@@ -306,7 +316,7 @@ def comp_diag_h2f(
     return df
 
 
-def comp_diag_f2f(
+def cd_f2f(
     ref: MultiSegment | dict[str, MultiSegment],
     est: MultiSegment | dict[str, MultiSegment],
     metric="hr15",
@@ -317,13 +327,23 @@ def comp_diag_f2f(
     if isinstance(est, dict):
         est = combine_ms(est)
     for ref_layer in ref:
-        r = relevance_f2f(ref_layer, est, metric=metric)
+        r = f2f(ref_layer, est, metric=metric)
         r.name = ref_layer.name
         rels.append(r)
 
     df = pd.concat(rels, axis=1)
     df.name = metric
     return df
+
+
+def aggregate_relevance(weights: pd.Series, delimiter=":", name=None) -> pd.Series:
+    # aggregate layers relevance for a hierarchy if aggregate_hierarchy is True
+    agg_weights = dict()
+    hier_names = weights.index.str.split(delimiter).str[0].unique()
+    for hier_name in hier_names:
+        hier_weights = weights.filter(regex=f"{hier_name}{delimiter}")
+        agg_weights[hier_name] = hier_weights.sum(skipna=True)
+    return pd.Series(agg_weights, index=hier_names, name=name)
 
 
 # endregion: compatibility diagrams
