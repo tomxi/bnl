@@ -5,7 +5,7 @@ from tqdm import tqdm
 import bnl
 
 if __name__ == "__main__":
-    slm_ds = bnl.Dataset("/scratch/qx244/data/salami/metadata.csv")
+    slm_ds = bnl.SalamiDataset("/scratch/qx244/data/salami/metadata.csv")
     tids = slm_ds.track_ids
     random.shuffle(tids)
 
