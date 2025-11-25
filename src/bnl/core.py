@@ -634,9 +634,6 @@ class MultiSegment(TimeSpan):
             .to_ms(strategy=label_strat, ref_ms=self)
         )
 
-    def to_multisegment(self) -> MultiSegment:
-        return MultiSegment(raw_layers=[self], name=self.name)
-
 
 # endregion: MultiSegment
 
