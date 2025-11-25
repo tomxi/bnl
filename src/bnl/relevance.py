@@ -134,12 +134,18 @@ def h2h(ref, ests, metric="b15") -> pd.Series:
 
     # h2h should check for boundary monotonicity. and raise error if not monotonic.
     if not ref.has_monotonic_bs():
-        warnings.warn("Reference must have monotonic boundaries. monocasting...", stacklevel=2)
-        ref = ref.monocast()
+        warnings.warn(
+            "Reference must have monotonic boundaries. monocasting using 1layer label strategy...",
+            stacklevel=2,
+        )
+        ref = ref.monocast("1layer")
     for est_key in ests.keys():
         if not ests[est_key].has_monotonic_bs():
-            warnings.warn("Estimate must have monotonic boundaries. monocasting...", stacklevel=2)
-            ests[est_key] = ests[est_key].monocast()
+            warnings.warn(
+                "Estimate must have monotonic boundaries. monocasting using 1layer label strat...",
+                stacklevel=2,
+            )
+            ests[est_key] = ests[est_key].monocast("1layer")
 
     rel = pd.Series(index=ests.keys(), dtype=float, name=metric)
 
