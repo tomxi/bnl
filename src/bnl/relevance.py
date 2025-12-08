@@ -176,6 +176,58 @@ def h2h(ref, ests, metric="b15") -> pd.Series:
     return rel
 
 
+def h2hc(
+    ref: MultiSegment | Segment,
+    ests: dict[str, MultiSegment],
+    metric: str = "bpc",
+    obj_fn=js_div,
+    ignore_names=(),
+) -> pd.Series:
+    # Similar to h2f, but opposed to begging bpc and lam per layer,
+    # it takes the naive average to save compute.
+    if metric == "bpc":
+        # pick a sampling rate that gives me about less than 4k points, and no finer than 0.1 secs
+        frame_size = max(0.1, ref.duration / 4000)
+        # print(f"Using frame size: {frame_size}")
+        time_grid = build_time_grid(ref, frame_size)
+        y = ref.contour("prob").bpc(bw=0.8, time_grid=time_grid)
+        sample_weights = np.ones_like(y)
+        # Get a bpc for each est in ests.
+        x = dict()
+        for name, est in ests.items():
+            if name.split("_")[0] in ignore_names:
+                continue
+            est = est.align(ref)
+            x[name] = est.contour("prob").bpc(bw=0.8, time_grid=time_grid)
+        x = pd.DataFrame(x, index=time_grid)
+    elif metric == "lam":
+        # let's do it in the SAM space. Find the common time grid
+        time_grid = common_itvls(ref.layers + combine_ms(ests, ignore_names=ignore_names).layers)
+        # I need area for each sample point as well
+        sample_points, sample_weights = bs2uv(time_grid, min_dur=1)
+        # should I use depth or prob for ref lam?
+        ref_lam_values = ref.lam(strategy="prob").sample(sample_points)
+
+        est_lams = {
+            name: est.lam("prob").sample(sample_points)
+            for name, est in ests.items()
+            if name.split("_")[0] not in ignore_names
+        }
+        y = pd.Series(ref_lam_values, index=sample_points.T.tolist())
+        x = pd.DataFrame(est_lams, index=sample_points.T.tolist())
+    else:
+        raise ValueError(f"Metric {metric} not recognized.")
+
+    # run scipy optimize
+    weights = pd.Series(
+        scipy_optimize(y, x, obj_fn=obj_fn, sample_weights=sample_weights),
+        index=x.columns,
+        name=metric,
+    )
+
+    return weights
+
+
 def h2f(
     ref: MultiSegment | Segment,
     ests: dict[str, MultiSegment],
@@ -301,6 +353,20 @@ def cd_h2h(
     return df
 
 
+def cd_h2hc(
+    refs: dict[str, MultiSegment], ests: dict[str, MultiSegment], metric="bpc", obj_fn=js_div
+) -> pd.DataFrame:
+    rels = []
+    for name, ref in refs.items():
+        r = h2hc(ref, ests, metric=metric, ignore_names=([name.split("_")[0]]), obj_fn=obj_fn)
+        r.name = name
+        rels.append(r)
+
+    df = pd.concat(rels, axis=1)
+    df.name = metric
+    return df.reindex(ests.keys())
+
+
 def cd_h2f(
     refs: dict[str, MultiSegment],
     ests: dict[str, MultiSegment],
@@ -350,6 +416,18 @@ def aggregate_relevance(weights: pd.Series, delimiter=":", name=None) -> pd.Seri
         hier_weights = weights.filter(regex=f"{hier_name}{delimiter}")
         agg_weights[hier_name] = hier_weights.sum(skipna=True)
     return pd.Series(agg_weights, index=hier_names, name=name)
+
+
+def cd_suite(ests: dict[str, MultiSegment]) -> dict[str, pd.DataFrame]:
+    mono_ests = {name: ms.monocast() for name, ms in ests.items()}
+    cds = dict()
+    cds["b15"] = cd_h2h(mono_ests, mono_ests, metric="b15")
+    cds["t"] = cd_h2h(mono_ests, mono_ests, metric="t")
+    cds["l-exp"] = cd_h2h(mono_ests, mono_ests, metric="l-exp")
+    cds["bpc"] = cd_h2hc(ests, ests, metric="bpc")
+    cds["lam"] = cd_h2hc(ests, ests, metric="lam")
+
+    return cds
 
 
 # endregion: compatibility diagrams

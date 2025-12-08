@@ -24,7 +24,7 @@ import requests
 
 from .core import MultiSegment, Segment
 from .lsd import run as run_lsd
-from .relevance import rel_suite
+from .relevance import cd_suite, rel_suite
 
 
 @dataclass
@@ -178,6 +178,24 @@ class Track:
             with open(rel_path, "wb") as f:
                 pickle.dump(out, f)
             return out
+
+    def lsd_cds(self, recompute=False):
+        import pickle
+
+        # check if lsd_cd already calculated
+        cd_path = (
+            Path(self.dataset.manifest_path).expanduser().parent / "lsd_cd" / f"{self.track_id}.pkl"
+        )
+        if not recompute and cd_path.exists():
+            # load pickle file as dict
+            with open(cd_path, "rb") as f:
+                return pickle.load(f)
+        else:
+            cds = cd_suite(self.lsds())
+            os.makedirs(os.path.dirname(cd_path), exist_ok=True)
+            with open(cd_path, "wb") as f:
+                pickle.dump(cds, f)
+            return cds
 
     def load_annotation(self, annotation_type: str, annotator: str | None = None) -> MultiSegment:
         """Loads a specific annotation as a MultiSegment.
