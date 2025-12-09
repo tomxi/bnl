@@ -431,3 +431,30 @@ def cd_suite(ests: dict[str, MultiSegment]) -> dict[str, pd.DataFrame]:
 
 
 # endregion: compatibility diagrams
+
+# region: weight estimation
+
+
+def cd2w(cd: pd.DataFrame, eigen=True) -> pd.Series:
+    """
+    Either row sum when eigen is False, or the Principal Eigenvector when eigen is True.
+    returns a pd.Series of weights normalized to sum to 1.
+    """
+    cd = cd.fillna(0)
+    if eigen:
+        # 1. Decompose
+        vals, vecs = np.linalg.eig(cd.values)
+
+        # 2. Find the Principal Eigenvalue
+        # We look for the eigenvalue with the largest real part (The Perron Root)
+        max_index = np.argmax(np.real(vals))
+
+        # 3. Extract the Vector and take Magnitude
+        # This handles both numerical noise (1e-15j) and global phase rotation.
+        weight = np.abs(vecs[:, max_index])
+
+    else:
+        weight = cd.values.sum(axis=1)
+
+    # 4. Normalize to sum to 1
+    return pd.Series(weight / np.sum(weight), index=cd.index)
