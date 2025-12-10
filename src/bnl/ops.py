@@ -39,6 +39,12 @@ __all__ = [
     "LabelByUniqueLabel",
     "LabelByClosestSingleLayer",
     "LabelByLam",
+    # Helper functions
+    "bs2uv",
+    "combine_ms",
+    "build_time_grid",
+    "common_itvls",
+    "bpc2bs",
 ]
 
 from abc import ABC, abstractmethod
@@ -64,6 +70,7 @@ from .core import (
     MultiSegment,
     RatedBoundary,
     Segment,
+    SegmentAgreementProbability,
     TimeSpan,
 )
 
@@ -536,6 +543,8 @@ class LabelByClosestSingleLayer(LabelingStrategy):
         return max_overlap_labels
 
 
+# The logic should live here.... lam.decode should really alias this instead. oh well another day....
+# let's just have a different strategy right now
 @LabelingStrategy.register("lam")
 class LabelByLam(LabelingStrategy):
     """Use LAM and eigengap spectral clustering to label intervals."""
@@ -561,6 +570,45 @@ class LabelByLam(LabelingStrategy):
         return lam.decode(
             bh, aff_mode=self.aff_mode, starting_k=self.starting_k, min_k_inc=self.min_k_inc
         )
+
+
+@LabelingStrategy.register("lams")
+class LabelByWeightedLams(LabelingStrategy):
+    """Use LAM and eigengap spectral clustering to label intervals."""
+
+    def __init__(
+        self,
+        ref_ms: dict[str, MultiSegment],
+        w: pd.Series | None = None,
+        starting_k: int = 2,
+        min_k_inc: int = 0,
+        aff_mode: str = "area",
+    ):
+        self.ref_ms = ref_ms
+        self.w = w
+        self.starting_k = starting_k
+        self.min_k_inc = min_k_inc
+        self.aff_mode = aff_mode
+
+    def __call__(self, bh: BoundaryHierarchy) -> MultiSegment:
+        new_layers = []
+        current_k = self.starting_k
+        for layer in bh.to_ms():
+            saps = {k: self.ref_ms[k].lam("prob").to_sap(layer.btimes) for k in self.ref_ms}
+            # mix the segment agreement probability matrices with self.w as weights
+            # 1. Compute weighted sum of the matrices
+            #    (Python's sum() works with numpy arrays if start is implicitly 0 or handled)
+            mixed_mat = sum(saps[k].mat * v for k, v in self.w.items())
+
+            # 2. Create the new instance using bs from layer
+            sap = SegmentAgreementProbability(mat=mixed_mat, bs=layer.btimes)
+            aff = sap.to_aff(normalize=self.aff_mode)
+            current_k = aff.pick_k(min_k=current_k)
+            lab = aff.scluster(k=current_k)
+            # print(f"current_k: {current_k}")
+            new_layers.append(Segment(bs=layer.bs, raw_labs=lab))
+            current_k += self.min_k_inc
+        return MultiSegment(raw_layers=new_layers, name=bh.name).relabel()
 
 
 # endregion: Labeling strategies
