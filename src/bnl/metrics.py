@@ -1,9 +1,11 @@
+import frameless_eval as fle
 import mir_eval
 import numpy as np
 import pandas as pd
 from mir_eval.util import f_measure, match_events
 
 from .core import BoundaryContour as BC
+from .core import MultiSegment as MS
 
 
 def safe_div(numerator, denominator, default=0):
@@ -412,6 +414,15 @@ def bmeasure3(
     rec = rec_scores @ rec_weights
     prec = prec_scores @ prec_weights
     return prec, rec, f_measure(prec, rec, beta)
+
+
+# endregion
+
+# region: wrapper around frameless_eval metrics
+
+
+def lmeasure(ref_ms: MS, est_ms: MS, **kwargs):
+    return fle.lmeasure(ref_ms.itvls, ref_ms.labels, est_ms.itvls, est_ms.labels, **kwargs)
 
 
 # endregion
