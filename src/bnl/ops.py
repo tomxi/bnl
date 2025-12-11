@@ -70,7 +70,7 @@ from .core import (
     MultiSegment,
     RatedBoundary,
     Segment,
-    SegmentAgreementProbability,
+    SegmentAgreementProb,
     TimeSpan,
 )
 
@@ -601,7 +601,7 @@ class LabelByWeightedLams(LabelingStrategy):
             mixed_mat = sum(saps[k].mat * v for k, v in self.w.items())
 
             # 2. Create the new instance using bs from layer
-            sap = SegmentAgreementProbability(mat=mixed_mat, bs=layer.btimes)
+            sap = SegmentAgreementProb(mat=mixed_mat, bs=layer.btimes)
             aff = sap.to_aff(normalize=self.aff_mode)
             current_k = aff.pick_k(min_k=current_k)
             lab = aff.scluster(k=current_k)
