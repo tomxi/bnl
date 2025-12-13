@@ -711,6 +711,36 @@ def combine_ms(
     return new_ms
 
 
+def combine_ms2bc(
+    named_ms: dict[str, MultiSegment],
+    new_name: str = "combined",
+    bpc_bw: float = 0.8,
+    bpc_frame_size: float = 0.1,
+    bpc_w: pd.Series | None = None,
+) -> BoundaryHierarchy:
+    """
+    Combine multiple MS's BPCs into a single BoundaryHierarchy, with optional weightings by bpc_w.
+    """
+    if bpc_w is None:
+        from .relevance import cd2w, cd_h2hc
+
+        # default to using the compatibility diagram to get weight
+        bpc_cds = cd_h2hc(named_ms, named_ms, metric="bpc")
+        bpc_w = cd2w(bpc_cds)
+
+    # Create common time grid
+    union_span = combine_ms(named_ms)
+    time_grid = build_time_grid(union_span, frame_size=bpc_frame_size)
+    bpcs = pd.DataFrame(index=time_grid, columns=bpc_w.index)
+
+    for name in bpc_w.index:
+        bpcs[name] = named_ms[name].contour("prob").bpc(bw=bpc_bw, time_grid=time_grid)
+
+    return BoundaryContour(
+        bpc2bs((bpcs @ bpc_w), union_span.start.time, union_span.end.time), name=new_name
+    )
+
+
 def common_itvls(layers: MultiSegment | list[Segment]) -> np.ndarray:
     common_bs = set()
     for layer in layers:
