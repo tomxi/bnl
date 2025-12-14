@@ -585,7 +585,10 @@ class LabelByWeightedLams(LabelingStrategy):
         aff_mode: str = "area",
     ):
         self.ref_ms = ref_ms
-        self.w = w
+        if w is None:
+            self.w = pd.Series(1, index=ref_ms.keys()) / len(ref_ms)
+        else:
+            self.w = w
         self.starting_k = starting_k
         self.min_k_inc = min_k_inc
         self.aff_mode = aff_mode
@@ -722,11 +725,7 @@ def combine_ms2bc(
     Combine multiple MS's BPCs into a single BoundaryHierarchy, with optional weightings by bpc_w.
     """
     if bpc_w is None:
-        from .relevance import cd2w, cd_h2hc
-
-        # default to using the compatibility diagram to get weight
-        bpc_cds = cd_h2hc(named_ms, named_ms, metric="bpc")
-        bpc_w = cd2w(bpc_cds)
+        bpc_w = pd.Series(1, index=named_ms.keys()) / len(named_ms)
 
     # Create common time grid
     union_span = combine_ms(named_ms)

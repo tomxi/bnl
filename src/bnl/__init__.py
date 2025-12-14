@@ -19,6 +19,8 @@ __version__ = "0.0.3"
 # --- Import submodules for explicit, namespaced access ---
 from . import core, data, ops, viz, metrics, exp, lsd  # noqa: I001
 
+from . import relevance as rel
+
 # --- Promote the core data structures to the top level ---
 from .core import (
     Boundary as B,
@@ -67,4 +69,5 @@ __all__ = [
     "metrics",
     "exp",
     "lsd",
+    "rel",
 ]

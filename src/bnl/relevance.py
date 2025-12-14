@@ -1,9 +1,11 @@
 import warnings
+from dataclasses import dataclass
 
 import frameless_eval as fle
 import numpy as np
 import pandas as pd
 from mir_eval.segment import detection as me_hr
+from scipy import stats
 from scipy.optimize import minimize
 from scipy.special import rel_entr
 
@@ -432,29 +434,44 @@ def cd_suite(ests: dict[str, MultiSegment]) -> dict[str, pd.DataFrame]:
 
 # endregion: compatibility diagrams
 
-# region: weight estimation
+# region: weight estimation from CD
 
 
-def cd2w(cd: pd.DataFrame, eigen=True) -> pd.Series:
+@dataclass
+class CompDiagramStats:
+    """Structure for compatibility diagram statistics."""
+
+    w: pd.Series  # normalized weights
+    wentropy: float  # entropy of weights
+    evmax: float  # largest eigenvalue
+    evgap: float  # first eigen gap
+    evals: pd.Series  # eigenvalues
+
+    def to_dict(self):
+        return self.__dict__
+
+
+def cd2w(cd: pd.DataFrame) -> CompDiagramStats:
     """
-    Either row sum when eigen is False, or the Principal Eigenvector when eigen is True.
-    returns a pd.Series of weights normalized to sum to 1.
+    cd: compatibility diagram
+    returns: dict of computed weights and other statistics
     """
     cd = cd.fillna(0)
-    if eigen:
-        # 1. Decompose
-        vals, vecs = np.linalg.eig(cd.values)
+    # Decompose and sort descending
+    evals, evecs = np.linalg.eig(cd.values)
+    idx = np.abs(evals).argsort()[::-1]
+    evals = np.abs(evals[idx])
+    evecs = evecs[:, idx]
 
-        # 2. Find the Principal Eigenvalue
-        # We look for the eigenvalue with the largest real part (The Perron Root)
-        max_index = np.argmax(np.real(vals))
+    # first eigen Vector
+    evec_1 = np.abs(evecs[:, 0])
+    w = pd.Series(evec_1 / np.sum(evec_1), index=cd.index)
 
-        # 3. Extract the Vector and take Magnitude
-        # This handles both numerical noise (1e-15j) and global phase rotation.
-        weight = np.abs(vecs[:, max_index])
-
-    else:
-        weight = cd.values.sum(axis=1)
-
-    # 4. Normalize to sum to 1
-    return pd.Series(weight / np.sum(weight), index=cd.index)
+    # Normalize to sum to 1
+    return CompDiagramStats(
+        w=w,
+        wentropy=stats.entropy(w),
+        evmax=evals[0],
+        evgap=evals[0] - evals[1],
+        evals=pd.Series(evals),
+    )
