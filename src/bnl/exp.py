@@ -1,6 +1,7 @@
 import itertools
 import os
 import pickle
+import warnings
 
 import mir_eval
 import pandas as pd
@@ -314,6 +315,12 @@ def lsd_comp_diag_mixtures(
     mixture_scores = []
 
     for annotator, ref in track.refs.items():
+        if not ref.has_monotonic_bs():
+            warnings.warn(
+                "Reference must have monotonic boundaries. monocasting using 1layer strategy...",
+                stacklevel=2,
+            )
+            ref = ref.monocast("1layer")
         for mix_strategy, mix_ms in mixtures.items():
             # Pre-calculate alignment if needed, or do it inline
             mix_ms = mix_ms.align(ref)
