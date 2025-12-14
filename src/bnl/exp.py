@@ -5,7 +5,7 @@ import pickle
 import mir_eval
 import pandas as pd
 
-from . import metrics, ops, rel
+from . import metrics
 
 
 def tmeasure_mono_casting_effects(
@@ -272,6 +272,8 @@ def bmeasure2_mono_casting_effects(
 def lsd_comp_diag_mixtures(
     track, save_folder="./lsd_comp_diag_mixtures/", overwrite=False, verbose=False
 ):
+    from . import ops, rel
+
     # Construct the expected output file path
     file_name = f"{track.track_id}.pkl"
     output_path = os.path.join(save_folder, file_name)
