@@ -387,9 +387,9 @@ def cd_h2f(
 
     for name, ref in refs.items():
         r = h2f(ref, ests, metric=metric, ignore=combo_cds_ignore(name), obj_fn=obj_fn)
-        r.name = name
         if agg:
             r = aggregate_relevance(r)
+        r.name = name
         rels.append(r)
 
     df = pd.concat(rels, axis=1)
