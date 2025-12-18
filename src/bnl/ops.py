@@ -25,6 +25,7 @@ __all__ = [
     "CleanStrategy",
     "CleanByAbsorb",
     "CleanByKDE",
+    "CleanNone",
     # boundary level assignment / quantization
     "LevelStrategy",
     "LevelByUniqueSal",
@@ -41,15 +42,17 @@ __all__ = [
     "LabelByLam",
     # Helper functions
     "bs2uv",
+    "filter_named_ms",
     "combine_ms",
     "build_time_grid",
     "common_itvls",
     "bpc2bs",
 ]
 
+import re
 from abc import ABC, abstractmethod
 from collections import Counter, defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import Any
 
@@ -690,21 +693,44 @@ def bpc2bs(
     return sorted(final_boundaries)
 
 
+def filter_named_ms(
+    named_ms: dict[str, MultiSegment],
+    ignore: Sequence[str | re.Pattern[str]] = (),
+) -> dict[str, MultiSegment]:
+    exact = set()
+    patterns = []
+    for p in ignore:
+        if isinstance(p, str):
+            if p.startswith("^") or p.endswith("$"):
+                patterns.append(re.compile(p))
+            else:
+                exact.add(p)
+        else:
+            patterns.append(p)
+    if not exact and not patterns:
+        return named_ms
+    return {
+        name: ms
+        for name, ms in named_ms.items()
+        if name not in exact and not any(r.search(name) for r in patterns)
+    }
+
+
 def combine_ms(
     named_ms: dict[str, MultiSegment],
     new_name: str = "combined",
     prune=True,
     reorder=False,
-    ignore_names=(),
+    ignore: Sequence[str | re.Pattern[str]] = (),
 ) -> MultiSegment:
     """
     Combined multiple MS in a single MS, and rename the layers to include the name of the old MS.
     """
+    named_ms = filter_named_ms(named_ms, ignore=ignore)
     layers = []
     for name, old_ms in named_ms.items():
-        if name not in ignore_names:
-            for old_layer in old_ms:
-                layers.append(replace(old_layer, name=name + ":" + old_layer.name))
+        for old_layer in old_ms:
+            layers.append(replace(old_layer, name=name + ":" + old_layer.name))
 
     if reorder:
         layers = sorted(layers, key=lambda layer: len(layer))

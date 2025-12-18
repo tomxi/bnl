@@ -1,3 +1,4 @@
+import re
 import warnings
 from dataclasses import dataclass
 
@@ -11,7 +12,7 @@ from scipy.special import rel_entr
 
 from .core import MultiSegment, Segment
 from .metrics import bmeasure3
-from .ops import bs2uv, build_time_grid, combine_ms, common_itvls
+from .ops import bs2uv, build_time_grid, combine_ms, common_itvls, filter_named_ms
 
 # region: scipy optimizations
 
@@ -183,10 +184,11 @@ def h2hc(
     ests: dict[str, MultiSegment],
     metric: str = "bpc",
     obj_fn=js_div,
-    ignore_names=(),
+    ignore=(),
 ) -> pd.Series:
     # Similar to h2f, but opposed to begging bpc and lam per layer,
     # it takes the naive average to save compute.
+    ests = filter_named_ms(ests, ignore=ignore)
     if metric == "bpc":
         # pick a sampling rate that gives me about less than 4k points, and no finer than 0.1 secs
         frame_size = max(0.1, ref.duration / 4000)
@@ -197,24 +199,18 @@ def h2hc(
         # Get a bpc for each est in ests.
         x = dict()
         for name, est in ests.items():
-            if name.split("_")[0] in ignore_names:
-                continue
             est = est.align(ref)
             x[name] = est.contour("prob").bpc(bw=0.8, time_grid=time_grid)
         x = pd.DataFrame(x, index=time_grid)
     elif metric == "lam":
         # let's do it in the SAM space. Find the common time grid
-        time_grid = common_itvls(ref.layers + combine_ms(ests, ignore_names=ignore_names).layers)
+        time_grid = common_itvls(ref.layers + combine_ms(ests).layers)
         # I need area for each sample point as well
         sample_points, sample_weights = bs2uv(time_grid, min_dur=1)
         # should I use depth or prob for ref lam?
         ref_lam_values = ref.lam(strategy="prob").sample(sample_points)
 
-        est_lams = {
-            name: est.lam("prob").sample(sample_points)
-            for name, est in ests.items()
-            if name.split("_")[0] not in ignore_names
-        }
+        est_lams = {name: est.lam("prob").sample(sample_points) for name, est in ests.items()}
         y = pd.Series(ref_lam_values, index=sample_points.T.tolist())
         x = pd.DataFrame(est_lams, index=sample_points.T.tolist())
     else:
@@ -235,13 +231,14 @@ def h2f(
     ests: dict[str, MultiSegment],
     metric: str = "bpc",
     obj_fn=js_div,
-    ignore_names=(),
+    ignore=(),
 ) -> pd.Series:
     # Get the relevance of each estimate with respect to the reference using metric
     # Metric can be "bpc", "lam"
     # right now the gridtime is predefined: for bpc it's 0.1 second in build_time_grid
     # for lam it's 0.5 second for lam
-    est = combine_ms(ests, ignore_names=ignore_names).align(ref)
+    ests = filter_named_ms(ests, ignore=ignore)
+    est = combine_ms(ests).align(ref)
 
     if metric == "bpc":
         # pick a sampling rate that gives me about less than 4k points, and no finer than 0.1 secs
@@ -355,12 +352,22 @@ def cd_h2h(
     return df
 
 
+def combo_cds_ignore(name: str) -> list[re.Pattern[str] | str]:
+    if "_" not in name:
+        return [name]
+    parts = name.split("_")
+    prefix = parts[0]
+    suffix = parts[-1]
+    return [re.compile(rf"^{re.escape(prefix)}_"), re.compile(rf"_{re.escape(suffix)}$")]
+
+
 def cd_h2hc(
     refs: dict[str, MultiSegment], ests: dict[str, MultiSegment], metric="bpc", obj_fn=js_div
 ) -> pd.DataFrame:
     rels = []
+
     for name, ref in refs.items():
-        r = h2hc(ref, ests, metric=metric, ignore_names=([name.split("_")[0]]), obj_fn=obj_fn)
+        r = h2hc(ref, ests, metric=metric, ignore=combo_cds_ignore(name), obj_fn=obj_fn)
         r.name = name
         rels.append(r)
 
@@ -379,7 +386,7 @@ def cd_h2f(
     rels = []
 
     for name, ref in refs.items():
-        r = h2f(ref, ests, metric=metric, ignore_names=(name), obj_fn=obj_fn)
+        r = h2f(ref, ests, metric=metric, ignore=combo_cds_ignore(name), obj_fn=obj_fn)
         r.name = name
         if agg:
             r = aggregate_relevance(r)
@@ -424,10 +431,10 @@ def cd_suite(ests: dict[str, MultiSegment]) -> dict[str, pd.DataFrame]:
     mono_ests = {name: ms.monocast() for name, ms in ests.items()}
     cds = dict()
     cds["b15"] = cd_h2h(mono_ests, mono_ests, metric="b15")
-    cds["t"] = cd_h2h(mono_ests, mono_ests, metric="t")
+    # cds["t"] = cd_h2h(mono_ests, mono_ests, metric="t")
     cds["l-exp"] = cd_h2h(mono_ests, mono_ests, metric="l-exp")
-    cds["bpc"] = cd_h2hc(ests, ests, metric="bpc")
-    cds["lam"] = cd_h2hc(ests, ests, metric="lam")
+    cds["bpc"] = cd_h2f(ests, ests, metric="bpc", agg=True).reindex(ests.keys())
+    cds["lam"] = cd_h2f(ests, ests, metric="lam", agg=True).reindex(ests.keys())
 
     return cds
 
@@ -451,12 +458,15 @@ class CompDiagramStats:
         return self.__dict__
 
 
-def cd2w(cd: pd.DataFrame) -> CompDiagramStats:
+def cd2w(cd: pd.DataFrame, pad=0.001) -> CompDiagramStats:
     """
     cd: compatibility diagram
     returns: dict of computed weights and other statistics
     """
     cd = cd.fillna(0)
+
+    if pad > 0:
+        cd = cd * (1 - pad) + pad
     # Decompose and sort descending
     evals, evecs = np.linalg.eig(cd.values)
     idx = np.abs(evals).argsort()[::-1]
@@ -471,7 +481,7 @@ def cd2w(cd: pd.DataFrame) -> CompDiagramStats:
     return CompDiagramStats(
         w=w,
         wentropy=stats.entropy(w),
-        evmax=evals[0],
+        evmax=evals[0] / np.sum(evals),
         evgap=evals[0] - evals[1],
         evals=pd.Series(evals),
     )

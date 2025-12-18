@@ -184,7 +184,9 @@ class Track:
 
         # check if lsd_cd already calculated
         cd_path = (
-            Path(self.dataset.manifest_path).expanduser().parent / "lsd_cd" / f"{self.track_id}.pkl"
+            Path(self.dataset.manifest_path).expanduser().parent
+            / "lsd_cd2"
+            / f"{self.track_id}.pkl"
         )
         if not recompute and cd_path.exists():
             # load pickle file as dict
