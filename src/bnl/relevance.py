@@ -389,8 +389,12 @@ def cd_h2f(
         r = h2f(ref, ests, metric=metric, ignore=combo_cds_ignore(name), obj_fn=obj_fn)
         if agg:
             r = aggregate_relevance(r)
-        r.name = name
-        rels.append(r)
+            r.name = name
+            rels.append(r)
+        else:
+            for layer in combine_ms({name: ref}).layers:
+                r.name = layer.name
+                rels.append(r.copy())
 
     df = pd.concat(rels, axis=1)
     df.name = metric
@@ -483,6 +487,20 @@ def cd2w(cd: pd.DataFrame, pad=0.001) -> CompDiagramStats:
         w=w,
         wentropy=stats.entropy(w),
         evmax=evals[0] / np.sum(evals),
-        evgap=evals[0] - evals[1],
+        evgap=evals[0] / evals[1],
         evals=pd.Series(evals),
     )
+
+
+def cd2nx(cd: pd.DataFrame, sym=False) -> tuple[pd.Series, pd.Series]:
+    import networkx as nx
+
+    if not sym:
+        G = nx.from_pandas_adjacency(cd.T.fillna(0), create_using=nx.DiGraph())
+        centrality = pd.Series(nx.pagerank(G, alpha=0.999))
+        spectrum = pd.Series(np.abs(nx.adjacency_spectrum(G)))
+    else:
+        G = nx.from_pandas_adjacency(cd.T.fillna(0), create_using=nx.Graph())
+        centrality = pd.Series(nx.eigenvector_centrality(G, weight="weight")) ** 2
+        spectrum = pd.Series(nx.adjacency_spectrum(G))
+    return centrality, spectrum
