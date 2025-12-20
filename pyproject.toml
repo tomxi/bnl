@@ -27,6 +27,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
+    "frameless_eval",
     "numpy",
     "pandas",
     "plotly",
