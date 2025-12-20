@@ -5,13 +5,11 @@ from __future__ import annotations
 import warnings
 from typing import TYPE_CHECKING, Any
 
-import librosa.display
 import matplotlib.pyplot as plt
 import pandas as pd
 import plotly.colors as pc
 import plotly.express as px
 import plotly.graph_objects as go
-import seaborn as sns
 
 if TYPE_CHECKING:
     from bnl.core import (
@@ -240,6 +238,8 @@ def px_metrics_bar(metrics, title="Metrics", w=300, h=225):
 
 
 def bmeasure_df(df):
+    import seaborn as sns
+
     # Faceted barplot
     sns.set_theme(style="whitegrid")
     g = sns.catplot(
@@ -269,6 +269,8 @@ def bmeasure_df(df):
 
 
 def agreement_mat_mpl(amat: LabelAgreementMap | SegmentAgreementProb, ax=None, **kwargs):
+    import librosa.display
+
     if ax is None:
         fig, ax = plt.subplots()
 

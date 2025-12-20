@@ -27,6 +27,9 @@ classifiers = [
     "Topic :: Scientific/Engineering",
 ]
 dependencies = [
+    "librosa",
+    "seaborn",
+    "matplotlib",
     "numpy",
     "pandas",
     "plotly",
@@ -35,6 +38,7 @@ dependencies = [
     "requests",
     "scipy",
     "scikit-learn",
+    "frameless-eval @ git+https://github.com/tomxi/frameless-eval.git",
 ]
 requires-python = ">=3.10"
 
