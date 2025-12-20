@@ -458,6 +458,7 @@ class CompDiagramStats:
         return self.__dict__
 
 
+# I want to use networkX objects now...
 def cd2w(cd: pd.DataFrame, pad=0.001) -> CompDiagramStats:
     """
     cd: compatibility diagram

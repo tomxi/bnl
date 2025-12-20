@@ -23,7 +23,6 @@ import pandas as pd
 import requests
 
 from .core import MultiSegment, Segment
-from .lsd import run as run_lsd
 from .relevance import cd_suite, rel_suite
 
 
@@ -129,6 +128,8 @@ class Track:
             with open(lsds_path) as f:
                 all_outs = json.load(f)
         else:
+            from .lsd import run as run_lsd
+
             os.makedirs(os.path.dirname(lsds_path), exist_ok=True)
             # run lsd for all combinations of features
             all_outs = dict()
