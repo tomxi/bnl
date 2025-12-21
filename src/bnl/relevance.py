@@ -384,19 +384,20 @@ def cd_h2f(
     obj_fn=js_div,
 ) -> pd.DataFrame:
     rels = []
-
+    index = []
     for name, ref in refs.items():
         r = h2f(ref, ests, metric=metric, ignore=combo_cds_ignore(name), obj_fn=obj_fn)
         if agg:
             r = aggregate_relevance(r)
             r.name = name
             rels.append(r)
+            index.append(name)
         else:
             for layer in combine_ms({name: ref}).layers:
                 r.name = layer.name
                 rels.append(r.copy())
-
-    df = pd.concat(rels, axis=1)
+                index.append(layer.name)
+    df = pd.concat(rels, axis=1).reindex(index)
     df.name = metric
     return df
 
@@ -434,12 +435,12 @@ def aggregate_relevance(weights: pd.Series, delimiter=":", name=None) -> pd.Seri
 def cd_suite(ests: dict[str, MultiSegment]) -> dict[str, pd.DataFrame]:
     mono_ests = {name: ms.monocast() for name, ms in ests.items()}
     cds = dict()
+    cds["b05"] = cd_h2h(mono_ests, mono_ests, metric="b05")
     cds["b15"] = cd_h2h(mono_ests, mono_ests, metric="b15")
-    # cds["t"] = cd_h2h(mono_ests, mono_ests, metric="t")
-    cds["l-exp"] = cd_h2h(mono_ests, mono_ests, metric="l-exp")
-    cds["bpc"] = cd_h2f(ests, ests, metric="bpc", agg=True).reindex(ests.keys())
-    cds["lam"] = cd_h2f(ests, ests, metric="lam", agg=True).reindex(ests.keys())
-
+    cds["b30"] = cd_h2h(mono_ests, mono_ests, metric="b30")
+    cds["lex"] = cd_h2h(mono_ests, mono_ests, metric="l-exp")
+    cds["bpc"] = cd_h2f(ests, ests, metric="bpc", agg=False)
+    cds["lam"] = cd_h2f(ests, ests, metric="lam", agg=False)
     return cds
 
 
@@ -492,15 +493,16 @@ def cd2w(cd: pd.DataFrame, pad=0.001) -> CompDiagramStats:
     )
 
 
-def cd2nx(cd: pd.DataFrame, sym=False) -> tuple[pd.Series, pd.Series]:
+def cd2nx(cd: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
     import networkx as nx
 
-    if not sym:
-        G = nx.from_pandas_adjacency(cd.T.fillna(0), create_using=nx.DiGraph())
-        centrality = pd.Series(nx.pagerank(G, alpha=0.999))
-        spectrum = pd.Series(np.abs(nx.adjacency_spectrum(G)))
+    # Check if cd is symmetric
+    if cd.equals(cd.T):
+        G = nx.from_pandas_adjacency(cd.fillna(0), create_using=nx.Graph())
+        centrality = pd.Series(nx.eigenvector_centrality(G, weight="weight", max_iter=1000))
+        spectrum = pd.Series(np.sort(np.abs(nx.adjacency_spectrum(G)))[::-1])
     else:
-        G = nx.from_pandas_adjacency(cd.T.fillna(0), create_using=nx.Graph())
-        centrality = pd.Series(nx.eigenvector_centrality(G, weight="weight")) ** 2
-        spectrum = pd.Series(nx.adjacency_spectrum(G))
+        G = nx.from_pandas_adjacency(cd.T.fillna(0), create_using=nx.DiGraph())
+        centrality = pd.Series(nx.pagerank(G, alpha=0.99, max_iter=1000))
+        spectrum = pd.Series(np.sort(np.abs(nx.adjacency_spectrum(G)))[::-1])
     return centrality, spectrum

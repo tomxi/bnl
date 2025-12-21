@@ -185,9 +185,7 @@ class Track:
 
         # check if lsd_cd already calculated
         cd_path = (
-            Path(self.dataset.manifest_path).expanduser().parent
-            / "lsd_cd2"
-            / f"{self.track_id}.pkl"
+            Path(self.dataset.manifest_path).expanduser().parent / "lsd_cd" / f"{self.track_id}.pkl"
         )
         if not recompute and cd_path.exists():
             # load pickle file as dict
@@ -195,6 +193,26 @@ class Track:
                 return pickle.load(f)
         else:
             cds = cd_suite(self.lsds())
+            os.makedirs(os.path.dirname(cd_path), exist_ok=True)
+            with open(cd_path, "wb") as f:
+                pickle.dump(cds, f)
+            return cds
+
+    def adobe_cds(self, recompute=False):
+        import pickle
+
+        # check if lsd_cd already calculated
+        cd_path = (
+            Path(self.dataset.manifest_path).expanduser().parent
+            / "adobe_cd"
+            / f"{self.track_id}.pkl"
+        )
+        if not recompute and cd_path.exists():
+            # load pickle file as dict
+            with open(cd_path, "rb") as f:
+                return pickle.load(f)
+        else:
+            cds = cd_suite(self.ests)
             os.makedirs(os.path.dirname(cd_path), exist_ok=True)
             with open(cd_path, "wb") as f:
                 pickle.dump(cds, f)

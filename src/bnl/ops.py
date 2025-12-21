@@ -385,8 +385,7 @@ class LamByProb(LabelAgreementStrategy):
     """Combining label agreement maps of a hierarchy using lam prob density."""
 
     def __init__(self, w: pd.Series | None = None):
-        # We are multiplying by len(w) because we are doing np.mean later
-        self.w = w / (w.sum() + 1e-10) * len(w) if w is not None else None
+        self.w = w
 
     def __call__(self, ms: MultiSegment) -> LabelAgreementMap:
         grid, labels, _ = fle.utils.make_common_itvls(ms.itvls, ms.labels, [], [])
@@ -408,10 +407,13 @@ class LamByProb(LabelAgreementStrategy):
         # Boundaries too
         boundaries = mir_eval.util.intervals_to_boundaries(grid)
 
-        # weighted combination
-        if self.w is not None:
-            level_lam_pdfs = level_lam_pdfs * self.w.values[:, None, None]
-        return LabelAgreementMap(bs=boundaries, mat=np.mean(level_lam_pdfs, axis=0))
+        if self.w is None:
+            w = pd.Series(1.0, index=ms.layer_names, dtype=float) / len(ms.layer_names)
+        else:
+            w = self.w.reindex(ms.layer_names).fillna(0.0).astype(float)
+
+        level_lam_pdfs = level_lam_pdfs * w.values[:, None, None]
+        return LabelAgreementMap(bs=boundaries, mat=np.sum(level_lam_pdfs, axis=0))
 
 
 # endregion: Label Agreement Strategies
@@ -455,7 +457,7 @@ class LabelByClosestSingleLayer(LabelingStrategy):
     """Find the closest single layer from a given MultiSegment, for each BH level
     and fill the labels by looking for largest overlap."""
 
-    def __init__(self, ref_ms: MultiSegment, metric="v", hr_window=1):
+    def __init__(self, ref_ms: MultiSegment, metric="v", hr_window=1, **kwargs):
         self.reference_ms = ref_ms
         self.metric = metric  # "hr" or "v"
         self.hr_window = hr_window
@@ -559,7 +561,8 @@ class LabelByLam(LabelingStrategy):
         w: pd.Series | None = None,
         aff_mode: str = "area",
         starting_k: int = 2,
-        min_k_inc: int = 0,
+        min_k_inc: int = 1,
+        **kwargs,
     ):
         self.reference_ms = ref_ms
         self.lam_mode = lam_mode
@@ -584,7 +587,7 @@ class LabelByWeightedLams(LabelingStrategy):
         ref_ms: dict[str, MultiSegment],
         w: pd.Series | None = None,
         starting_k: int = 2,
-        min_k_inc: int = 0,
+        min_k_inc: int = 1,
         aff_mode: str = "area",
     ):
         self.ref_ms = ref_ms

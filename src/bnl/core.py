@@ -626,12 +626,23 @@ class MultiSegment(TimeSpan):
             coarser_layer = finer_layer
         return True
 
-    def monocast(self, label_strat: str = "lam") -> MultiSegment:
+    def monocast(
+        self,
+        label_strat: str = "lam",
+        w_b: pd.Series | None = None,
+        w_l: pd.Series | None = None,
+        **kwargs,
+    ) -> MultiSegment:
         return (
-            self.contour("prob")
+            self.contour("prob", w=w_b)
             .clean("kde", bw=0.8)
             .level(strategy="mean_shift", log=True, bw=1 / 3)
-            .to_ms(strategy=label_strat, ref_ms=self)
+            .to_ms(
+                strategy=label_strat,
+                ref_ms=self,
+                w=w_l,
+                **kwargs,
+            )
         )
 
 
@@ -846,8 +857,8 @@ class LabelAgreementMap(AgreementMatrix):
         self,
         bh: BoundaryHierarchy,
         aff_mode: str = "area",
-        starting_k: int = 1,
-        min_k_inc: int = 0,  # minimal k increment across layers
+        starting_k: int = 2,
+        min_k_inc: int = 1,  # minimal k increment across layers
     ) -> MultiSegment:
         """Decode labels according to boundaries set out in bh
         Uses spectral clustering with k distinct labels.
@@ -1057,7 +1068,9 @@ class SegmentAffinityMatrix(AgreementMatrix):
             assignment[key].append(self.labels[i])
         return assignment
 
-    def pick_k(self, min_k: int = 1, fiedler_threshold: float = 0.15) -> int:
+    def pick_k(
+        self, min_k: int = 1, fiedler_threshold: float = 0.15, noise_threshold: float = 0.25
+    ) -> int:
         """
         Determines k using eigengap
         """
@@ -1079,8 +1092,8 @@ class SegmentAffinityMatrix(AgreementMatrix):
         # We must find the best alternative k >= min_k.
         else:
             alt_k = np.argmax(self.egaps[min_k - 1 :]) + min_k
-            # check if the new biggest gap is just noise, i.e. smaller than average gap size
-            if self.egaps[alt_k - 1] < self.egaps.mean():
+            # check if the new biggest gap is just noise, i.e. in the last 25% of the egaps
+            if self.egaps[alt_k - 1] < np.percentile(self.egaps, 100 * noise_threshold):
                 return n_segs
             else:
                 return alt_k
