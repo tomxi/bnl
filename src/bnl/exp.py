@@ -268,7 +268,7 @@ def bmeasure2_mono_casting_effects(
     return results_df
 
 
-def collect_cds_combo_results(t):
+def compute_cds_combo_results(t):
     from . import ops, rel
 
     # Get individual ests, both lsd and adobe
@@ -312,9 +312,7 @@ def collect_cds_combo_results(t):
     return scores
 
 
-def lsd_comp_diag_mixtures(
-    track, save_folder="./cds_combo_results/", overwrite=False, verbose=False
-):
+def cds_combo_results(track, save_folder="./cds_combo_results/", overwrite=False, verbose=False):
     # Construct the expected output file path
     file_name = f"{track.track_id}.feather"
     output_path = os.path.join(save_folder, file_name)
@@ -326,7 +324,7 @@ def lsd_comp_diag_mixtures(
         return pd.read_feather(output_path)
     if verbose:
         print(f"Running comp diag mixtures for track {track.track_id}...")
-    out = collect_cds_combo_results(track)
+    out = compute_cds_combo_results(track)
     # Save the results
     os.makedirs(save_folder, exist_ok=True)
     pd.to_feather(out, output_path)
