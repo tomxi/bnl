@@ -319,15 +319,9 @@ def cds_combo_results(track, save_folder="./cds_combo_results/", overwrite=False
 
     # If not overwriting and file exists, load and return
     if not overwrite and os.path.exists(output_path):
-        if verbose:
-            print(f"Loading existing results for track {track.track_id} from {output_path}")
         return pd.read_feather(output_path)
-    if verbose:
-        print(f"Running comp diag mixtures for track {track.track_id}...")
     out = compute_cds_combo_results(track)
     # Save the results
     os.makedirs(save_folder, exist_ok=True)
-    pd.to_feather(out, output_path)
-    if verbose:
-        print(f"Results saved to {output_path}")
+    out.to_feather(output_path)
     return out
