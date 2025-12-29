@@ -1,7 +1,5 @@
 import itertools
 import os
-import pickle
-import warnings
 
 import mir_eval
 import pandas as pd
@@ -270,90 +268,68 @@ def bmeasure2_mono_casting_effects(
     return results_df
 
 
-def lsd_comp_diag_mixtures(
-    track, save_folder="./lsd_comp_diag_mixtures/", overwrite=False, verbose=False
-):
+def collect_cds_combo_results(t):
     from . import ops, rel
 
+    # Get individual ests, both lsd and adobe
+    all_ests = {"lsd_" + k: e.monocast() for k, e in t.lsds().items()}
+    all_ests.update({"adobe_" + k: e.monocast() for k, e in t.ests.items()})
+
+    # Get the combined ms
+    combined_lsd = ops.combine_ms(t.lsds())
+    combined_adobe = ops.combine_ms(t.ests)
+
+    # LSD Combo first
+    b_w_lsd, b_spec_lsd = rel.cd2nx(t.lsd_cds()["bpc"])
+    l_w_lsd, l_spec_lsd = rel.cd2nx(t.lsd_cds()["lam"])
+
+    all_ests["w_x_lsd"] = combined_lsd.monocast(w_b=b_w_lsd * l_w_lsd, w_l=b_w_lsd * l_w_lsd)
+
+    ## Variation: using the lam and bpc wegihts independently
+    all_ests["w_bl_lsd"] = combined_lsd.monocast(w_b=b_w_lsd, w_l=l_w_lsd)
+
+    ## Naive equal weight
+    all_ests["w_avg_lsd"] = combined_lsd.monocast()
+
+    # ADOBE Combo next
+    b_w_adobe, b_spec_adobe = rel.cd2nx(t.adobe_cds()["bpc"])
+    l_w_adobe, l_spec_adobe = rel.cd2nx(t.adobe_cds()["lam"])
+
+    all_ests["w_x_adobe"] = combined_adobe.monocast(
+        w_b=b_w_adobe * l_w_adobe, w_l=b_w_adobe * l_w_adobe
+    )
+
+    ## Variation: using the lam and bpc wegihts independently
+    all_ests["w_bl_adobe"] = combined_adobe.monocast(w_b=b_w_adobe, w_l=l_w_adobe)
+
+    ## Naive equal weight
+    all_ests["w_avg_adobe"] = combined_adobe.monocast()
+
+    # Compute all scores and save
+    scores = {m: rel.cd_h2h(t.refs, all_ests, metric=m) for m in ["b05", "b15", "b30", "l-exp"]}
+    scores = pd.concat(scores, axis=1, names=["metric", "annotator"])
+    scores.index.name = "method"
+    return scores
+
+
+def lsd_comp_diag_mixtures(
+    track, save_folder="./cds_combo_results/", overwrite=False, verbose=False
+):
     # Construct the expected output file path
-    file_name = f"{track.track_id}.pkl"
+    file_name = f"{track.track_id}.feather"
     output_path = os.path.join(save_folder, file_name)
 
     # If not overwriting and file exists, load and return
     if not overwrite and os.path.exists(output_path):
         if verbose:
             print(f"Loading existing results for track {track.track_id} from {output_path}")
-        with open(output_path, "rb") as f:
-            return pickle.load(f)
-
+        return pd.read_feather(output_path)
     if verbose:
-        print(f"Running experiment for track {track.track_id}...")
-
-    # Save the basic comp diagram stats first
-    cd_types = ["b15", "l-exp", "bpc", "lam"]
-    out = dict()
-    for cd_type in cd_types:
-        cd_stats = rel.cd2w(track.lsd_cds()[cd_type])
-        out[cd_type] = cd_stats.to_dict()
-
-    # Now have 3 mixtures:
-    mixtures = dict()
-    # 1) using metric based CDs: b15, l-exp
-    metric_mix_bh = ops.combine_ms2bc(track.lsds(), bpc_w=out["b15"]["w"]).level("mean_shift")
-    metric_mix_ms = metric_mix_bh.to_ms("lams", ref_ms=track.lsds(), w=out["l-exp"]["w"])
-    mixtures["metric"] = metric_mix_ms
-    # 2) using combo based CDs: bpc and lams
-    combo_mix_bh = ops.combine_ms2bc(track.lsds(), bpc_w=out["bpc"]["w"]).level("mean_shift")
-    combo_mix_ms = combo_mix_bh.to_ms("lams", ref_ms=track.lsds(), w=out["lam"]["w"])
-    mixtures["combo"] = combo_mix_ms
-    # 3) using naive mean, without CDs.
-    naive_mix_bh = ops.combine_ms2bc(track.lsds()).level("mean_shift")
-    naive_mix_ms = naive_mix_bh.to_ms("lams", ref_ms=track.lsds())
-    mixtures["naive"] = naive_mix_ms
-
-    # Now run bmeasure and lmeasure on each of them and save the results
-    mixture_scores = []
-
-    for annotator, ref in track.refs.items():
-        if not ref.has_monotonic_bs():
-            warnings.warn(
-                "Reference must have monotonic boundaries. monocasting using 1layer strategy...",
-                stacklevel=2,
-            )
-            ref = ref.monocast("1layer")
-        for mix_strategy, mix_ms in mixtures.items():
-            # Pre-calculate alignment if needed, or do it inline
-            mix_ms = mix_ms.align(ref)
-
-            p, r, f = metrics.bmeasure3(ref, mix_ms, window=1.5)
-            mixture_scores.append(
-                {
-                    "annotator": annotator,
-                    "mix_strategy": mix_strategy,
-                    "metric": "b15",
-                    "p": p,
-                    "r": r,
-                    "f": f,
-                }
-            )
-
-            p, r, f = metrics.lmeasure(ref.expand_labels(), mix_ms.expand_labels())
-            mixture_scores.append(
-                {
-                    "annotator": annotator,
-                    "mix_strategy": mix_strategy,
-                    "metric": "l-exp",
-                    "p": p,
-                    "r": r,
-                    "f": f,
-                }
-            )
-    out["mixture_scores"] = pd.DataFrame(mixture_scores)
-
+        print(f"Running comp diag mixtures for track {track.track_id}...")
+    out = collect_cds_combo_results(track)
     # Save the results
     os.makedirs(save_folder, exist_ok=True)
-    with open(output_path, "wb") as f:
-        pickle.dump(out, f)
+    pd.to_feather(out, output_path)
     if verbose:
-        print(f"Results for track {track.track_id} saved to {output_path}")
+        print(f"Results saved to {output_path}")
     return out
