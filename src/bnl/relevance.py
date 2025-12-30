@@ -33,6 +33,10 @@ def js_div(weights, distributions, target, sample_weights):
         Jensen-Shannon Divergence value (float)
     """
 
+    # Note: this implementation is intentionally simple, but it allocates multiple
+    # intermediate arrays per objective evaluation. For a more memory-efficient
+    # version, see the closure used inside scipy_optimize when obj_fn is js_div.
+
     # Combined distribution
     combined = distributions @ weights
 
@@ -41,7 +45,8 @@ def js_div(weights, distributions, target, sample_weights):
     avg_dist = 0.5 * (target + combined)
 
     if sample_weights is None:
-        sample_weights = np.ones(distributions.shape[1]) / distributions.shape[1]
+        raise ValueError("sample_weights must be provided (handled in scipy_optimize).")
+
     # Compute the two KL components
     # D_KL(P || A)
     kl_p_a = rel_entr(target, avg_dist) @ sample_weights
@@ -53,6 +58,55 @@ def js_div(weights, distributions, target, sample_weights):
     jsd = 0.5 * kl_p_a + 0.5 * kl_m_a
 
     return jsd
+
+
+def _make_jsd_objective(distributions, target, sample_weights):
+    # Allocation-light JSD objective with preallocated buffers.
+    #
+    # JSD(P, M) = 0.5 * KL(P || A) + 0.5 * KL(M || A)
+    # where A = 0.5 * (P + M)
+    #
+    # Here P is `target` (fixed), and M = distributions @ weights.
+    dist_dim, _num_distributions = distributions.shape
+
+    combined = np.empty(dist_dim, dtype=distributions.dtype)
+    avg_dist = np.empty(dist_dim, dtype=distributions.dtype)
+    log_avg = np.empty(dist_dim, dtype=distributions.dtype)
+    log_combined = np.empty(dist_dim, dtype=distributions.dtype)
+    tmp = np.empty(dist_dim, dtype=distributions.dtype)
+
+    log_target = np.log(target)
+
+    def objective(weights):
+        # scipy hands us float64 weights; casting is cheap (num_distributions is small)
+        w = np.asarray(weights, dtype=distributions.dtype)
+
+        # combined = distributions @ w
+        np.dot(distributions, w, out=combined)
+
+        # avg_dist = 0.5 * (target + combined)
+        np.add(target, combined, out=avg_dist)
+        np.multiply(avg_dist, 0.5, out=avg_dist)
+
+        # log_avg, log_combined
+        np.log(avg_dist, out=log_avg)
+        np.log(combined, out=log_combined)
+
+        # KL(target || avg)
+        np.subtract(log_target, log_avg, out=tmp)
+        np.multiply(tmp, target, out=tmp)
+        np.multiply(tmp, sample_weights, out=tmp)
+        kl_p_a = tmp.sum(dtype=np.float64)
+
+        # KL(combined || avg)
+        np.subtract(log_combined, log_avg, out=tmp)
+        np.multiply(tmp, combined, out=tmp)
+        np.multiply(tmp, sample_weights, out=tmp)
+        kl_m_a = tmp.sum(dtype=np.float64)
+
+        return float(0.5 * kl_p_a + 0.5 * kl_m_a)
+
+    return objective
 
 
 def sym_ce(weights, distributions, target, sample_weights):
@@ -86,6 +140,8 @@ def scipy_optimize(
         optimal_combined: Array of shape (distribution_dim,) - optimally combined distribution
         optimal_kl: Float - optimal KL divergence value
     """
+    target_distribution = np.ascontiguousarray(np.asarray(target_distribution), dtype=np.float32)
+    distributions = np.ascontiguousarray(np.asarray(distributions), dtype=np.float32)
     dist_dim, num_distributions = distributions.shape
 
     # Initial guess: uniform weights
@@ -101,17 +157,39 @@ def scipy_optimize(
         print(f"Number of distributions: {num_distributions}")
         print(f"Distribution dimension: {dist_dim}")
 
+    if sample_weights is None:
+        sample_weights = np.full(dist_dim, 1.0 / dist_dim, dtype=np.float32)
+    else:
+        sample_weights = np.ascontiguousarray(np.asarray(sample_weights), dtype=np.float32)
+        if sample_weights.shape[0] != dist_dim:
+            raise ValueError(
+                "sample_weights must have length equal to the distribution dimension "
+                f"({dist_dim}), got {sample_weights.shape[0]}."
+            )
+
     # normalize and pad distributions for stability
-    distributions /= np.sum(distributions, axis=0)
-    distributions += 1e-12
-    target_distribution /= np.sum(target_distribution)
-    target_distribution += 1e-12
+    eps = np.float32(1e-12)
+    col_sums = distributions.sum(axis=0, keepdims=True)
+    distributions /= col_sums
+    distributions += eps
+    target_distribution /= target_distribution.sum()
+    target_distribution += eps
+
+    # Make sure weights form a valid probability distribution (helps interpretability)
+    sample_weights /= sample_weights.sum()
 
     # Solve optimization problem
+    if obj_fn is js_div:
+        objective = _make_jsd_objective(distributions, target_distribution, sample_weights)
+        minimize_args = ()
+    else:
+        objective = obj_fn
+        minimize_args = (distributions, target_distribution, sample_weights)
+
     result = minimize(
-        obj_fn,
+        objective,
         initial_weights,
-        args=(distributions, target_distribution, sample_weights),
+        args=minimize_args,
         bounds=bounds,
         constraints=constraints,
         options={"disp": verbose, "maxiter": 500},
@@ -191,7 +269,7 @@ def h2hc(
     ests = filter_named_ms(ests, ignore=ignore)
     if metric == "bpc":
         # pick a sampling rate that gives me about less than 4k points, and no finer than 0.1 secs
-        frame_size = max(0.1, ref.duration / 4000)
+        frame_size = max(0.1, ref.duration / 10000)
         # print(f"Using frame size: {frame_size}")
         time_grid = build_time_grid(ref, frame_size)
         y = ref.contour("prob").bpc(bw=0.8, time_grid=time_grid)
@@ -242,8 +320,8 @@ def h2f(
     est = combine_ms(ests).align(ref)
 
     if metric == "bpc":
-        # pick a sampling rate that gives me about less than 4k points, and no finer than 0.1 secs
-        frame_size = max(0.1, ref.duration / 4000)
+        # pick a sampling rate that gives me about less than 10k points, and no finer than 0.1 secs
+        frame_size = max(0.1, ref.duration / 10000)
         # print(f"Using frame size: {frame_size}")
         time_grid = build_time_grid(ref, frame_size)
         y = ref.contour("prob").bpc(bw=0.8, time_grid=time_grid)
