@@ -206,7 +206,7 @@ def h2hc(
         # let's do it in the SAM space. Find the common time grid
         time_grid = common_itvls(ref.layers + combine_ms(ests).layers)
         # I need area for each sample point as well
-        sample_points, sample_weights = bs2uv(time_grid, min_dur=1)
+        sample_points, sample_weights = bs2uv(time_grid, min_dur=2.0)
         # should I use depth or prob for ref lam?
         ref_lam_values = ref.lam(strategy="prob").sample(sample_points)
 
@@ -256,7 +256,7 @@ def h2f(
         # let's do it in the SAM space. Find the common time grid
         time_grid = common_itvls(ref.layers + est.layers)
         # I need area for each sample point as well
-        sample_points, sample_weights = bs2uv(time_grid, min_dur=1)
+        sample_points, sample_weights = bs2uv(time_grid, min_dur=2.0)
         # should I use depth or prob for ref lam?
         ref_lam_values = ref.expand_labels().lam(strategy="prob").sample(sample_points)
 
