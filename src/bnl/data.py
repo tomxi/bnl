@@ -438,10 +438,25 @@ class SalamiDataset(Dataset):
             self.manifest.filter(like="has_annotation_reference").astype(bool).values.any(axis=1)
         ]
 
+        bad_ids = {
+            "359",
+            "679",
+            "710",
+            "711",
+            "712",
+            "714",
+            "716",
+            "717",
+            "719",
+            "720",
+            "724",
+            "878",
+        }
+
         try:
-            self.track_ids = sorted(self.manifest["track_id"].unique(), key=int)
+            self.track_ids = sorted(set(self.manifest["track_id"]) - bad_ids, key=int)
         except ValueError:
-            self.track_ids = sorted(self.manifest["track_id"].unique())
+            self.track_ids = sorted(set(self.manifest["track_id"]) - bad_ids)
 
     @staticmethod
     def _format_adobe_params(asset_subtype: str) -> str:
