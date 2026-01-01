@@ -573,12 +573,13 @@ def cd2w(cd: pd.DataFrame, pad=0.001) -> CompDiagramStats:
     )
 
 
-def cd2nx(cd: pd.DataFrame) -> tuple[pd.Series, pd.Series]:
+def cd2nx(cd: pd.DataFrame, sym: bool) -> tuple[pd.Series, pd.Series]:
     import networkx as nx
 
     # Check if cd is symmetric
-    if cd.equals(cd.T):
-        G = nx.from_pandas_adjacency(cd.fillna(0), create_using=nx.Graph())
+    if sym:
+        aff = (cd.T + cd).fillna(0) / 2.0
+        G = nx.from_pandas_adjacency(aff, create_using=nx.Graph())
         centrality = pd.Series(nx.eigenvector_centrality(G, weight="weight", max_iter=1000))
         spectrum = pd.Series(np.sort(np.abs(nx.adjacency_spectrum(G)))[::-1])
     else:
