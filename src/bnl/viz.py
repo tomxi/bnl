@@ -284,3 +284,98 @@ def agreement_mat_mpl(amat: LabelAgreementMap | SegmentAgreementProb, ax=None, *
         **kwargs,
     )
     return ax
+
+
+def create_label_colormap(
+    label_lists: list[list[str]], colorscale: str | list[str] = "tab10"
+) -> dict[str, str]:
+    """Create a consistent color mapping for labels across multiple layers.
+
+    Args:
+        label_lists: List of label lists, one per layer (e.g., [layer1.labels, layer2.labels])
+        colorscale: Matplotlib colormap name or list of colors. Defaults to "tab10".
+
+    Returns:
+        Dictionary mapping each unique label to a color string.
+    """
+    # Get all unique labels in order of first appearance
+    unique_labels = []
+    seen = set()
+    for labels in label_lists:
+        for label in labels:
+            if label not in seen:
+                unique_labels.append(label)
+                seen.add(label)
+
+    # Get colors from matplotlib colormap
+    if isinstance(colorscale, str):
+        from matplotlib import colormaps
+
+        cmap = colormaps[colorscale]
+        colors = [cmap(i / max(len(unique_labels) - 1, 1)) for i in range(len(unique_labels))]
+        # Convert to hex
+        from matplotlib.colors import to_hex
+
+        colors = [to_hex(c) for c in colors]
+    else:
+        colors = colorscale
+
+    # Create mapping
+    return {label: colors[i % len(colors)] for i, label in enumerate(unique_labels)}
+
+
+def plot_hier(hier, ax=None, legend=True):
+    import mir_eval.display as med
+    from matplotlib.patches import Patch
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(5, 4), constrained_layout=True)
+    label_colormap = create_label_colormap(hier.labels)
+
+    tick_positions = []
+    tick_labels = []
+    d = float(len(hier))
+    for i, layer in enumerate(hier):
+        base = (d - i - 1) / d
+        height = (d - i) / d
+        # Plot each unique label separately with its assigned color
+        for label in set(layer.labels):
+            # Get intervals for this label
+            mask = [l == label for l in layer.labels]
+            label_itvls = layer.itvls[[idx for idx, m in enumerate(mask) if m]]
+            label_labels = [label] * len(label_itvls)
+            # Plot with consistent color
+            med.segments(
+                label_itvls,
+                label_labels,
+                base=base,
+                height=height,
+                ax=ax,
+                text=False,
+                edgecolor="white",
+                facecolor=label_colormap[label],
+            )
+
+        tick_positions.append((base + height) / 2)
+        tick_labels.append(layer.name)
+
+    ax.set_xlim((hier.start.time, hier.end.time))
+    ax.set_yticks(tick_positions)
+    ax.set_yticklabels(tick_labels)
+
+    if legend:
+        # Create legend
+        legend_patches = [
+            Patch(facecolor=color, edgecolor="white", label=label)
+            for label, color in label_colormap.items()
+        ]
+        ax.legend(
+            handles=legend_patches,
+            loc="upper center",
+            bbox_to_anchor=(0.5, -0.08),
+            ncol=min(len(label_colormap), 5),
+            frameon=True,
+            title="Segment Labels",
+        )
+
+    return ax
