@@ -636,7 +636,7 @@ class MultiSegment(TimeSpan):
         return (
             self.contour("prob", w=w_b)
             .clean("kde", bw=0.8)
-            .level(strategy="mean_shift", log=True, bw=1 / 3)
+            .level(strategy="mean_shift", log=True, bw=1.3)
             .to_ms(
                 strategy=label_strat,
                 ref_ms=self,
