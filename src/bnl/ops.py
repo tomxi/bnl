@@ -303,10 +303,10 @@ class LevelByMeanShift(LevelStrategy):
     Use mean shift clustering to find peaks in the salience values and clusters them into levels.
     """
 
-    def __init__(self, bw: float = 1 / 3, log: bool = True):
+    def __init__(self, bw: float = 1.3, log: bool = True):
         self.log = log
         if log:
-            bw = -np.log(1 - bw)
+            bw = np.log(bw)
             # print(bw)
         self.sal_ms = MeanShift(bandwidth=bw)
 

@@ -425,4 +425,5 @@ def lmeasure(ref_ms: MS, est_ms: MS, **kwargs):
     return fle.lmeasure(ref_ms.itvls, ref_ms.labels, est_ms.itvls, est_ms.labels, **kwargs)
 
 
-# endregion
+def tmeasure(ref_ms: MS, est_ms: MS, **kwargs):
+    return mir_eval.hierarchy.tmeasure(ref_ms.itvls, est_ms.itvls, **kwargs)

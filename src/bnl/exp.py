@@ -1,5 +1,6 @@
 import itertools
 import os
+from pathlib import Path
 
 import mir_eval
 import pandas as pd
@@ -325,3 +326,57 @@ def cds_combo_results(track, save_folder="./cds_combo_results/", overwrite=False
     os.makedirs(save_folder, exist_ok=True)
     out.to_feather(output_path)
     return out
+
+
+def monocasting_adobes(
+    track, save_dir: str = "./monocasting_adobes/", recompute: bool = False
+) -> pd.DataFrame:
+    """
+    evaluate the 12 monocasting variants on a track's adobe esitmate against all references
+    """
+    import itertools
+
+    from .metrics import bmeasure3, tmeasure
+
+    params = {
+        "prom_func": ["depth", "prob"],
+        "bdry_cleaning": ["absorb", "kde", "none"],
+        "leveling": ["unique", "mean_shift"],
+    }
+    param_combos = list(itertools.product(*params.values()))
+    records = dict()
+
+    index_names = ["track_id", "anno", "prom_func", "bdry_cleaning", "leveling", "metric"]
+    save_path = Path(save_dir) / f"{track.track_id}.feather"
+    if save_path.exists() and not recompute:
+        return pd.read_feather(save_path)
+
+    raw_est = track.ests["mu1gamma9"]
+
+    for anno in track.refs:
+        ref = track.refs[anno]
+        if not ref.has_monotonic_bs():
+            ref = ref.monocast("1layer")
+        est = raw_est.align(ref)
+
+        for prom_func, bdry_cleaning, leveling in param_combos:
+            est_star = est.contour(prom_func).clean(bdry_cleaning).level(leveling).to_ms()
+
+            records[(track.track_id, anno, prom_func, bdry_cleaning, leveling, "B05")] = bmeasure3(
+                ref, est_star, window=0.5
+            )
+            records[(track.track_id, anno, prom_func, bdry_cleaning, leveling, "B15")] = bmeasure3(
+                ref, est_star, window=1.5
+            )
+            records[(track.track_id, anno, prom_func, bdry_cleaning, leveling, "B30")] = bmeasure3(
+                ref, est_star, window=3.0
+            )
+            records[(track.track_id, anno, prom_func, bdry_cleaning, leveling, "T-reduced")] = (
+                tmeasure(ref, est_star)
+            )
+    df = pd.DataFrame(records, index=["p", "r", "f"]).T
+    df.index = pd.MultiIndex.from_tuples(df.index, names=index_names)
+
+    save_path.mkdir(parents=True, exist_ok=True)
+    df.to_feather(save_path)
+    return df
