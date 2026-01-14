@@ -377,6 +377,6 @@ def monocasting_adobes(
     df = pd.DataFrame(records, index=["p", "r", "f"]).T
     df.index = pd.MultiIndex.from_tuples(df.index, names=index_names)
 
-    save_path.mkdir(parents=True, exist_ok=True)
+    save_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_feather(save_path)
     return df
