@@ -235,7 +235,7 @@ class CleanByAbsorb(CleanStrategy):
 class CleanByKDE(CleanStrategy):
     """Clean boundaries by finding peaks in a weighted kernel density estimate."""
 
-    def __init__(self, bw: float = 0.8, frame_size: float = 0.1) -> None:
+    def __init__(self, bw: float = 0.7, frame_size: float = 0.1) -> None:
         self.bw = bw
         self.frame_size = frame_size
 
