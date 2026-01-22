@@ -425,5 +425,12 @@ def lmeasure(ref_ms: MS, est_ms: MS, **kwargs):
     return fle.lmeasure(ref_ms.itvls, ref_ms.labels, est_ms.itvls, est_ms.labels, **kwargs)
 
 
+def tmeasure_full(ref_ms: MS, est_ms: MS, **kwargs):
+    ref_ms = ref_ms.scrub_labels(replace_with=None)
+    est_ms = est_ms.scrub_labels(replace_with=None)
+    # T-measure is L-measure with distinct labels
+    return fle.lmeasure(ref_ms.itvls, ref_ms.labels, est_ms.itvls, est_ms.labels, **kwargs)
+
+
 def tmeasure(ref_ms: MS, est_ms: MS, **kwargs):
     return mir_eval.hierarchy.tmeasure(ref_ms.itvls, est_ms.itvls, **kwargs)
