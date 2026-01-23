@@ -625,12 +625,8 @@ class LabelByWeightedLams(LabelingStrategy):
 # region: Helper functions
 
 
-def bs2uv(bs, min_dur=0.1):
-    """Convert a set of boundaries to a set of (u,v) coordinates.
-    also return the area of each associated sample point.
-
-    Add a filtering option to remove very small intervals.
-    """
+def filter_boundaries(bs, min_dur=1.0):
+    """Filter out boundaries that are too close to the previous one."""
     # get rid of bs that are too close to the previous one
     filtered_bs = [bs[0]]
     for b in bs[1:]:
@@ -646,8 +642,16 @@ def bs2uv(bs, min_dur=0.1):
         else:
             filtered_bs.append(bs[-1])
 
-    filtered_bs = np.array(filtered_bs)
-    print("Filtered boundaries:", len(filtered_bs))
+    return np.array(filtered_bs)
+
+
+def bs2uv(bs, min_dur=0.1):
+    """Convert a set of boundaries to a set of (u,v) coordinates.
+    also return the area of each associated sample point.
+
+    Add a filtering option to remove very small intervals.
+    """
+    filtered_bs = filter_boundaries(bs, min_dur)
 
     # get the mid points of the filtered bs
     mid_points = (filtered_bs[:-1] + filtered_bs[1:]) / 2
@@ -769,8 +773,10 @@ def combine_ms2bc(
     )
 
 
-def common_itvls(layers: MultiSegment | list[Segment]) -> np.ndarray:
+def common_itvls(layers: MultiSegment | list[Segment], min_dur=0) -> np.ndarray:
     common_bs = set()
     for layer in layers:
         common_bs.update(layer.btimes)
-    return np.array(sorted(common_bs))
+
+    common_bs = filter_boundaries(np.array(sorted(common_bs)), min_dur)
+    return common_bs

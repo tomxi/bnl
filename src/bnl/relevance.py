@@ -17,7 +17,7 @@ from .ops import bs2uv, build_time_grid, combine_ms, common_itvls, filter_named_
 # region: scipy optimizations
 
 
-def js_div(weights, distributions, target, sample_weights):
+def js_div(weights, distributions, target):
     """
     Jensen-Shannon Divergence (JSD) objective function.
 
@@ -33,10 +33,6 @@ def js_div(weights, distributions, target, sample_weights):
         Jensen-Shannon Divergence value (float)
     """
 
-    # Note: this implementation is intentionally simple, but it allocates multiple
-    # intermediate arrays per objective evaluation. For a more memory-efficient
-    # version, see the closure used inside scipy_optimize when obj_fn is js_div.
-
     # Combined distribution
     combined = distributions @ weights
 
@@ -44,15 +40,12 @@ def js_div(weights, distributions, target, sample_weights):
     # A = 0.5 * (P + M), where P is 'target'
     avg_dist = 0.5 * (target + combined)
 
-    if sample_weights is None:
-        raise ValueError("sample_weights must be provided (handled in scipy_optimize).")
-
     # Compute the two KL components
     # D_KL(P || A)
-    kl_p_a = rel_entr(target, avg_dist) @ sample_weights
+    kl_p_a = np.sum(rel_entr(target, avg_dist))
 
     # D_KL(M || A)
-    kl_m_a = rel_entr(combined, avg_dist) @ sample_weights
+    kl_m_a = np.sum(rel_entr(combined, avg_dist))
 
     # Compute the JSD
     jsd = 0.5 * kl_p_a + 0.5 * kl_m_a
@@ -60,70 +53,7 @@ def js_div(weights, distributions, target, sample_weights):
     return jsd
 
 
-def _make_jsd_objective(distributions, target, sample_weights):
-    # Allocation-light JSD objective with preallocated buffers.
-    #
-    # JSD(P, M) = 0.5 * KL(P || A) + 0.5 * KL(M || A)
-    # where A = 0.5 * (P + M)
-    #
-    # Here P is `target` (fixed), and M = distributions @ weights.
-    dist_dim, _num_distributions = distributions.shape
-
-    combined = np.empty(dist_dim, dtype=distributions.dtype)
-    avg_dist = np.empty(dist_dim, dtype=distributions.dtype)
-    log_avg = np.empty(dist_dim, dtype=distributions.dtype)
-    log_combined = np.empty(dist_dim, dtype=distributions.dtype)
-    tmp = np.empty(dist_dim, dtype=distributions.dtype)
-
-    log_target = np.log(target)
-
-    def objective(weights):
-        # scipy hands us float64 weights; casting is cheap (num_distributions is small)
-        w = np.asarray(weights, dtype=distributions.dtype)
-
-        # combined = distributions @ w
-        np.dot(distributions, w, out=combined)
-
-        # avg_dist = 0.5 * (target + combined)
-        np.add(target, combined, out=avg_dist)
-        np.multiply(avg_dist, 0.5, out=avg_dist)
-
-        # log_avg, log_combined
-        np.log(avg_dist, out=log_avg)
-        np.log(combined, out=log_combined)
-
-        # KL(target || avg)
-        np.subtract(log_target, log_avg, out=tmp)
-        np.multiply(tmp, target, out=tmp)
-        np.multiply(tmp, sample_weights, out=tmp)
-        kl_p_a = tmp.sum(dtype=np.float64)
-
-        # KL(combined || avg)
-        np.subtract(log_combined, log_avg, out=tmp)
-        np.multiply(tmp, combined, out=tmp)
-        np.multiply(tmp, sample_weights, out=tmp)
-        kl_m_a = tmp.sum(dtype=np.float64)
-
-        return float(0.5 * kl_p_a + 0.5 * kl_m_a)
-
-    return objective
-
-
-def sym_ce(weights, distributions, target, sample_weights):
-    # Doesn't check if the distributions are valid probability distributions
-    # Make sure weights, each row of distributsions, and target all sum to 1.
-    combined = distributions @ weights
-    if sample_weights is None:
-        sample_weights = 1 / distributions.shape[1]
-    ce = -np.sum(target * np.log(combined) * sample_weights) - np.sum(
-        combined * np.log(target) * sample_weights
-    )
-    return ce
-
-
-def scipy_optimize(
-    target_distribution, distributions, verbose=True, obj_fn=js_div, sample_weights=None
-):
+def scipy_optimize(target_distribution, distributions, verbose=True, obj_fn=js_div):
     """
     Solve KL divergence minimization using scipy.optimize.
 
@@ -157,16 +87,6 @@ def scipy_optimize(
         print(f"Number of distributions: {num_distributions}")
         print(f"Distribution dimension: {dist_dim}")
 
-    if sample_weights is None:
-        sample_weights = np.full(dist_dim, 1.0 / dist_dim, dtype=np.float32)
-    else:
-        sample_weights = np.ascontiguousarray(np.asarray(sample_weights), dtype=np.float32)
-        if sample_weights.shape[0] != dist_dim:
-            raise ValueError(
-                "sample_weights must have length equal to the distribution dimension "
-                f"({dist_dim}), got {sample_weights.shape[0]}."
-            )
-
     # normalize and pad distributions for stability
     eps = np.float32(1e-12)
     col_sums = distributions.sum(axis=0, keepdims=True)
@@ -175,21 +95,11 @@ def scipy_optimize(
     target_distribution /= target_distribution.sum()
     target_distribution += eps
 
-    # Make sure weights form a valid probability distribution (helps interpretability)
-    sample_weights /= sample_weights.sum()
-
     # Solve optimization problem
-    if obj_fn is js_div:
-        objective = _make_jsd_objective(distributions, target_distribution, sample_weights)
-        minimize_args = ()
-    else:
-        objective = obj_fn
-        minimize_args = (distributions, target_distribution, sample_weights)
-
     result = minimize(
-        objective,
+        obj_fn,
         initial_weights,
-        args=minimize_args,
+        args=(distributions, target_distribution),
         bounds=bounds,
         constraints=constraints,
         options={"disp": verbose, "maxiter": 500},
@@ -273,7 +183,6 @@ def h2hc(
         # print(f"Using frame size: {frame_size}")
         time_grid = build_time_grid(ref, frame_size)
         y = ref.contour("prob").bpc(bw=0.8, time_grid=time_grid)
-        sample_weights = np.ones_like(y)
         # Get a bpc for each est in ests.
         x = dict()
         for name, est in ests.items():
@@ -282,22 +191,28 @@ def h2hc(
         x = pd.DataFrame(x, index=time_grid)
     elif metric == "lam":
         # let's do it in the SAM space. Find the common time grid
-        time_grid = common_itvls(ref.layers + combine_ms(ests).layers)
-        # I need area for each sample point as well
         min_dur = max(1.0, ref.duration / 300)
-        sample_points, sample_weights = bs2uv(time_grid, min_dur=min_dur)
+        time_grid = common_itvls(ref.layers + combine_ms(ests).layers, min_dur)
+        # I need area for each sample point as well
+        # sample_points, sample_weights = bs2uv(time_grid, min_dur=min_dur)
         # should I use depth or prob for ref lam?
-        ref_lam_values = ref.lam(strategy="prob").sample(sample_points)
+        ref_lam = ref.expand_labels().lam(strategy="prob")
+        ref_sap = ref_lam.to_sap(time_grid)
+        # it's symmetric, so we only need the upper triangle
+        mat_idx = np.triu_indices_from(ref_sap.mat)
+        ref_values = ref_sap.mat[mat_idx]
 
-        est_lams = {name: est.lam("prob").sample(sample_points) for name, est in ests.items()}
-        y = pd.Series(ref_lam_values, index=sample_points.T.tolist())
-        x = pd.DataFrame(est_lams, index=sample_points.T.tolist())
+        est_saps = {
+            name: est.lam("prob").to_sap(time_grid).mat[mat_idx] for name, est in ests.items()
+        }
+        y = pd.Series(ref_values)
+        x = pd.DataFrame(est_saps)
     else:
         raise ValueError(f"Metric {metric} not recognized.")
 
     # run scipy optimize
     weights = pd.Series(
-        scipy_optimize(y, x, obj_fn=obj_fn, sample_weights=sample_weights),
+        scipy_optimize(y, x, obj_fn=obj_fn),
         index=x.columns,
         name=metric,
     )
@@ -316,8 +231,11 @@ def h2f(
     # Metric can be "bpc", "lam"
     # right now the gridtime is predefined: for bpc it's 0.1 second in build_time_grid
     # for lam it's 0.5 second for lam
-    ests = filter_named_ms(ests, ignore=ignore)
-    est = combine_ms(ests).align(ref)
+    if isinstance(ests, MultiSegment):
+        est = ests.align(ref)
+    else:
+        ests = filter_named_ms(ests, ignore=ignore)
+        est = combine_ms(ests).align(ref)
 
     if metric == "bpc":
         # pick a sampling rate that gives me about less than 10k points, and no finer than 0.1 secs
@@ -329,27 +247,26 @@ def h2f(
         if len(est) == 0:
             raise ValueError("No valid estimated layers found.")
         x = est.bpcs(bw=0.8, time_grid=time_grid)
-        sample_weights = np.ones_like(y)
 
     elif metric == "lam":
         # let's do it in the SAM space. Find the common time grid
-        time_grid = common_itvls(ref.layers + est.layers)
-        # I need area for each sample point as well
         min_dur = max(1.0, ref.duration / 300)
-        sample_points, sample_weights = bs2uv(time_grid, min_dur=min_dur)
+        time_grid = common_itvls(ref.layers + est.layers, min_dur)
         # should I use depth or prob for ref lam?
-        ref_lam_values = ref.expand_labels().lam(strategy="prob").sample(sample_points)
+        ref_sap = ref.expand_labels().lam(strategy="prob").to_sap(time_grid)
+        mat_idx = np.triu_indices_from(ref_sap.mat)
+        ref_values = ref_sap.mat[mat_idx]
 
-        est_lams = {layer.name: layer.lam_pdf.sample(sample_points) for layer in est}
-        y = pd.Series(ref_lam_values, index=sample_points.T.tolist())
-        x = pd.DataFrame(est_lams, index=sample_points.T.tolist())
+        est_lams = {layer.name: layer.lam_pdf.to_sap(time_grid).mat[mat_idx] for layer in est}
+        y = pd.Series(ref_values)
+        x = pd.DataFrame(est_lams)
 
     else:
         raise ValueError(f"Metric {metric} not recognized.")
 
     # run scipy optimize
     weights = pd.Series(
-        scipy_optimize(y, x, obj_fn=obj_fn, sample_weights=sample_weights),
+        scipy_optimize(y, x, obj_fn=obj_fn),
         index=x.columns,
         name=metric,
     )
