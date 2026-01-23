@@ -467,9 +467,16 @@ class LabelByClosestSingleLayer(LabelingStrategy):
         empty_ms = LabelByUniqueLabel()(bh)
         labels = []
         ref_layers_used = []
-        for layer in empty_ms.layers:
-            # Find the ref_ms layer that has highest boundary HR score with current level_boundaries
-            if self.metric == "hr":
+
+        for i, layer in enumerate(empty_ms.layers):
+            # if empty_ms and self.reference_ms has the same number of layers, match layer by layer
+            if len(empty_ms) == len(self.reference_ms):
+                print("matching layer by layer")
+                best_ref_layer = self.reference_ms.layers[i]
+
+            elif self.metric == "hr":
+                print("matching by hr")
+                # Find the ref_ms layer that has highest boundary HR score with current level_boundaries
                 best_ref_layer = max(
                     self.reference_ms.layers,
                     key=lambda ref_layer: mir_eval.segment.detection(
@@ -477,6 +484,7 @@ class LabelByClosestSingleLayer(LabelingStrategy):
                     )[2],
                 )
             elif self.metric == "v":
+                print("matching by v")
                 best_ref_layer = max(
                     self.reference_ms.layers,
                     key=lambda ref_layer: fle.vmeasure(
