@@ -12,7 +12,7 @@ from scipy.special import rel_entr
 
 from .core import MultiSegment, Segment
 from .metrics import bmeasure3
-from .ops import bs2uv, build_time_grid, combine_ms, common_itvls, filter_named_ms
+from .ops import build_time_grid, combine_ms, common_itvls, filter_named_ms
 
 # region: scipy optimizations
 
