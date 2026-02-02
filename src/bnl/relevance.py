@@ -402,7 +402,7 @@ def cd_h2f(
 
         # append the loss term too
         losses.append(loss)
-    loss_series = pd.Series(losses, index=index, name="jsd")
+    loss_series = pd.Series(losses, index=refs.keys(), name="jsd")
     df = pd.concat(rels, axis=1).reindex(index)
     df.name = metric
     return df, loss_series
