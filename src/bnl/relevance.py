@@ -108,7 +108,7 @@ def scipy_optimize(target_distribution, distributions, verbose=True, obj_fn=js_d
     if not result.success:
         print(f"Optimization warning: {result.message}")
 
-    return result.x
+    return result.x, result.fun
 
 
 # endregion: scipy optimization
@@ -211,13 +211,14 @@ def h2hc(
         raise ValueError(f"Metric {metric} not recognized.")
 
     # run scipy optimize
+    w, loss = scipy_optimize(y, x, obj_fn=obj_fn)
     weights = pd.Series(
-        scipy_optimize(y, x, obj_fn=obj_fn),
+        w,
         index=x.columns,
         name=metric,
     )
 
-    return weights
+    return weights, loss
 
 
 def h2f(
@@ -265,13 +266,14 @@ def h2f(
         raise ValueError(f"Metric {metric} not recognized.")
 
     # run scipy optimize
+    w, loss = scipy_optimize(y, x, obj_fn=obj_fn)
     weights = pd.Series(
-        scipy_optimize(y, x, obj_fn=obj_fn),
+        w,
         index=x.columns,
         name=metric,
     )
 
-    return weights
+    return weights, loss
 
 
 def f2f(ref_layer, est, metric="hr15") -> pd.Series:
@@ -309,8 +311,8 @@ def rel_suite(ref, ests):
     rel_b15 = h2h(ref, mono_ests, metric="b15")
     rel_t = h2h(ref, mono_ests, metric="t")
     rel_l = h2h(ref, mono_ests, metric="l-exp")
-    rel_bpc = h2f(ref, ests, metric="bpc")
-    rel_lam = h2f(ref, ests, metric="lam")
+    rel_bpc, _ = h2f(ref, ests, metric="bpc")
+    rel_lam, _ = h2f(ref, ests, metric="lam")
 
     rel_mat = pd.concat(
         [
@@ -362,15 +364,17 @@ def cd_h2hc(
     refs: dict[str, MultiSegment], ests: dict[str, MultiSegment], metric="bpc", obj_fn=js_div
 ) -> pd.DataFrame:
     rels = []
+    losses = []
 
     for name, ref in refs.items():
-        r = h2hc(ref, ests, metric=metric, ignore=combo_cds_ignore(name), obj_fn=obj_fn)
+        r, loss = h2hc(ref, ests, metric=metric, ignore=combo_cds_ignore(name), obj_fn=obj_fn)
         r.name = name
         rels.append(r)
+        losses.append(loss)
 
     df = pd.concat(rels, axis=1)
     df.name = metric
-    return df.reindex(ests.keys())
+    return df.reindex(ests.keys()), pd.Series(losses, index=refs.keys(), name="jsd")
 
 
 def cd_h2f(
@@ -381,9 +385,10 @@ def cd_h2f(
     obj_fn=js_div,
 ) -> pd.DataFrame:
     rels = []
+    losses = []
     index = []
     for name, ref in refs.items():
-        r = h2f(ref, ests, metric=metric, ignore=combo_cds_ignore(name), obj_fn=obj_fn)
+        r, loss = h2f(ref, ests, metric=metric, ignore=combo_cds_ignore(name), obj_fn=obj_fn)
         if agg:
             r = aggregate_relevance(r)
             r.name = name
@@ -394,9 +399,13 @@ def cd_h2f(
                 r.name = layer.name
                 rels.append(r.copy())
                 index.append(layer.name)
+
+        # append the loss term too
+        losses.append(loss)
+    loss_series = pd.Series(losses, index=index, name="jsd")
     df = pd.concat(rels, axis=1).reindex(index)
     df.name = metric
-    return df
+    return df, loss_series
 
 
 def cd_f2f(
@@ -436,8 +445,8 @@ def cd_suite(ests: dict[str, MultiSegment]) -> dict[str, pd.DataFrame]:
     cds["b15"] = cd_h2h(mono_ests, mono_ests, metric="b15")
     cds["b30"] = cd_h2h(mono_ests, mono_ests, metric="b30")
     cds["lex"] = cd_h2h(mono_ests, mono_ests, metric="l-exp")
-    cds["bpc"] = cd_h2f(ests, ests, metric="bpc", agg=False)
-    cds["lam"] = cd_h2f(ests, ests, metric="lam", agg=False)
+    cds["bpc"], cds["bpc_loss"] = cd_h2f(ests, ests, metric="bpc", agg=False)
+    cds["lam"], cds["lam_loss"] = cd_h2f(ests, ests, metric="lam", agg=False)
     return cds
 
 
