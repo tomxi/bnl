@@ -266,7 +266,7 @@ def h2f(
         raise ValueError(f"Metric {metric} not recognized.")
 
     # run scipy optimize
-    w, loss = scipy_optimize(y, x, obj_fn=obj_fn)
+    w, loss = scipy_optimize(y, x, obj_fn=obj_fn, verbose=False)
     weights = pd.Series(
         w,
         index=x.columns,
@@ -276,7 +276,7 @@ def h2f(
     return weights, loss
 
 
-def f2f(ref_layer, est, metric="hr15") -> pd.Series:
+def f2f(ref_layer, est, metric="hr15", beta=1.0) -> pd.Series:
     """
     metric can be "hr05", "hr15", "hr30", "v", "pfc"
     """
@@ -289,16 +289,18 @@ def f2f(ref_layer, est, metric="hr15") -> pd.Series:
             raise ValueError(f"{metric} has invalid window string.") from e
         for est_layer in est:
             # record the relevance of each layer with respect to the reference
-            rel[est_layer.name] = me_hr(ref_layer.itvls, est_layer.itvls, window=window)[2]
+            rel[est_layer.name] = me_hr(
+                ref_layer.itvls, est_layer.itvls, window=window, beta=beta, trim=True
+            )[2]
     elif metric == "v":
         for est_layer in est:
             rel[est_layer.name] = fle.vmeasure(
-                ref_layer.itvls, ref_layer.labels, est_layer.itvls, est_layer.labels
+                ref_layer.itvls, ref_layer.labels, est_layer.itvls, est_layer.labels, beta=beta
             )[2]
     elif metric == "pfc":
         for est_layer in est:
             rel[est_layer.name] = fle.pairwise(
-                ref_layer.itvls, ref_layer.labels, est_layer.itvls, est_layer.labels
+                ref_layer.itvls, ref_layer.labels, est_layer.itvls, est_layer.labels, beta=beta
             )[2]
     else:
         raise ValueError(f"Metric {metric} not recognized.")
