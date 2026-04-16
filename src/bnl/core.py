@@ -631,12 +631,14 @@ class MultiSegment(TimeSpan):
         label_strat: str = "lam",
         w_b: pd.Series | None = None,
         w_l: pd.Series | None = None,
+        kde_bw: float = 0.8,
+        level_bw: float = 1.5,
         **kwargs,
     ) -> MultiSegment:
         return (
             self.contour("prob", w=w_b)
-            .clean("kde", bw=0.8)
-            .level(strategy="mean_shift", log=True, bw=1.3)
+            .clean("kde", bw=kde_bw)
+            .level(strategy="mean_shift", log=True, bw=level_bw)
             .to_ms(
                 strategy=label_strat,
                 ref_ms=self,
