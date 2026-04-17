@@ -287,13 +287,13 @@ def agreement_mat_mpl(amat: LabelAgreementMap | SegmentAgreementProb, ax=None, *
 
 
 def create_label_colormap(
-    label_lists: list[list[str]], colorscale: str | list[str] = "tab10"
+    label_lists: list[list[str]], colorscale: str | list[str] = "tab20"
 ) -> dict[str, str]:
     """Create a consistent color mapping for labels across multiple layers.
 
     Args:
         label_lists: List of label lists, one per layer (e.g., [layer1.labels, layer2.labels])
-        colorscale: Matplotlib colormap name or list of colors. Defaults to "tab10".
+        colorscale: Matplotlib colormap name or list of colors. Defaults to "tab20".
 
     Returns:
         Dictionary mapping each unique label to a color string.
